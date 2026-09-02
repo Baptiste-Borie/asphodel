@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Interface de jeu Asphodel" />
+    <title>Asphodel</title>
+  </head>
+  <body>
+    <div id="app">
+      <div class="app-shell">
+        <header class="app-header">
+          <h1 class="app-title">Asphodel</h1>
+          <div class="header-actions">
+            <span
+              id="backend-status"
+              class="backend-state"
+              data-status="offline"
+              role="status"
+              aria-live="polite"
+            >Offline</span>
+            <button id="open-deck-modal" class="primary-button" type="button">
+              Importer un deck
+            </button>
+          </div>
+        </header>
+
+        <main class="app-main">
+          <section class="content-area" aria-label="Zone de jeu"></section>
+        </main>
+      </div>
+
+      <dialog id="deck-modal" class="deck-modal" aria-labelledby="deck-modal-title">
+        <div class="modal-header">
+          <div>
+            <p class="modal-eyebrow">Nouveau deck</p>
+            <h2 id="deck-modal-title" class="modal-title">Importer un deck</h2>
+          </div>
+          <button
+            id="close-deck-modal"
+            class="icon-button"
+            type="button"
+            aria-label="Fermer la fenêtre"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+
+        <form id="deck-form">
+          <div class="modal-content">
+            <label class="deck-input-label" for="deck-input">Liste du deck</label>
+            <p id="deck-input-help" class="deck-input-help">
+              Utilisez les sections Commander et Mainboard, puis une carte par ligne.
+            </p>
+            <textarea
+              id="deck-input"
+              class="deck-input"
+              name="deck"
+              rows="14"
+              placeholder="Commander&#10;1x Krenko, Tin Street Kingpin&#10;&#10;Mainboard&#10;1x Sol Ring&#10;30x Mountain"
+              aria-describedby="deck-input-help"
+              required
+            ></textarea>
+
+            <section
+              id="deck-result"
+              class="deck-result"
+              aria-live="polite"
+              hidden
+            ></section>
+          </div>
+
+          <div class="modal-footer">
+            <button id="cancel-deck-modal" class="secondary-button" type="button">
+              Fermer
+            </button>
+            <button id="parse-deck" class="primary-button" type="submit">
+              Analyser le deck
+            </button>
+          </div>
+        </form>
+      </dialog>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
