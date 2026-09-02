@@ -1,0 +1,97 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, it } from "node:test";
+import { gzipSync } from "node:zlib";
+import { ScryfallCardProvider } from "./cards/scryfall-provider.js";
+
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    temporaryDirectories.splice(0).map((path) =>
+      rm(path, { recursive: true, force: true }),
+    ),
+  );
+});
+
+describe("ScryfallCardProvider bulk", () => {
+  it("résout les cartes depuis le catalogue local sans appel réseau", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "asphodel-scryfall-"));
+    temporaryDirectories.push(directory);
+    const bulkPath = join(directory, "oracle-cards.jsonl.gz");
+    await writeFile(
+      bulkPath,
+      gzipSync(
+        `${JSON.stringify({
+          id: "card-id",
+          oracle_id: "oracle-id",
+          name: "Sol Ring",
+          mana_cost: "{1}",
+          cmc: 1,
+          type_line: "Artifact",
+          oracle_text: "{T}: Add {C}{C}.",
+          colors: [],
+          color_identity: [],
+          image_uris: { normal: "https://img.test/sol-ring.jpg" },
+        })}\n`,
+      ),
+    );
+
+    const provider = new ScryfallCardProvider({
+      bulkPath,
+      fetch: async () => {
+        throw new Error("Le réseau ne doit pas être utilisé");
+      },
+    });
+
+    const card = await provider.findByExactName("  SOL RING ");
+    assert.equal(card?.scryfallId, "card-id");
+    assert.equal(card?.name, "Sol Ring");
+    assert.equal(await provider.findByExactName("Carte absente"), null);
+  });
+
+  it("assemble les informations des deux faces", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "asphodel-scryfall-"));
+    temporaryDirectories.push(directory);
+    const bulkPath = join(directory, "oracle-cards.jsonl.gz");
+    await writeFile(
+      bulkPath,
+      gzipSync(
+        `${JSON.stringify({
+          id: "double-card-id",
+          oracle_id: "double-oracle-id",
+          name: "Face A // Face B",
+          cmc: 3,
+          type_line: "",
+          color_identity: ["R"],
+          card_faces: [
+            {
+              mana_cost: "{1}{R}",
+              type_line: "Creature",
+              oracle_text: "Texte A",
+              colors: ["R"],
+              image_uris: { normal: "https://img.test/front.jpg" },
+            },
+            {
+              mana_cost: "{R}",
+              type_line: "Sorcery",
+              oracle_text: "Texte B",
+              colors: ["R"],
+            },
+          ],
+        })}\n`,
+      ),
+    );
+
+    const provider = new ScryfallCardProvider({ bulkPath });
+    const card = await provider.findByExactName("Face A // Face B");
+
+    assert.equal(card?.manaCost, "{1}{R} // {R}");
+    assert.equal(card?.typeLine, "Creature // Sorcery");
+    assert.equal(card?.oracleText, "Texte A\n//\nTexte B");
+    assert.equal(card?.imageUri, "https://img.test/front.jpg");
+    assert.deepEqual(card?.colors, ["R"]);
+  });
+});

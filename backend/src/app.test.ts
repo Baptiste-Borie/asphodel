@@ -1,10 +1,22 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { buildApp } from "./app.js";
+import { createTestDatabase, FakeCardProvider } from "./test-helpers.js";
+
+async function createTestApp() {
+  const database = await createTestDatabase();
+  const app = await buildApp({
+    database,
+    cardProvider: new FakeCardProvider(),
+  });
+
+  app.addHook("onClose", async () => database.close());
+  return app;
+}
 
 describe("POST /decks/parse", () => {
   it("retourne le deck structuré", async () => {
-    const app = buildApp();
+    const app = await createTestApp();
 
     const response = await app.inject({
       method: "POST",
@@ -32,7 +44,7 @@ describe("POST /decks/parse", () => {
   });
 
   it("retourne 422 et le détail des lignes invalides", async () => {
-    const app = buildApp();
+    const app = await createTestApp();
 
     const response = await app.inject({
       method: "POST",

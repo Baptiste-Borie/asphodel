@@ -4,14 +4,17 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Interface de jeu Asphodel" />
+    <meta name="description" content="Bibliothèque de decks Magic Asphodel" />
     <title>Asphodel</title>
   </head>
   <body>
     <div id="app">
       <div class="app-shell">
         <header class="app-header">
-          <h1 class="app-title">Asphodel</h1>
+          <button id="home-button" class="brand-button" type="button">
+            <span class="brand-mark" aria-hidden="true">A</span>
+            <span>Asphodel</span>
+          </button>
           <div class="header-actions">
             <span
               id="backend-status"
@@ -20,21 +23,49 @@
               role="status"
               aria-live="polite"
             >Offline</span>
-            <button id="open-deck-modal" class="primary-button" type="button">
+            <button class="primary-button" type="button" data-open-import>
               Importer un deck
             </button>
           </div>
         </header>
 
         <main class="app-main">
-          <section class="content-area" aria-label="Zone de jeu"></section>
+          <div class="content-area">
+            <section id="library-view" aria-labelledby="library-title">
+              <div class="page-heading">
+                <div>
+                  <p class="eyebrow">Deck Library</p>
+                  <h1 id="library-title">Mes decks</h1>
+                  <p class="page-description">
+                    Importez et retrouvez vos listes Commander enrichies par Scryfall.
+                  </p>
+                </div>
+                <button class="primary-button" type="button" data-open-import>
+                  Nouveau deck
+                </button>
+              </div>
+
+              <p id="library-feedback" class="page-feedback" hidden></p>
+              <div id="deck-library" class="deck-library" aria-live="polite"></div>
+            </section>
+
+            <section id="detail-view" class="detail-view" aria-live="polite" hidden>
+              <button id="back-to-library" class="back-button" type="button">
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="M15 18l-6-6 6-6" />
+                </svg>
+                Bibliothèque
+              </button>
+              <div id="deck-detail"></div>
+            </section>
+          </div>
         </main>
       </div>
 
       <dialog id="deck-modal" class="deck-modal" aria-labelledby="deck-modal-title">
         <div class="modal-header">
           <div>
-            <p class="modal-eyebrow">Nouveau deck</p>
+            <p class="eyebrow">Nouveau deck</p>
             <h2 id="deck-modal-title" class="modal-title">Importer un deck</h2>
           </div>
           <button
@@ -51,14 +82,27 @@
 
         <form id="deck-form">
           <div class="modal-content">
-            <label class="deck-input-label" for="deck-input">Liste du deck</label>
-            <p id="deck-input-help" class="deck-input-help">
+            <label class="field-label" for="deck-name">Nom du deck</label>
+            <input
+              id="deck-name"
+              class="text-input"
+              name="name"
+              type="text"
+              maxlength="120"
+              placeholder="Gobelins de Krenko"
+              required
+            />
+
+            <label class="field-label field-label--spaced" for="deck-input">
+              Liste du deck
+            </label>
+            <p id="deck-input-help" class="field-help">
               Utilisez les sections Commander et Mainboard, puis une carte par ligne.
             </p>
             <textarea
               id="deck-input"
               class="deck-input"
-              name="deck"
+              name="decklist"
               rows="14"
               placeholder="Commander&#10;1x Krenko, Tin Street Kingpin&#10;&#10;Mainboard&#10;1x Sol Ring&#10;30x Mountain"
               aria-describedby="deck-input-help"
@@ -66,8 +110,8 @@
             ></textarea>
 
             <section
-              id="deck-result"
-              class="deck-result"
+              id="import-feedback"
+              class="import-feedback"
               aria-live="polite"
               hidden
             ></section>
@@ -75,10 +119,10 @@
 
           <div class="modal-footer">
             <button id="cancel-deck-modal" class="secondary-button" type="button">
-              Fermer
+              Annuler
             </button>
-            <button id="parse-deck" class="primary-button" type="submit">
-              Analyser le deck
+            <button id="save-deck" class="primary-button" type="submit">
+              Importer et enregistrer
             </button>
           </div>
         </form>
