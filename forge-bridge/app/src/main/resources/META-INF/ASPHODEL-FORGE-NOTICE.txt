@@ -1,0 +1,8 @@
+Asphodel Forge Bridge includes forge-core from Card-Forge/forge:
+https://github.com/Card-Forge/forge
+
+Pinned revision: 6356c1ad565029c82513c96e42ad5492c1b09c4e
+Forge license: GNU General Public License v3.0
+
+The complete Forge license is packaged at META-INF/forge/LICENSE and remains
+available in the vendor/forge submodule.

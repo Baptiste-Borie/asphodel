@@ -5,6 +5,7 @@ node_modules/
 dist/
 dist-ssr/
 coverage/
+target/
 *.tsbuildinfo
 
 # Local environment files

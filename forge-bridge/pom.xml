@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.asphodel</groupId>
+    <artifactId>forge-bridge-reactor</artifactId>
+    <version>0.1.0</version>
+    <packaging>pom</packaging>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>17</maven.compiler.release>
+        <forge.version>2.0.15-SNAPSHOT</forge.version>
+        <forge.revision>6356c1ad565029c82513c96e42ad5492c1b09c4e</forge.revision>
+    </properties>
+
+    <modules>
+        <module>../vendor/forge/forge-core</module>
+        <module>../vendor/forge/forge-game</module>
+        <module>../vendor/forge/forge-ai</module>
+        <module>app</module>
+    </modules>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.14.1</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>
