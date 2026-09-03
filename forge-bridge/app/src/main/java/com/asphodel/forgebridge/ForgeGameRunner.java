@@ -2,7 +2,6 @@ package com.asphodel.forgebridge;
 
 import forge.ai.LobbyPlayerAi;
 import forge.deck.Deck;
-import forge.deck.DeckSection;
 import forge.game.Game;
 import forge.game.GameEndReason;
 import forge.game.GameOutcome;
@@ -13,7 +12,6 @@ import forge.game.card.Card;
 import forge.game.player.Player;
 import forge.game.player.RegisteredPlayer;
 import forge.game.zone.ZoneType;
-import forge.item.PaperCard;
 import forge.util.MyRandom;
 
 import java.util.ArrayList;
@@ -31,30 +29,21 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 final class ForgeGameRunner {
-    private static final List<String> REQUIRED_CARDS = List.of(
-            "Mountain",
-            "Forest",
-            "Lightning Bolt",
-            "Grizzly Bears",
-            "Goblin Piker",
-            "Krenko, Tin Street Kingpin",
-            "Ayula, Queen Among Bears"
-    );
-
-    Map<String, Object> run(String requestedFormat, long seed, int timeoutSeconds) {
-        ForgeDataRepository cards = ForgeDataRepository.instance();
+    Map<String, Object> run(
+            String requestedFormat,
+            long seed,
+            int timeoutSeconds,
+            Deck playerOneDeck,
+            Deck playerTwoDeck
+    ) {
         // GameType localizes its display names during static initialization, so
         // Forge's locale/resources must exist before this class is first used.
         GameType gameType = parseGameType(requestedFormat);
-        Map<String, PaperCard> loadedCards = loadCards(cards);
-
         MyRandom.setRandom(new Random(seed));
 
-        Deck redDeck = createRedDeck(loadedCards, gameType);
-        Deck greenDeck = createGreenDeck(loadedCards, gameType);
         List<RegisteredPlayer> registeredPlayers = List.of(
-                createPlayer(redDeck, gameType, "Test AI Red", 0),
-                createPlayer(greenDeck, gameType, "Test AI Green", 1)
+                createPlayer(playerOneDeck, gameType, "Forge AI 1", 0),
+                createPlayer(playerTwoDeck, gameType, "Forge AI 2", 1)
         );
 
         GameRules rules = new GameRules(gameType);
@@ -63,7 +52,7 @@ final class ForgeGameRunner {
         rules.setSimTimeout(timeoutSeconds);
         rules.setWarnAboutAICards(false);
 
-        Match match = new Match(rules, registeredPlayers, "Asphodel Forge Bridge V1");
+        Match match = new Match(rules, registeredPlayers, "Asphodel Forge Bridge V1b");
         Game game = match.createGame();
         List<PlayerSetup> startingPlayers = new ArrayList<>();
 
@@ -88,19 +77,10 @@ final class ForgeGameRunner {
         result.put("draw", outcome.isDraw());
         result.put("terminalReason", outcome.getWinCondition().name());
         result.put("commanderRulesActive", rules.hasCommander());
-        result.put("fixtureConformance", gameType == GameType.Commander
-                ? "engine-test fixture; duplicate cards and fewer than 100 cards"
-                : "engine-test fixture; fewer than 60 cards");
-        result.put("cardEvidence", lightningBoltEvidence(loadedCards.get("Lightning Bolt")));
-        result.put("forgeClasses", Map.of(
-                "game", Game.class.getName(),
-                "match", Match.class.getName(),
-                "aiPlayer", LobbyPlayerAi.class.getName()
-        ));
         return result;
     }
 
-    private static GameType parseGameType(String requestedFormat) {
+    static GameType parseGameType(String requestedFormat) {
         return switch (requestedFormat.toLowerCase()) {
             case "commander" -> GameType.Commander;
             case "constructed" -> GameType.Constructed;
@@ -108,37 +88,6 @@ final class ForgeGameRunner {
                     "format must be either commander or constructed"
             );
         };
-    }
-
-    private static Map<String, PaperCard> loadCards(ForgeDataRepository repository) {
-        Map<String, PaperCard> cards = new LinkedHashMap<>();
-        for (String name : REQUIRED_CARDS) {
-            cards.put(name, repository.requireCard(name));
-        }
-        return cards;
-    }
-
-    private static Deck createRedDeck(Map<String, PaperCard> cards, GameType gameType) {
-        Deck deck = new Deck("Asphodel Red Fixture");
-        deck.getMain().add(cards.get("Mountain"), 10);
-        deck.getMain().add(cards.get("Lightning Bolt"), 5);
-        deck.getMain().add(cards.get("Goblin Piker"), 5);
-        if (gameType == GameType.Commander) {
-            deck.getOrCreate(DeckSection.Commander)
-                    .add(cards.get("Krenko, Tin Street Kingpin"));
-        }
-        return deck;
-    }
-
-    private static Deck createGreenDeck(Map<String, PaperCard> cards, GameType gameType) {
-        Deck deck = new Deck("Asphodel Green Fixture");
-        deck.getMain().add(cards.get("Forest"), 10);
-        deck.getMain().add(cards.get("Grizzly Bears"), 10);
-        if (gameType == GameType.Commander) {
-            deck.getOrCreate(DeckSection.Commander)
-                    .add(cards.get("Ayula, Queen Among Bears"));
-        }
-        return deck;
     }
 
     private static RegisteredPlayer createPlayer(
@@ -172,10 +121,12 @@ final class ForgeGameRunner {
             boolean commandersInCommandZone = player.getCommanders().stream()
                     .allMatch(card -> card.getZone() != null
                             && card.getZone().getZoneType() == ZoneType.Command);
+            String deckName = player.getRegisteredPlayer().getDeck().getName();
 
             target.add(new PlayerSetup(
                     playerId(index),
                     player.getName(),
+                    deckName,
                     player.getStartingLife(),
                     player.getController().isAI(),
                     player.getController().getClass().getName(),
@@ -184,22 +135,6 @@ final class ForgeGameRunner {
                     commandersInCommandZone
             ));
         }
-    }
-
-    private static Map<String, Object> lightningBoltEvidence(PaperCard card) {
-        if (card == null) {
-            throw new IllegalStateException("Lightning Bolt was not loaded");
-        }
-        List<String> abilities = new ArrayList<>();
-        card.getRules().getMainPart().getAbilities().forEach(abilities::add);
-        return Map.of(
-                "name", card.getName(),
-                "manaCost", card.getRules().getManaCost().toString(),
-                "oracleText", card.getRules().getOracleText(),
-                "scriptAbilities", abilities,
-                "scriptAbilityCount", abilities.size(),
-                "rulesClass", card.getRules().getClass().getName()
-        );
     }
 
     private static void runWithTimeout(Runnable gameTask, Game game, int timeoutSeconds) {
@@ -217,6 +152,8 @@ final class ForgeGameRunner {
             if (!game.isGameOver()) {
                 game.setGameOver(GameEndReason.Draw);
             }
+            executor.shutdownNow();
+            awaitTermination(executor);
             throw new GameTimeoutException(
                     "Forge game exceeded the " + timeoutSeconds + " second timeout",
                     exception
@@ -238,6 +175,14 @@ final class ForgeGameRunner {
         }
     }
 
+    private static void awaitTermination(ExecutorService executor) {
+        try {
+            executor.awaitTermination(2, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private static String playerId(int index) {
         return "player-" + (index + 1);
     }
@@ -245,6 +190,7 @@ final class ForgeGameRunner {
     private record PlayerSetup(
             String id,
             String name,
+            String deckName,
             int startingLife,
             boolean ai,
             String controllerClass,

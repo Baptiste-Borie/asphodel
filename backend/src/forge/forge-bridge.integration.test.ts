@@ -1,13 +1,70 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
+import { DeckService } from "../decks/deck-service.js";
+import type { DatabaseConnection } from "../db/client.js";
+import { createTestDatabase, FakeCardProvider } from "../test-helpers.js";
 import {
   ForgeBridgeClient,
   ForgeBridgeError,
   ForgeBridgeProcessError,
 } from "./forge-bridge-client.js";
+import { ForgeDeckMatchRunner } from "./forge-deck-match-runner.js";
+import type { ForgeDeckSpec, ForgeGameResult } from "./forge-protocol.js";
 
 const jarPath = process.env.FORGE_BRIDGE_JAR;
 const clients: ForgeBridgeClient[] = [];
+const databases: DatabaseConnection[] = [];
+
+function redDeck(name = "Krenko from Asphodel"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      {
+        name: "Krenko, Tin Street Kingpin",
+        quantity: 1,
+        section: "commander",
+      },
+      { name: "Mountain", quantity: 10, section: "mainboard" },
+      { name: "Lightning Bolt", quantity: 5, section: "mainboard" },
+      { name: "Goblin Piker", quantity: 5, section: "mainboard" },
+    ],
+  };
+}
+
+function greenDeck(name = "Ayula from Asphodel"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      {
+        name: "Ayula, Queen Among Bears",
+        quantity: 1,
+        section: "commander",
+      },
+      { name: "Forest", quantity: 10, section: "mainboard" },
+      { name: "Grizzly Bears", quantity: 10, section: "mainboard" },
+    ],
+  };
+}
+
+function assertTerminalDeckMatch(result: ForgeGameResult): void {
+  assert.match(result.gameId, /^forge-game-\d+$/);
+  assert.equal(result.format, "commander");
+  assert.equal(result.gameOver, true);
+  assert.ok(result.turns > 0);
+  assert.ok(result.draw || result.winnerId !== null);
+  assert.equal(result.commanderRulesActive, true);
+  assert.deepEqual(
+    result.players.map((player) => player.deckName),
+    ["Krenko from Asphodel", "Ayula from Asphodel"],
+  );
+  for (const player of result.players) {
+    assert.equal(player.ai, true);
+    assert.equal(player.controllerClass, "forge.ai.PlayerControllerAi");
+    assert.equal(player.startingLife, 40);
+    assert.equal(player.commanders.length, 1);
+    assert.equal(player.commandersInCommandZone, true);
+  }
+}
 
 function createClient(): ForgeBridgeClient {
   assert.ok(jarPath, "FORGE_BRIDGE_JAR must point to the built bridge jar");
@@ -18,6 +75,7 @@ function createClient(): ForgeBridgeClient {
 
 afterEach(async () => {
   await Promise.all(clients.splice(0).map((client) => client.stop()));
+  databases.splice(0).forEach((database) => database.close());
 });
 
 describe("ForgeBridgeClient integration", () => {
@@ -87,6 +145,148 @@ describe("ForgeBridgeClient integration", () => {
     assert.deepEqual(result.symbols, ["R"]);
     assert.equal(result.forgeClass, "forge.card.MagicColor");
     assert.equal(result.sourceModule, "forge-core");
+  });
+
+  it("builds and inspects a real Forge Deck with exact-name card resolution", async () => {
+    const client = createClient();
+    await client.start();
+
+    const result = await client.request({
+      type: "inspect_deck",
+      deck: {
+        sourceDeckId: 91,
+        name: "Exact name resolution",
+        cards: [
+          {
+            name: "Krenko, Tin Street Kingpin",
+            quantity: 1,
+            section: "commander",
+          },
+          { name: "Mountain", quantity: 1, section: "mainboard" },
+          { name: "Forest", quantity: 1, section: "mainboard" },
+          { name: "Lightning Bolt", quantity: 1, section: "mainboard" },
+          { name: "Grizzly Bears", quantity: 1, section: "mainboard" },
+          {
+            name: "Ayula, Queen Among Bears",
+            quantity: 1,
+            section: "mainboard",
+          },
+          { name: "Ajani's Pridemate", quantity: 1, section: "mainboard" },
+        ],
+      },
+    });
+
+    assert.deepEqual(result, {
+      name: "Exact name resolution",
+      totalCards: 7,
+      mainboardCards: 6,
+      commanderCards: 1,
+      commanders: ["Krenko, Tin Street Kingpin"],
+      resolvedUniqueCards: 7,
+    });
+  });
+
+  it("accumulates missing Forge cards and never returns a partial deck", async () => {
+    const client = createClient();
+    await client.start();
+
+    await assert.rejects(
+      client.request({
+        type: "inspect_deck",
+        deck: {
+          name: "Missing cards",
+          cards: [
+            {
+              name: "Krenko, Tin Street Kingpin",
+              quantity: 1,
+              section: "commander",
+            },
+            { name: "Mountain", quantity: 10, section: "mainboard" },
+            {
+              name: "Definitely Missing Alpha",
+              quantity: 1,
+              section: "mainboard",
+            },
+            {
+              name: "Definitely Missing Beta",
+              quantity: 1,
+              section: "mainboard",
+            },
+            {
+              name: "Delver of Secrets // Insectile Aberration",
+              quantity: 1,
+              section: "mainboard",
+            },
+          ],
+        },
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof ForgeBridgeError);
+        assert.equal(error.code, "FORGE_CARDS_NOT_FOUND");
+        assert.deepEqual(error.details, {
+          cards: [
+            "Definitely Missing Alpha",
+            "Definitely Missing Beta",
+            "Delver of Secrets // Insectile Aberration",
+          ],
+        });
+        return true;
+      },
+    );
+  });
+
+  it("runs a real Forge AI match from two deck specs", async () => {
+    const client = createClient();
+    await client.start();
+
+    const result = await client.request({
+      type: "run_deck_match",
+      format: "commander",
+      seed: 12_345,
+      timeoutSeconds: 30,
+      decks: [redDeck(), greenDeck()],
+    });
+
+    assertTerminalDeckMatch(result);
+  });
+
+  it("runs Deck Library imports from SQLite through Forge to a terminal game", async () => {
+    const database = await createTestDatabase();
+    databases.push(database);
+    const deckService = new DeckService(database.db, new FakeCardProvider());
+    const red = await deckService.createDeck(
+      "Krenko from Asphodel",
+      `Commander
+1x Krenko, Tin Street Kingpin
+
+Mainboard
+10x Mountain
+5x Lightning Bolt
+5x Goblin Piker`,
+    );
+    const green = await deckService.createDeck(
+      "Ayula from Asphodel",
+      `Commander
+1x Ayula, Queen Among Bears
+
+Mainboard
+10x Forest
+10x Grizzly Bears`,
+    );
+
+    const client = createClient();
+    await client.start();
+    const runner = new ForgeDeckMatchRunner(deckService, client);
+    const result = await runner.runDeckMatchByIds(red.id, green.id, {
+      seed: 12_345,
+      timeoutSeconds: 30,
+    });
+
+    assertTerminalDeckMatch(result);
+    assert.deepEqual(
+      result.players.map((player) => player.commanders),
+      [["Krenko, Tin Street Kingpin"], ["Ayula, Queen Among Bears"]],
+    );
   });
 
   it("runs a real Commander game between two Forge AI players", async () => {
@@ -159,7 +359,7 @@ describe("ForgeBridgeClient integration", () => {
     assert.ok(forgeLogs.length > 0);
   });
 
-  it("returns a structured game timeout without killing the JVM", async () => {
+  it("runs a new real deck match in the same JVM after a game timeout", async () => {
     const client = createClient();
     await client.start();
 
@@ -173,9 +373,14 @@ describe("ForgeBridgeClient integration", () => {
       (error: unknown) =>
         error instanceof ForgeBridgeError && error.code === "GAME_TIMEOUT",
     );
-    assert.deepEqual(await client.request({ type: "ping" }), {
-      message: "pong",
+    const recovered = await client.request({
+      type: "run_deck_match",
+      format: "commander",
+      seed: 12_345,
+      timeoutSeconds: 30,
+      decks: [redDeck(), greenDeck()],
     });
+    assertTerminalDeckMatch(recovered);
   });
 
   it("stops cleanly and rejects requests after shutdown", async () => {

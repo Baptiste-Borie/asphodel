@@ -7,6 +7,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import forge.card.MagicColor;
+import forge.deck.Deck;
+import forge.item.PaperCard;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -15,6 +17,7 @@ import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -76,8 +79,24 @@ public final class BridgeMain {
                 case "engine_info" -> success(requestId, "engine_info", engineInfo());
                 case "forge_color_identity" -> handleColorIdentity(requestId, request);
                 case "run_test_game" -> handleRunTestGame(requestId, request);
+                case "inspect_deck" -> handleInspectDeck(requestId, request);
+                case "run_deck_match" -> handleRunDeckMatch(requestId, request);
                 default -> error(requestId, "UNKNOWN_COMMAND", "Unknown command: " + type, null);
             };
+        } catch (ForgeDeckFactory.CardsNotFoundException exception) {
+            return error(
+                    requestId,
+                    "FORGE_CARDS_NOT_FOUND",
+                    exception.getMessage(),
+                    Map.of("cards", exception.cards())
+            );
+        } catch (ForgeDeckFactory.UnsupportedCommanderConfigurationException exception) {
+            return error(
+                    requestId,
+                    "UNSUPPORTED_COMMANDER_CONFIGURATION",
+                    exception.getMessage(),
+                    Map.of("commanderCards", exception.commanderCards())
+            );
         } catch (ForgeGameRunner.GameTimeoutException exception) {
             return error(requestId, "GAME_TIMEOUT", exception.getMessage(), null);
         } catch (IllegalArgumentException exception) {
@@ -96,15 +115,145 @@ public final class BridgeMain {
         }
 
         long seed = getLong(request, "seed", 12345L);
-        int timeoutSeconds = Math.toIntExact(getLong(request, "timeoutSeconds", 30L));
-        if (timeoutSeconds < 1 || timeoutSeconds > 120) {
-            return error(requestId, "INVALID_PAYLOAD", "timeoutSeconds must be between 1 and 120.", null);
-        }
+        int timeoutSeconds = getTimeoutSeconds(request);
+
+        ForgeDeckFactory factory = new ForgeDeckFactory();
+        boolean commander = format.equalsIgnoreCase("commander");
+        Deck redDeck = factory.build(redFixture(commander), commander);
+        Deck greenDeck = factory.build(greenFixture(commander), commander);
+        Map<String, Object> result = new LinkedHashMap<>(new ForgeGameRunner().run(
+                format,
+                seed,
+                timeoutSeconds,
+                redDeck,
+                greenDeck
+        ));
+        result.put("fixtureConformance", commander
+                ? "engine-test fixture; duplicate cards and fewer than 100 cards"
+                : "engine-test fixture; fewer than 60 cards");
+        result.put("cardEvidence", lightningBoltEvidence(
+                ForgeDataRepository.instance().requireCard("Lightning Bolt")
+        ));
+        result.put("forgeClasses", Map.of(
+                "game", forge.game.Game.class.getName(),
+                "match", forge.game.Match.class.getName(),
+                "aiPlayer", forge.ai.LobbyPlayerAi.class.getName()
+        ));
 
         return success(
                 requestId,
                 "run_test_game",
-                new ForgeGameRunner().run(format, seed, timeoutSeconds)
+                result
+        );
+    }
+
+    private static Map<String, Object> handleInspectDeck(String requestId, JsonObject request) {
+        ForgeDeckFactory factory = new ForgeDeckFactory();
+        Deck deck = factory.build(parseDeckSpec(request.get("deck")));
+        return success(requestId, "inspect_deck", factory.inspect(deck));
+    }
+
+    private static Map<String, Object> handleRunDeckMatch(String requestId, JsonObject request) {
+        String format = getString(request, "format");
+        if (format == null || !format.equalsIgnoreCase("commander")) {
+            return error(
+                    requestId,
+                    "INVALID_PAYLOAD",
+                    "run_deck_match format must be commander in V1b.",
+                    null
+            );
+        }
+
+        JsonElement decksElement = request.get("decks");
+        if (decksElement == null || !decksElement.isJsonArray()
+                || decksElement.getAsJsonArray().size() != 2) {
+            return error(
+                    requestId,
+                    "INVALID_PAYLOAD",
+                    "run_deck_match requires exactly two decks.",
+                    null
+            );
+        }
+
+        long seed = getLong(request, "seed", 12345L);
+        int timeoutSeconds = getTimeoutSeconds(request);
+        ForgeDeckFactory factory = new ForgeDeckFactory();
+        Deck playerOneDeck = factory.build(parseDeckSpec(decksElement.getAsJsonArray().get(0)));
+        Deck playerTwoDeck = factory.build(parseDeckSpec(decksElement.getAsJsonArray().get(1)));
+
+        return success(
+                requestId,
+                "run_deck_match",
+                new ForgeGameRunner().run(
+                        format,
+                        seed,
+                        timeoutSeconds,
+                        playerOneDeck,
+                        playerTwoDeck
+                )
+        );
+    }
+
+    private static ForgeDeckFactory.DeckSpec parseDeckSpec(JsonElement element) {
+        if (element == null || !element.isJsonObject()) {
+            throw new IllegalArgumentException("deck must be an object.");
+        }
+        try {
+            return JSON.fromJson(element, ForgeDeckFactory.DeckSpec.class);
+        } catch (JsonParseException exception) {
+            throw new IllegalArgumentException("deck is not a valid ForgeDeckSpec.", exception);
+        }
+    }
+
+    private static int getTimeoutSeconds(JsonObject request) {
+        long timeoutSeconds = getLong(request, "timeoutSeconds", 30L);
+        if (timeoutSeconds < 1 || timeoutSeconds > 120) {
+            throw new IllegalArgumentException("timeoutSeconds must be between 1 and 120.");
+        }
+        return (int) timeoutSeconds;
+    }
+
+    private static ForgeDeckFactory.DeckSpec redFixture(boolean includeCommander) {
+        List<ForgeDeckFactory.CardSpec> cards = new ArrayList<>(List.of(
+                new ForgeDeckFactory.CardSpec("Mountain", 10, "mainboard"),
+                new ForgeDeckFactory.CardSpec("Lightning Bolt", 5, "mainboard"),
+                new ForgeDeckFactory.CardSpec("Goblin Piker", 5, "mainboard")
+        ));
+        if (includeCommander) {
+            cards.add(new ForgeDeckFactory.CardSpec(
+                    "Krenko, Tin Street Kingpin",
+                    1,
+                    "commander"
+            ));
+        }
+        return new ForgeDeckFactory.DeckSpec("Asphodel Red Fixture", cards);
+    }
+
+    private static ForgeDeckFactory.DeckSpec greenFixture(boolean includeCommander) {
+        List<ForgeDeckFactory.CardSpec> cards = new ArrayList<>(List.of(
+                new ForgeDeckFactory.CardSpec("Forest", 10, "mainboard"),
+                new ForgeDeckFactory.CardSpec("Grizzly Bears", 10, "mainboard")
+        ));
+        if (includeCommander) {
+            cards.add(new ForgeDeckFactory.CardSpec(
+                    "Ayula, Queen Among Bears",
+                    1,
+                    "commander"
+            ));
+        }
+        return new ForgeDeckFactory.DeckSpec("Asphodel Green Fixture", cards);
+    }
+
+    private static Map<String, Object> lightningBoltEvidence(PaperCard card) {
+        List<String> abilities = new ArrayList<>();
+        card.getRules().getMainPart().getAbilities().forEach(abilities::add);
+        return Map.of(
+                "name", card.getName(),
+                "manaCost", card.getRules().getManaCost().toString(),
+                "oracleText", card.getRules().getOracleText(),
+                "scriptAbilities", abilities,
+                "scriptAbilityCount", abilities.size(),
+                "rulesClass", card.getRules().getClass().getName()
         );
     }
 

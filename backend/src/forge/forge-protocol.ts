@@ -1,5 +1,17 @@
 export const FORGE_PROTOCOL_VERSION = 1 as const;
 
+export interface ForgeDeckCardSpec {
+  name: string;
+  quantity: number;
+  section: "commander" | "mainboard";
+}
+
+export interface ForgeDeckSpec {
+  sourceDeckId?: number;
+  name: string;
+  cards: ForgeDeckCardSpec[];
+}
+
 export interface ForgeRequestMap {
   ping: { type: "ping" };
   engine_info: { type: "engine_info" };
@@ -10,11 +22,23 @@ export interface ForgeRequestMap {
     seed?: number;
     timeoutSeconds?: number;
   };
+  inspect_deck: {
+    type: "inspect_deck";
+    deck: ForgeDeckSpec;
+  };
+  run_deck_match: {
+    type: "run_deck_match";
+    format: "commander";
+    seed?: number;
+    timeoutSeconds?: number;
+    decks: [ForgeDeckSpec, ForgeDeckSpec];
+  };
 }
 
 export interface ForgeTestGamePlayer {
   id: string;
   name: string;
+  deckName: string;
   startingLife: number;
   ai: boolean;
   controllerClass: string;
@@ -27,6 +51,28 @@ export interface ForgeTestGamePlayer {
   };
   commanders: string[];
   commandersInCommandZone: boolean;
+}
+
+export interface ForgeDeckInspection {
+  name: string;
+  totalCards: number;
+  mainboardCards: number;
+  commanderCards: number;
+  commanders: string[];
+  resolvedUniqueCards: number;
+}
+
+export interface ForgeGameResult {
+  gameId: string;
+  format: "commander" | "constructed";
+  seed: number;
+  players: ForgeTestGamePlayer[];
+  winnerId: string | null;
+  turns: number;
+  gameOver: boolean;
+  draw: boolean;
+  terminalReason: string;
+  commanderRulesActive: boolean;
 }
 
 export interface ForgeResultMap {
@@ -71,6 +117,8 @@ export interface ForgeResultMap {
       aiPlayer: string;
     };
   };
+  inspect_deck: ForgeDeckInspection;
+  run_deck_match: ForgeGameResult;
 }
 
 export type ForgeRequestType = keyof ForgeRequestMap;

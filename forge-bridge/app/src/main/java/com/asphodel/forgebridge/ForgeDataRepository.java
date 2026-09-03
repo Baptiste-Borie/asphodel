@@ -78,13 +78,18 @@ final class ForgeDataRepository {
     }
 
     PaperCard requireCard(String name) {
+        PaperCard card = findCard(name);
+        if (card == null) {
+            throw new IllegalArgumentException("Forge card script could not be loaded: " + name);
+        }
+        return card;
+    }
+
+    PaperCard findCard(String name) {
         PaperCard card = staticData.getCommonCards().getCard(name);
         if (card == null) {
             staticData.attemptToLoadCard(name);
             card = staticData.getCommonCards().getCard(name);
-        }
-        if (card == null) {
-            throw new IllegalArgumentException("Forge card script could not be loaded: " + name);
         }
         return card;
     }
