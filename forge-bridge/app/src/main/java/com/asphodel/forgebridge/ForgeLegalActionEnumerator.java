@@ -20,6 +20,24 @@ import java.util.Set;
  * <p>This class deliberately contains no scoring, ordering preference, or call
  * to {@code AiController.canPlaySa}. It only answers whether a supported action
  * can be attempted in the current game state.</p>
+ *
+ * <p>Supported primary action types are {@code play_land}, {@code cast_spell},
+ * and {@code activate_ability}. Mana abilities, triggered abilities, and other
+ * special actions are never classified as one of these and are therefore never
+ * exposed. Alternative costs (e.g. Flashback) are mechanically exposed because
+ * {@code Card.getAllPossibleAbilities} enumerates them as separate
+ * {@link SpellAbility} instances that pass through the same restriction and
+ * affordability checks as a normal cast, but this is PASS WITH LIMITATION —
+ * it is not proven correct end-to-end by a dedicated test. Mandatory
+ * additional costs (e.g. sacrifice) are accounted for by
+ * {@link ComputerUtilCost#canPayCost} for affordability, but the actual
+ * choice of what to pay remains an inherited Forge AI secondary decision, not
+ * a primary Node choice. Optional additional costs (e.g. Kicker) are not
+ * modeled as distinct primary actions at all; Forge asks the controller for
+ * them only during execution, which is likewise an inherited Forge AI
+ * secondary decision. X costs are excluded outright (see {@link #isPlayable})
+ * because a value must be chosen before affordability can be established, and
+ * that primary choice is out of scope for V1d.</p>
  */
 final class ForgeLegalActionEnumerator {
     List<Candidate> enumerate(Game game, forge.game.player.Player player) {
@@ -48,8 +66,17 @@ final class ForgeLegalActionEnumerator {
     }
 
     /**
-     * Scope candidate discovery to the external player's own information.
-     * Shared opponent zones are intentionally never scanned.
+     * Scope candidate discovery to the external player's own visible information.
+     *
+     * <p>Only zones whose card identities are public to their controller are
+     * scanned. Opponent zones are never scanned, and — deliberately, even for
+     * the external player's own side — {@link ZoneType#Library} is never
+     * scanned either: the top card of a library is hidden information until
+     * something reveals it, so enumerating abilities off of it (as V1c did)
+     * would leak identity that Forge itself would not disclose. Play from
+     * library is therefore NOT IMPLEMENTED in V1d; it requires an explicit
+     * model of Forge's play/reveal permissions before it can be exposed
+     * safely, which is deferred to a future pass.</p>
      */
     private static Set<Card> visibleCandidateCards(forge.game.player.Player player) {
         Set<Card> cards = new LinkedHashSet<>();
@@ -58,9 +85,6 @@ final class ForgeLegalActionEnumerator {
         cards.addAll(player.getCardsIn(ZoneType.Command));
         cards.addAll(player.getCardsIn(ZoneType.Graveyard));
         cards.addAll(player.getCardsIn(ZoneType.Exile));
-        if (!player.getCardsIn(ZoneType.Library).isEmpty()) {
-            cards.add(player.getCardsIn(ZoneType.Library).get(0));
-        }
         return cards;
     }
 

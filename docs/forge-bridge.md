@@ -1,12 +1,15 @@
-# Asphodel Forge Bridge — External Controller V1c
+# Asphodel Forge Bridge — Primary Legal Actions V1d
 
 ## Scope
 
 This bridge is an isolated validation seam between the Node.js backend and the
-original Java [Card-Forge/forge](https://github.com/Card-Forge/forge) engine. V1c
+original Java [Card-Forge/forge](https://github.com/Card-Forge/forge) engine. It
 loads real Forge card scripts, converts Deck Library views into real
 `forge.deck.Deck` instances, and supports either two normal Forge AI controllers
-or an asynchronous match with one hybrid Asphodel controller. The integration
+or an asynchronous match with one hybrid Asphodel controller. As of V1d, the
+Asphodel controller's primary-action decisions are driven by real, enumerated
+Forge legal actions instead of a single Forge AI suggestion (see
+[Primary Legal Actions V1d](#primary-legal-actions-v1d) below). The integration
 is backend-only: it adds no product Game HTTP API, persistent Game model, full
 human controller, or frontend behavior.
 
@@ -147,7 +150,16 @@ deferred.
 | Post-timeout second game | PASS | A new `run_deck_match` terminates normally in the same JVM after `GAME_TIMEOUT`. |
 | Commander legality | NOT TESTED | Deliberately non-legal small fixtures keep engine tests fast. |
 
-## External Controller V1c
+## External Controller V1c (historical)
+
+> **Superseded for primary-action selection.** This section documents the V1c
+> design as originally shipped. As of V1d, `PlayerControllerAsphodel` no longer
+> calls `super.chooseSpellAbilityToPlay()` and no longer exposes a single Forge
+> AI suggestion; see [Primary Legal Actions V1d](#primary-legal-actions-v1d)
+> below for the current flow and DTO shape. The session/protocol scaffolding
+> described here (`ExternalMatchManager`, `ExternalMatchSession`,
+> `AsphodelDecisionBroker`, ping/get/submit/cancel responsiveness) is unchanged
+> and still applies.
 
 V1c adds asynchronous, in-memory match sessions without unsolicited NDJSON
 events:
@@ -265,6 +277,208 @@ while an external session is active, protecting Forge's global `MyRandom`.
 V1c exposes only PASS or the single recommendation returned by Forge AI. It
 does not enumerate all legal Magic actions and does not scan zones or abilities
 to imitate such an API. Full legal Asphodel action candidates remain V1d work.
+
+## Primary Legal Actions V1d
+
+V1d replaces V1c's single Forge-AI-suggestion primary action with a real,
+enumerated set of legal primary actions. The flow is:
+
+```text
+Forge priority
+      |
+      v
+ForgeLegalActionEnumerator (Card.getAllPossibleAbilities, restrictions,
+                             affordability, target feasibility)
+      |
+      v
+supported primary actions: PASS / PLAY LAND / CAST SPELL / ACTIVATE ABILITY
+      |
+      v
+AsphodelDecisionBroker (pending decision, opaque actionId per candidate)
+      |
+      v
+Node chooses actionId
+      |
+      v
+exact retained SpellAbility object (no re-lookup, no re-derivation)
+      |
+      v
+Forge executes (targets/modes/mana/X/sacrifices/combat/triggers remain
+                 inherited PlayerControllerAi secondary decisions)
+```
+
+`PlayerControllerAsphodel.chooseSpellAbilityToPlay()` no longer calls
+`super.chooseSpellAbilityToPlay()` at all for primary selection: it asks
+`ForgeLegalActionEnumerator.enumerate(game, player)` for every supported,
+currently-legal candidate on the acting player's own visible cards, and hands
+the candidates to `AsphodelDecisionBroker.requestPriorityDecision(...)`, which
+publishes them (plus a synthetic PASS entry) as one `PendingDecision` and waits
+on a `CompletableFuture`. No Forge AI scoring, ordering preference, or
+`AiController.chooseSpellAbilityToPlay()`/`SpellAbilityPicker` strategic
+selection is consulted to choose the primary action — an objectively bad but
+legal play (e.g. casting a removal spell with no useful target available) is
+enumerated exactly like a good one. PASS is represented as `null`: the broker
+returns `null` from `chooseSpellAbilityToPlay()` when the chosen action has no
+candidate, which `PhaseHandler` interprets as passing priority; returning an
+empty `List<SpellAbility>` is deliberately avoided because Forge's
+`PhaseHandler` can re-enter priority repeatedly against an empty list instead
+of advancing.
+
+The retained `SpellAbility` object accepted by the Node is the exact object
+Forge produced during enumeration — there is no re-lookup or re-derivation
+step between selection and execution. `playChosenSpellAbility(SpellAbility)`
+resolves targets via the inherited `PlayerControllerAi.chooseTargetsFor(...)`
+when the ability requires them (`ForgeLegalActionEnumerator.requiresTargets`),
+then delegates execution to `super.playChosenSpellAbility(ability)` and records
+the result by object identity through
+`AsphodelDecisionBroker.recordPrimaryActionResult(...)`. Every other secondary
+decision Forge asks the controller for during that execution — modes, mana
+payment, X values, sacrifice/additional-cost choices, optional additional
+costs (e.g. Kicker), combat, and triggered-ability decisions — falls through
+to the inherited `PlayerControllerAi` untouched. `PlayerControllerAsphodel`
+still extends `PlayerControllerAi` and `isAI()` is unchanged (`true`); V1d
+externalizes only the primary priority decision.
+
+### Legal action enumeration
+
+`ForgeLegalActionEnumerator.enumerate(Game, Player)` scans exactly these zones
+on the acting player's own side — `Hand`, `Battlefield`, `Command`,
+`Graveyard`, `Exile` — and, for every card, every ability returned by
+`Card.getAllPossibleAbilities(player, true)`. `Library` is deliberately never
+scanned, including the acting player's own library: the top card of a library
+is hidden information until something reveals it, so treating it as visible
+(as an earlier V1d draft briefly did) would leak identity Forge itself would
+not disclose. Play from library is NOT IMPLEMENTED until a future pass
+explicitly models Forge's play/reveal permissions. Opponent zones are never
+scanned at all — the enumerator only ever runs for the acting player, so
+opponent hidden hand/library contents cannot surface by construction.
+
+Each candidate ability is classified into one of exactly three supported
+types — `play_land` (`SpellAbility.isLandAbility()`), `cast_spell`
+(`SpellAbility.isSpell()`), `activate_ability` (activated, non-mana,
+non-trigger) — or dropped. Mana abilities and triggered abilities are excluded
+by construction of `classify(...)`, and any ability type outside these three is
+simply never classified and therefore never exposed. No strategic filtering is
+applied (no "wait for later," "save removal," or creature-quality evaluation);
+an objectively bad but legal action is enumerable like any other.
+
+A classified candidate must then pass real Forge feasibility checks, in order,
+with no AI heuristic among them:
+
+1. `Cost.hasXInAnyCostPart()` — X-cost abilities are excluded outright (see
+   Cost/variant support below).
+2. `SpellAbility.checkRestrictions(card, player)` — Forge's own restriction
+   checks (e.g. sorcery-speed-only, "activate only once per turn").
+3. `SpellAbility.isLegalAfterStack()` and `SpellAbility.canPlay()` — Forge's
+   own timing/legality checks, including instant-speed vs. sorcery-speed
+   windows. Timing is never reimplemented by hand in the bridge.
+4. `ComputerUtilCost.canPayCost(ability, player, false)` — real affordability
+   against the player's actual current resources, not a heuristic "should
+   pay" judgment.
+5. `ComputerUtilAbility.isFullyTargetable(ability)` — target feasibility, i.e.
+   whether legal targets exist at all; the specific target is not chosen here.
+
+Every candidate that survives becomes one `AsphodelDecisionBroker.ExternalAction`
+carrying an opaque `actionId`, a `cardRef` derived from `Card.getId()` (distinct
+per physical card instance, so two cards sharing a name still get distinct
+`cardRef`/`actionId` pairs), `cardName`, `sourceZone`, `label`, `abilityText`,
+`manaCost`, and `requiresTargets`. Commanders are never special-cased in the
+enumerator: an affordable commander in the command zone surfaces as an ordinary
+`cast_spell` candidate with `sourceZone: "command"` purely because
+`Card.getAllPossibleAbilities` and the same restriction/affordability chain
+produce it — the same code path as any other card.
+
+### Primary action DTO
+
+```ts
+type ForgeExternalAction =
+  | {
+      actionId: string;
+      type: "pass";
+      label: string;
+      cardRef: null;
+      cardName: null;
+      sourceZone: null;
+      abilityText: null;
+      manaCost: null;
+      requiresTargets: false;
+    }
+  | {
+      actionId: string;
+      type: "play_land" | "cast_spell" | "activate_ability";
+      label: string;
+      cardRef: string;
+      cardName: string;
+      sourceZone:
+        | "hand" | "battlefield" | "command" | "graveyard" | "exile"
+        | "library" | "other";
+      abilityText: string | null;
+      manaCost: string | null;
+      requiresTargets: boolean;
+    };
+```
+
+No raw Forge `Game`, `Player`, `Card`, or `SpellAbility` crosses the process
+boundary; the retained `SpellAbility` stays inside the JVM, addressed only by
+`actionId`. `sourceZone: "library"` and `"other"` are represented in the wire
+type for forward compatibility but are never produced by the current
+enumerator, since the library is not scanned.
+
+### Cost and variant support
+
+| Variant | Status | Notes |
+| --- | --- | --- |
+| Normal costs | PASS | Checked via `ComputerUtilCost.canPayCost` against real player resources. |
+| Alternative costs (e.g. Flashback) | PASS WITH LIMITATION | Mechanically exposed as separate `SpellAbility` instances by `Card.getAllPossibleAbilities`, filtered through the same restriction/affordability chain, but not proven correct end-to-end by a dedicated test. |
+| Mandatory additional costs (e.g. sacrifice) | PASS WITH LIMITATION | Affordability is checked by `ComputerUtilCost.canPayCost`; the actual choice of what to pay is an inherited `PlayerControllerAi` secondary decision, not externalized. |
+| Optional additional costs (e.g. Kicker) | PASS WITH LIMITATION | Not modeled as a distinct primary action; Forge asks the controller during execution, which falls through to inherited `PlayerControllerAi`. |
+| X costs | NOT IMPLEMENTED | Excluded outright (`Cost.hasXInAnyCostPart()`) because a value must be chosen before affordability can be established, and that primary choice is out of scope for V1d. Forge AI is not used to manufacture a value. |
+
+### Execution and secondary decisions
+
+Actions produced by `ForgeLegalActionEnumerator` are execution-ready without
+any Forge AI primary-selection step: the Node's chosen `actionId` maps
+directly back to the retained `SpellAbility`, which is handed straight to
+`playChosenSpellAbility(...)`. For abilities that require targets, V1d still
+delegates target selection to the inherited `PlayerControllerAi` — this is
+explicit and intentional, not an oversight. The same applies to every other
+secondary decision Forge requests during execution: modes, mana payment, X
+values, sacrifice/additional-cost choices, combat, and triggered-ability
+decisions are all inherited `PlayerControllerAi` behavior and are not
+externalized in V1d.
+
+### Capability table
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Pass priority | PASS | Returns `null` from `chooseSpellAbilityToPlay()`; `PhaseHandler` interprets this as pass. An empty list is deliberately avoided. |
+| Ordinary land play | PASS | `play_land`, verified end to end: exposed, selected, played, `landsPlayed` counter updates, and the played card's action disappears from the next decision. |
+| Ordinary spell | PASS | `cast_spell`, verified end to end including `spellsCast` counter update. |
+| Activated non-mana ability | PASS | `activate_ability`, verified end to end including `abilitiesActivated` counter update. |
+| Commander cast | PASS | Surfaces as an ordinary `cast_spell` with `sourceZone: "command"` once affordable; not special-cased in the enumerator. |
+| Timing restrictions | PASS | Verified via Forge's own `isLegalAfterStack()`/`canPlay()`: an instant is exposed on the opponent's turn, a sorcery-speed spell is not. No phase logic is reimplemented by hand. |
+| Cost affordability | PASS | `ComputerUtilCost.canPayCost` filters out a visible, unaffordable card even when it is the only card in hand. |
+| Multiple legal actions | PASS | A single decision can expose more than one real supported action (e.g. several lands), not just one AI-preferred pick. |
+| Duplicate card identity | PASS | Two cards sharing a name get distinct `cardRef` (from `Card.getId()`) and distinct `actionId`. |
+| Hidden-info safety | PASS | Opponent zones are never scanned; the acting player's own `Library` (including its top card) is never scanned either. Regression-tested. |
+| Play from library | NOT IMPLEMENTED | Deferred until Forge's play/reveal permissions and visibility are explicitly modeled. |
+| Alternative costs | PASS WITH LIMITATION | See Cost and variant support above. |
+| Optional costs | PASS WITH LIMITATION | See Cost and variant support above. |
+| X costs | NOT IMPLEMENTED | See Cost and variant support above. |
+| Mana abilities | NOT EXPOSED | Excluded by `classify(...)`; mana payment remains an inherited Forge AI secondary decision. |
+| Targets external | NOT IMPLEMENTED | Delegated to inherited `PlayerControllerAi.chooseTargetsFor(...)`. |
+| Modes external | NOT IMPLEMENTED | Inherited Forge AI secondary decision. |
+| Combat external | NOT IMPLEMENTED | Inherited Forge AI secondary decision. |
+| Full legal-action completeness | PASS WITH LIMITATION | Proven for the four supported action types under the tested fixtures; not claimed as an exhaustive Magic legal-action API. |
+
+### Progress metrics
+
+`AsphodelDecisionBroker` tracks `decisionsRequested`, `decisionsSubmitted`,
+`passesSubmitted`, `primaryActionsSubmitted`, `primaryActionsPlayed`,
+`landsPlayed`, `spellsCast`, and `abilitiesActivated`. There were no obsolete
+V1c "Forge suggestion" counters to remove — V1c's counters already matched
+this shape; only the meaning of "primary action" changed, from a single Forge
+AI suggestion to any enumerated candidate.
 
 ## Card database initialization
 

@@ -587,6 +587,74 @@ Mainboard
     await external.cancel(started.sessionId);
   });
 
+  it("never leaks the external player's own hidden library top card or any opponent hidden card", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(redDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+    const opponentOnlyCardNames = [
+      "Ayula, Queen Among Bears",
+      "Forest",
+      "Grizzly Bears",
+    ];
+    const seenDecisionIds = new Set<string>();
+    let decisionsInspected = 0;
+
+    // Walk enough real decisions (auto-passing) to have repeatedly rebuilt the
+    // candidate list from Hand/Battlefield/Command/Graveyard/Exile only, and
+    // assert the Library zone and the opponent's exclusive cards never surface.
+    while (decisionsInspected < 40) {
+      const snapshot = await waitForExternalSnapshot(
+        external,
+        started.sessionId,
+        (candidate) =>
+          candidate.status === "waiting_for_decision" ||
+          candidate.status === "completed",
+      );
+      if (snapshot.status === "completed") break;
+      const { pendingDecision } = snapshot;
+      if (!pendingDecision || seenDecisionIds.has(pendingDecision.decisionId)) {
+        continue;
+      }
+      seenDecisionIds.add(pendingDecision.decisionId);
+      decisionsInspected += 1;
+
+      for (const action of pendingDecision.actions) {
+        assert.notEqual(
+          action.sourceZone,
+          "library",
+          "the top card of a library is hidden information and must never " +
+            "be exposed as an action's sourceZone",
+        );
+        if (action.cardName) {
+          assert.ok(
+            !opponentOnlyCardNames.includes(action.cardName),
+            `opponent-only card "${action.cardName}" leaked into the ` +
+              "external player's own pending decision",
+          );
+        }
+      }
+
+      const pass = pendingDecision.actions.find(
+        (action) => action.type === "pass",
+      );
+      assert.ok(pass);
+      await external.submitDecision(
+        started.sessionId,
+        pendingDecision.decisionId,
+        pass.actionId,
+      );
+    }
+
+    assert.ok(decisionsInspected > 0);
+    const finalSnapshot = await external.get(started.sessionId);
+    if (finalSnapshot.status !== "completed") {
+      await external.cancel(started.sessionId);
+    }
+  });
+
   it("plays a land, invalidates its action, and filters a known unaffordable card", async () => {
     const client = createClient();
     await client.start();
@@ -700,7 +768,21 @@ Mainboard
     );
     assert.equal(played.progress.spellsCast, 1);
     assert.equal(played.progress.abilitiesActivated, 1);
-    assert.equal(played.progress.primaryActionsPlayed, 2);
+    // driveUntilAction's fallback plays ordinary lands while it searches for
+    // the commander cast and, later, the activation, so the exact total is
+    // timing-dependent. The architecturally meaningful invariant is that every
+    // primary action actually submitted (lands included) was actually played,
+    // and that the total decomposes into the three tracked action types.
+    assert.equal(
+      played.progress.primaryActionsPlayed,
+      played.progress.primaryActionsSubmitted,
+    );
+    assert.equal(
+      played.progress.primaryActionsPlayed,
+      played.progress.landsPlayed +
+        played.progress.spellsCast +
+        played.progress.abilitiesActivated,
+    );
     if (played.status !== "completed") await external.cancel(started.sessionId);
   });
 
