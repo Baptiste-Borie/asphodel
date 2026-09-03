@@ -1,0 +1,179 @@
+package com.asphodel.forgebridge;
+
+import forge.ai.ComputerUtilAbility;
+import forge.ai.ComputerUtilCost;
+import forge.game.Game;
+import forge.game.card.Card;
+import forge.game.spellability.SpellAbility;
+import forge.game.zone.Zone;
+import forge.game.zone.ZoneType;
+
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+
+/**
+ * Enumerates supported primary actions using Forge rule and feasibility APIs.
+ *
+ * <p>This class deliberately contains no scoring, ordering preference, or call
+ * to {@code AiController.canPlaySa}. It only answers whether a supported action
+ * can be attempted in the current game state.</p>
+ */
+final class ForgeLegalActionEnumerator {
+    List<Candidate> enumerate(Game game, forge.game.player.Player player) {
+        List<Candidate> candidates = new ArrayList<>();
+        for (Card card : visibleCandidateCards(player)) {
+            for (SpellAbility ability : card.getAllPossibleAbilities(player, true)) {
+                ability.setActivatingPlayer(player);
+                ActionType type = classify(ability);
+                if (type == null || !isPlayable(card, ability, player)) {
+                    continue;
+                }
+                candidates.add(new Candidate(
+                        type,
+                        ability,
+                        "card-" + card.getId(),
+                        card.getName(),
+                        sourceZone(game.getZoneOf(card)),
+                        label(type, card),
+                        shortAbilityText(ability),
+                        manaCost(ability),
+                        requiresTargets(ability)
+                ));
+            }
+        }
+        return List.copyOf(candidates);
+    }
+
+    /**
+     * Scope candidate discovery to the external player's own information.
+     * Shared opponent zones are intentionally never scanned.
+     */
+    private static Set<Card> visibleCandidateCards(forge.game.player.Player player) {
+        Set<Card> cards = new LinkedHashSet<>();
+        cards.addAll(player.getCardsIn(ZoneType.Hand));
+        cards.addAll(player.getCardsIn(ZoneType.Battlefield));
+        cards.addAll(player.getCardsIn(ZoneType.Command));
+        cards.addAll(player.getCardsIn(ZoneType.Graveyard));
+        cards.addAll(player.getCardsIn(ZoneType.Exile));
+        if (!player.getCardsIn(ZoneType.Library).isEmpty()) {
+            cards.add(player.getCardsIn(ZoneType.Library).get(0));
+        }
+        return cards;
+    }
+
+    private static ActionType classify(SpellAbility ability) {
+        if (ability.isLandAbility()) {
+            return ActionType.PLAY_LAND;
+        }
+        if (ability.isSpell()) {
+            return ActionType.CAST_SPELL;
+        }
+        if (ability.isActivatedAbility() && !ability.isManaAbility() && !ability.isTrigger()) {
+            return ActionType.ACTIVATE_ABILITY;
+        }
+        return null;
+    }
+
+    private static boolean isPlayable(
+            Card card,
+            SpellAbility ability,
+            forge.game.player.Player player
+    ) {
+        // X needs a value chosen before Forge can establish affordability. That
+        // primary choice is outside V1d, so omitting it is safer than exposing a
+        // candidate whose retained object is not execution-ready.
+        if (ability.getPayCosts() != null && ability.getPayCosts().hasXInAnyCostPart()) {
+            return false;
+        }
+        if (!ability.checkRestrictions(card, player)) {
+            return false;
+        }
+        if (!ability.isLegalAfterStack() || !ability.canPlay()) {
+            return false;
+        }
+        if (!ComputerUtilCost.canPayCost(ability, player, false)) {
+            return false;
+        }
+        return ComputerUtilAbility.isFullyTargetable(ability);
+    }
+
+    static boolean requiresTargets(SpellAbility ability) {
+        SpellAbility current = ability;
+        while (current != null) {
+            if (current.usesTargeting()) {
+                return true;
+            }
+            current = current.getSubAbility();
+        }
+        return false;
+    }
+
+    private static String sourceZone(Zone zone) {
+        if (zone == null) {
+            return "other";
+        }
+        return switch (zone.getZoneType()) {
+            case Hand -> "hand";
+            case Battlefield -> "battlefield";
+            case Command -> "command";
+            case Graveyard -> "graveyard";
+            case Exile -> "exile";
+            case Library -> "library";
+            default -> "other";
+        };
+    }
+
+    private static String label(ActionType type, Card card) {
+        return switch (type) {
+            case PLAY_LAND -> "Play land — " + card.getName();
+            case CAST_SPELL -> "Cast spell — " + card.getName();
+            case ACTIVATE_ABILITY -> "Activate ability — " + card.getName();
+        };
+    }
+
+    private static String shortAbilityText(SpellAbility ability) {
+        String text = ability.getDescription();
+        if (text == null || text.isBlank()) {
+            text = ability.getStackDescription();
+        }
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        String compact = text.replaceAll("\\s+", " ").trim();
+        return compact.length() <= 240 ? compact : compact.substring(0, 237) + "...";
+    }
+
+    private static String manaCost(SpellAbility ability) {
+        if (ability.isLandAbility() || ability.getPayCosts() == null
+                || !ability.getPayCosts().hasManaCost()) {
+            return null;
+        }
+        return ability.getPayCosts().getTotalMana().toString();
+    }
+
+    enum ActionType {
+        PLAY_LAND,
+        CAST_SPELL,
+        ACTIVATE_ABILITY;
+
+        String wireName() {
+            return name().toLowerCase(Locale.ROOT);
+        }
+    }
+
+    record Candidate(
+            ActionType type,
+            SpellAbility ability,
+            String cardRef,
+            String cardName,
+            String sourceZone,
+            String label,
+            String abilityText,
+            String manaCost,
+            boolean requiresTargets
+    ) {
+    }
+}

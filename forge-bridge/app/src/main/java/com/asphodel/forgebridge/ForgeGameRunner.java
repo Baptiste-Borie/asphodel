@@ -107,7 +107,7 @@ final class ForgeGameRunner {
         rules.setSimTimeout(simulationTimeoutSeconds);
         rules.setWarnAboutAICards(false);
 
-        Match match = new Match(rules, registeredPlayers, "Asphodel Forge Bridge V1c");
+        Match match = new Match(rules, registeredPlayers, "Asphodel Forge Bridge V1d");
         Game game = match.createGame();
         onGameCreated.accept(game);
         List<PlayerSetup> startingPlayers = new ArrayList<>();

@@ -10,6 +10,7 @@ import java.util.List;
 
 public final class PlayerControllerAsphodel extends PlayerControllerAi {
     private final AsphodelDecisionBroker decisions;
+    private final ForgeLegalActionEnumerator legalActions = new ForgeLegalActionEnumerator();
 
     PlayerControllerAsphodel(
             Game game,
@@ -23,16 +24,24 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
 
     @Override
     public List<SpellAbility> chooseSpellAbilityToPlay() {
-        List<SpellAbility> forgeSuggestion = super.chooseSpellAbilityToPlay();
-        return decisions.requestPriorityDecision(getGame(), getPlayer(), forgeSuggestion);
+        return decisions.requestPriorityDecision(
+                getGame(),
+                getPlayer(),
+                legalActions.enumerate(getGame(), getPlayer())
+        );
     }
 
     @Override
     public boolean playChosenSpellAbility(SpellAbility ability) {
-        boolean played = super.playChosenSpellAbility(ability);
-        if (played) {
-            decisions.recordSuggestionAbilityPlayed(ability);
+        // Primary selection is already complete. Target selection remains an
+        // explicitly secondary Forge AI decision in V1d.
+        if (ForgeLegalActionEnumerator.requiresTargets(ability)
+                && !super.chooseTargetsFor(ability)) {
+            decisions.recordPrimaryActionResult(ability, false);
+            return false;
         }
+        boolean played = super.playChosenSpellAbility(ability);
+        decisions.recordPrimaryActionResult(ability, played);
         return played;
     }
 }

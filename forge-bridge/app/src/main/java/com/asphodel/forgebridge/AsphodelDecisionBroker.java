@@ -1,13 +1,11 @@
 package com.asphodel.forgebridge;
 
 import forge.game.Game;
-import forge.game.card.Card;
 import forge.game.phase.PhaseHandler;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -25,17 +23,19 @@ final class AsphodelDecisionBroker {
     private final AtomicLong actionIds = new AtomicLong();
     private final Consumer<Boolean> waitingListener;
     private final Set<String> consumedDecisionIds = new LinkedHashSet<>();
-    private final Set<SpellAbility> acceptedAbilities = Collections.newSetFromMap(
-            new IdentityHashMap<>()
-    );
+    private final Map<SpellAbility, ForgeLegalActionEnumerator.ActionType> acceptedAbilities =
+            new IdentityHashMap<>();
 
     private PendingInternal pending;
     private boolean cancelled;
     private long decisionsRequested;
     private long decisionsSubmitted;
     private long passesSubmitted;
-    private long suggestionsAccepted;
-    private long suggestionAbilitiesPlayed;
+    private long primaryActionsSubmitted;
+    private long primaryActionsPlayed;
+    private long landsPlayed;
+    private long spellsCast;
+    private long abilitiesActivated;
 
     AsphodelDecisionBroker(Consumer<Boolean> waitingListener) {
         this.waitingListener = waitingListener;
@@ -44,7 +44,7 @@ final class AsphodelDecisionBroker {
     List<SpellAbility> requestPriorityDecision(
             Game game,
             Player player,
-            List<SpellAbility> forgeSuggestion
+            List<ForgeLegalActionEnumerator.Candidate> candidates
     ) {
         PendingInternal decision;
         synchronized (this) {
@@ -60,29 +60,32 @@ final class AsphodelDecisionBroker {
             List<ExternalAction> actions = new ArrayList<>();
 
             String passActionId = "action-" + actionIds.incrementAndGet();
-            choices.put(passActionId, new ActionChoice("pass", null));
+            choices.put(passActionId, new ActionChoice(null));
             actions.add(new ExternalAction(
                     passActionId,
                     "pass",
                     "Pass priority",
                     null,
-                    null
+                    null,
+                    null,
+                    null,
+                    null,
+                    false
             ));
 
-            if (forgeSuggestion != null && !forgeSuggestion.isEmpty()) {
-                List<SpellAbility> retainedSuggestion = List.copyOf(forgeSuggestion);
-                SpellAbility first = retainedSuggestion.get(0);
-                String suggestionActionId = "action-" + actionIds.incrementAndGet();
-                choices.put(
-                        suggestionActionId,
-                        new ActionChoice("forge_ai_suggestion", retainedSuggestion)
-                );
+            for (ForgeLegalActionEnumerator.Candidate candidate : candidates) {
+                String actionId = "action-" + actionIds.incrementAndGet();
+                choices.put(actionId, new ActionChoice(candidate));
                 actions.add(new ExternalAction(
-                        suggestionActionId,
-                        "forge_ai_suggestion",
-                        "Accept Forge AI suggestion",
-                        cardName(first),
-                        shortAbilityText(first)
+                        actionId,
+                        candidate.type().wireName(),
+                        candidate.label(),
+                        candidate.cardRef(),
+                        candidate.cardName(),
+                        candidate.sourceZone(),
+                        candidate.abilityText(),
+                        candidate.manaCost(),
+                        candidate.requiresTargets()
                 ));
             }
 
@@ -108,7 +111,9 @@ final class AsphodelDecisionBroker {
         waitingListener.accept(true);
         try {
             ActionChoice choice = decision.answer().get();
-            return choice.abilities();
+            return choice.candidate() == null
+                    ? null
+                    : List.of(choice.candidate().ability());
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new ExternalMatchCancelledException();
@@ -159,11 +164,14 @@ final class AsphodelDecisionBroker {
             consumedDecisionIds.add(decisionId);
             pending = null;
             decisionsSubmitted++;
-            if (choice.abilities() == null) {
+            if (choice.candidate() == null) {
                 passesSubmitted++;
             } else {
-                suggestionsAccepted++;
-                acceptedAbilities.addAll(choice.abilities());
+                primaryActionsSubmitted++;
+                acceptedAbilities.put(
+                        choice.candidate().ability(),
+                        choice.candidate().type()
+                );
             }
         }
 
@@ -180,14 +188,24 @@ final class AsphodelDecisionBroker {
                 decisionsRequested,
                 decisionsSubmitted,
                 passesSubmitted,
-                suggestionsAccepted,
-                suggestionAbilitiesPlayed
+                primaryActionsSubmitted,
+                primaryActionsPlayed,
+                landsPlayed,
+                spellsCast,
+                abilitiesActivated
         );
     }
 
-    synchronized void recordSuggestionAbilityPlayed(SpellAbility ability) {
-        if (acceptedAbilities.remove(ability)) {
-            suggestionAbilitiesPlayed++;
+    synchronized void recordPrimaryActionResult(SpellAbility ability, boolean played) {
+        ForgeLegalActionEnumerator.ActionType type = acceptedAbilities.remove(ability);
+        if (type == null || !played) {
+            return;
+        }
+        primaryActionsPlayed++;
+        switch (type) {
+            case PLAY_LAND -> landsPlayed++;
+            case CAST_SPELL -> spellsCast++;
+            case ACTIVATE_ABILITY -> abilitiesActivated++;
         }
     }
 
@@ -210,23 +228,6 @@ final class AsphodelDecisionBroker {
         return player == null ? "" : "player-" + (player.getId() + 1);
     }
 
-    private static String cardName(SpellAbility ability) {
-        Card host = ability.getHostCard();
-        return host == null ? null : host.getName();
-    }
-
-    private static String shortAbilityText(SpellAbility ability) {
-        String text = ability.getDescription();
-        if (text == null || text.isBlank()) {
-            text = ability.getStackDescription();
-        }
-        if (text == null || text.isBlank()) {
-            return null;
-        }
-        String compact = text.replaceAll("\\s+", " ").trim();
-        return compact.length() <= 240 ? compact : compact.substring(0, 237) + "...";
-    }
-
     record DecisionContext(
             int turn,
             String phase,
@@ -240,8 +241,12 @@ final class AsphodelDecisionBroker {
             String actionId,
             String type,
             String label,
+            String cardRef,
             String cardName,
-            String abilityText
+            String sourceZone,
+            String abilityText,
+            String manaCost,
+            boolean requiresTargets
     ) {
     }
 
@@ -258,12 +263,15 @@ final class AsphodelDecisionBroker {
             long decisionsRequested,
             long decisionsSubmitted,
             long passesSubmitted,
-            long suggestionsAccepted,
-            long suggestionAbilitiesPlayed
+            long primaryActionsSubmitted,
+            long primaryActionsPlayed,
+            long landsPlayed,
+            long spellsCast,
+            long abilitiesActivated
     ) {
     }
 
-    private record ActionChoice(String type, List<SpellAbility> abilities) {
+    private record ActionChoice(ForgeLegalActionEnumerator.Candidate candidate) {
     }
 
     private record PendingInternal(

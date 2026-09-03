@@ -12,6 +12,7 @@ import { ForgeDeckMatchRunner } from "./forge-deck-match-runner.js";
 import { ForgeExternalMatchClient } from "./forge-external-match-client.js";
 import type {
   ForgeDeckSpec,
+  ForgeExternalAction,
   ForgeExternalMatchSnapshot,
   ForgeGameResult,
   ForgePendingDecision,
@@ -48,6 +49,42 @@ function greenDeck(name = "Ayula from Asphodel"): ForgeDeckSpec {
       },
       { name: "Forest", quantity: 10, section: "mainboard" },
       { name: "Grizzly Bears", quantity: 10, section: "mainboard" },
+    ],
+  };
+}
+
+function ashlingDeck(name = "Ashling legal actions"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      { name: "Ashling the Pilgrim", quantity: 1, section: "commander" },
+      { name: "Mountain", quantity: 30, section: "mainboard" },
+    ],
+  };
+}
+
+function timingDeck(name = "Timing restrictions"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      {
+        name: "Krenko, Tin Street Kingpin",
+        quantity: 1,
+        section: "commander",
+      },
+      { name: "Mountain", quantity: 20, section: "mainboard" },
+      { name: "Lightning Bolt", quantity: 20, section: "mainboard" },
+      { name: "Goblin Piker", quantity: 20, section: "mainboard" },
+    ],
+  };
+}
+
+function unaffordableDeck(name = "Insufficient mana"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      { name: "Ashling the Pilgrim", quantity: 1, section: "commander" },
+      { name: "Goblin Piker", quantity: 20, section: "mainboard" },
     ],
   };
 }
@@ -111,37 +148,42 @@ async function waitForDecision(
   };
 }
 
-async function driveUntilSuggestion(
+async function driveUntilAction(
   external: ForgeExternalMatchClient,
   sessionId: string,
+  predicate: (action: ForgeExternalAction) => boolean,
+  fallback: (decision: ForgePendingDecision) => ForgeExternalAction =
+    (decision) =>
+      decision.actions.find((action) => action.type === "play_land") ??
+      decision.actions.find((action) => action.type === "pass")!,
 ): Promise<{
   snapshot: ForgeExternalMatchSnapshot;
   decision: ForgePendingDecision;
-  actionId: string;
+  action: ForgeExternalAction;
 }> {
-  for (let index = 0; index < 500; index += 1) {
+  let latest: ForgePendingDecision | undefined;
+  for (let index = 0; index < 1_000; index += 1) {
     const snapshot = await waitForDecision(external, sessionId);
-    const suggestion = snapshot.pendingDecision.actions.find(
-      (action) => action.type === "forge_ai_suggestion",
-    );
-    if (suggestion) {
+    latest = snapshot.pendingDecision;
+    const action = snapshot.pendingDecision.actions.find(predicate);
+    if (action) {
       return {
         snapshot,
         decision: snapshot.pendingDecision,
-        actionId: suggestion.actionId,
+        action,
       };
     }
-    const pass = snapshot.pendingDecision.actions.find(
-      (action) => action.type === "pass",
-    );
-    assert.ok(pass);
+    const chosen = fallback(snapshot.pendingDecision);
+    assert.ok(chosen);
     await external.submitDecision(
       sessionId,
       snapshot.pendingDecision.decisionId,
-      pass.actionId,
+      chosen.actionId,
     );
   }
-  throw new Error("Forge AI did not produce a suggestion in 500 decisions.");
+  throw new Error(
+    `Forge did not expose the requested primary action: ${JSON.stringify(latest)}`,
+  );
 }
 
 async function autoDriveExternalMatch(
@@ -158,7 +200,13 @@ async function autoDriveExternalMatch(
     if (snapshot.pendingDecision) {
       const action =
         snapshot.pendingDecision.actions.find(
-          (candidate) => candidate.type === "forge_ai_suggestion",
+          (candidate) => candidate.type === "play_land",
+        ) ??
+        snapshot.pendingDecision.actions.find(
+          (candidate) => candidate.type === "cast_spell",
+        ) ??
+        snapshot.pendingDecision.actions.find(
+          (candidate) => candidate.type === "activate_ability",
         ) ??
         snapshot.pendingDecision.actions.find(
           (candidate) => candidate.type === "pass",
@@ -488,35 +536,283 @@ Mainboard
     }
   });
 
-  it("accepts the retained Forge suggestion and plays the same ability object", async () => {
+  it("enumerates multiple real actions with opaque duplicate identities and no opponent hidden cards", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(ashlingDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+    const found = await driveUntilAction(
+      external,
+      started.sessionId,
+      (action) => action.type === "play_land",
+      (decision) =>
+        decision.actions.find((action) => action.type === "pass")!,
+    );
+    const lands = found.decision.actions.filter(
+      (action) => action.type === "play_land",
+    );
+
+    assert.ok(lands.length > 1);
+    assert.equal(found.decision.actions[0]?.type, "pass");
+    assert.equal(
+      new Set(lands.map((action) => action.actionId)).size,
+      lands.length,
+    );
+    assert.equal(
+      new Set(lands.map((action) => action.cardRef)).size,
+      lands.length,
+    );
+    for (const land of lands) {
+      assert.equal(land.cardName, "Mountain");
+      assert.equal(land.sourceZone, "hand");
+      assert.equal(land.manaCost, null);
+      assert.equal(land.requiresTargets, false);
+    }
+    assert.ok(
+      found.decision.actions.every(
+        (action) =>
+          action.type === "pass" ||
+          !["Forest", "Grizzly Bears", "Ayula, Queen Among Bears"].includes(
+            action.cardName,
+          ),
+      ),
+    );
+    assert.ok(
+      found.decision.actions.every(
+        (action) => (action.type as string) !== "forge_ai_suggestion",
+      ),
+    );
+    await external.cancel(started.sessionId);
+  });
+
+  it("plays a land, invalidates its action, and filters a known unaffordable card", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(ashlingDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+    const found = await driveUntilAction(
+      external,
+      started.sessionId,
+      (action) => action.type === "play_land",
+      (decision) =>
+        decision.actions.find((action) => action.type === "pass")!,
+    );
+    assert.ok(
+      !found.decision.actions.some(
+        (action) =>
+          action.type === "cast_spell" &&
+          action.cardName === "Ashling the Pilgrim",
+      ),
+      "the command-zone card costs {1}{R} while the player controls no mana",
+    );
+    assert.notEqual(found.action.type, "pass");
+    const playedCardRef = found.action.cardRef;
+
+    await external.submitDecision(
+      started.sessionId,
+      found.decision.decisionId,
+      found.action.actionId,
+    );
+    const next = await waitForExternalSnapshot(
+      external,
+      started.sessionId,
+      (snapshot) =>
+        snapshot.progress.landsPlayed === 1 &&
+        snapshot.pendingDecision?.decisionId !== found.decision.decisionId,
+    );
+    assert.equal(next.progress.primaryActionsSubmitted, 1);
+    assert.equal(next.progress.primaryActionsPlayed, 1);
+    assert.equal(next.progress.landsPlayed, 1);
+    assert.ok(
+      !next.pendingDecision?.actions.some(
+        (action) => action.type === "play_land" && action.cardRef === playedCardRef,
+      ),
+    );
+    if (next.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("omits spells that Forge cannot afford even when every opening-hand card is that spell", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(unaffordableDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+    const waiting = await waitForDecision(external, started.sessionId);
+    assert.deepEqual(
+      waiting.pendingDecision.actions.map((action) => action.type),
+      ["pass"],
+    );
+    await external.cancel(started.sessionId);
+  });
+
+  it("casts a commander and executes Ashling's simple non-mana activated ability", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(ashlingDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+    const commander = await driveUntilAction(
+      external,
+      started.sessionId,
+      (action) =>
+        action.type === "cast_spell" &&
+        action.cardName === "Ashling the Pilgrim" &&
+        action.sourceZone === "command",
+    );
+    assert.equal(commander.action.type, "cast_spell");
+    assert.equal(commander.action.manaCost, "{1}{R}");
+    await external.submitDecision(
+      started.sessionId,
+      commander.decision.decisionId,
+      commander.action.actionId,
+    );
+    await waitForExternalSnapshot(
+      external,
+      started.sessionId,
+      (snapshot) => snapshot.progress.spellsCast === 1,
+    );
+
+    const activation = await driveUntilAction(
+      external,
+      started.sessionId,
+      (action) =>
+        action.type === "activate_ability" &&
+        action.cardName === "Ashling the Pilgrim" &&
+        action.sourceZone === "battlefield",
+    );
+    assert.equal(activation.action.type, "activate_ability");
+    assert.equal(activation.action.requiresTargets, false);
+    await external.submitDecision(
+      started.sessionId,
+      activation.decision.decisionId,
+      activation.action.actionId,
+    );
+    const played = await waitForExternalSnapshot(
+      external,
+      started.sessionId,
+      (snapshot) => snapshot.progress.abilitiesActivated === 1,
+    );
+    assert.equal(played.progress.spellsCast, 1);
+    assert.equal(played.progress.abilitiesActivated, 1);
+    assert.equal(played.progress.primaryActionsPlayed, 2);
+    if (played.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("uses Forge timing rules: instant is exposed on the opponent turn while sorcery-speed creature is not", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(timingDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+    const instant = await driveUntilAction(
+      external,
+      started.sessionId,
+      (action) =>
+        action.type === "cast_spell" &&
+        action.cardName === "Lightning Bolt",
+      (decision) =>
+        decision.actions.find((action) => action.type === "play_land") ??
+        decision.actions.find((action) => action.type === "pass")!,
+    );
+
+    // If the first Bolt window is still our own turn, pass until the same legal
+    // instant appears with player-2 active.
+    let opponentInstant = instant;
+    if (instant.decision.context.activePlayerId !== "player-2") {
+      await external.submitDecision(
+        started.sessionId,
+        instant.decision.decisionId,
+        instant.decision.actions.find((action) => action.type === "pass")!
+          .actionId,
+      );
+      opponentInstant = await driveUntilAction(
+        external,
+        started.sessionId,
+        (action) =>
+          action.type === "cast_spell" &&
+          action.cardName === "Lightning Bolt",
+        (decision) =>
+          decision.actions.find((action) => action.type === "pass")!,
+      );
+      while (opponentInstant.decision.context.activePlayerId !== "player-2") {
+        await external.submitDecision(
+          started.sessionId,
+          opponentInstant.decision.decisionId,
+          opponentInstant.decision.actions.find(
+            (action) => action.type === "pass",
+          )!.actionId,
+        );
+        opponentInstant = await driveUntilAction(
+          external,
+          started.sessionId,
+          (action) =>
+            action.type === "cast_spell" &&
+            action.cardName === "Lightning Bolt",
+          (decision) =>
+            decision.actions.find((action) => action.type === "pass")!,
+        );
+      }
+    }
+    assert.equal(opponentInstant.action.type, "cast_spell");
+    assert.equal(opponentInstant.action.requiresTargets, true);
+    assert.ok(
+      !opponentInstant.decision.actions.some(
+        (action) =>
+          action.type === "cast_spell" && action.cardName === "Goblin Piker",
+      ),
+    );
+    await external.submitDecision(
+      started.sessionId,
+      opponentInstant.decision.decisionId,
+      opponentInstant.action.actionId,
+    );
+    const cast = await waitForExternalSnapshot(
+      external,
+      started.sessionId,
+      (snapshot) => snapshot.progress.spellsCast === 1,
+    );
+    assert.equal(cast.progress.primaryActionsPlayed, 2);
+    if (cast.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("submits a retained Forge-derived primary action and plays the same ability object", async () => {
     const client = createClient();
     await client.start();
     const external = new ForgeExternalMatchClient(client);
     const started = await external.startSpecs(redDeck(), greenDeck(), {
       seed: 12_345,
     });
-    const suggestion = await driveUntilSuggestion(external, started.sessionId);
-    const action = suggestion.decision.actions.find(
-      (candidate) => candidate.actionId === suggestion.actionId,
+    const selected = await driveUntilAction(
+      external,
+      started.sessionId,
+      (action) => action.type === "play_land",
     );
-    assert.equal(action?.type, "forge_ai_suggestion");
-    assert.ok(action?.cardName);
+    assert.equal(selected.action.type, "play_land");
+    assert.ok(selected.action.cardName);
 
     assert.deepEqual(
       await external.submitDecision(
         started.sessionId,
-        suggestion.decision.decisionId,
-        suggestion.actionId,
+        selected.decision.decisionId,
+        selected.action.actionId,
       ),
       { accepted: true },
     );
     const played = await waitForExternalSnapshot(
       external,
       started.sessionId,
-      (snapshot) => snapshot.progress.suggestionAbilitiesPlayed > 0,
+      (snapshot) => snapshot.progress.primaryActionsPlayed > 0,
     );
-    assert.ok(played.progress.suggestionsAccepted > 0);
-    assert.ok(played.progress.suggestionAbilitiesPlayed > 0);
+    assert.ok(played.progress.primaryActionsSubmitted > 0);
+    assert.ok(played.progress.primaryActionsPlayed > 0);
+    assert.ok(played.progress.landsPlayed > 0);
     if (played.status !== "completed") {
       await external.cancel(started.sessionId);
     }
@@ -566,10 +862,10 @@ Mainboard
       "forge.ai.PlayerControllerAi",
     );
     assert.ok(completed.progress.decisionsSubmitted > 0);
-    assert.ok(completed.progress.suggestionsAccepted > 0);
+    assert.ok(completed.progress.primaryActionsSubmitted > 0);
     assert.equal(
-      completed.progress.suggestionsAccepted,
-      completed.progress.suggestionAbilitiesPlayed,
+      completed.progress.primaryActionsSubmitted,
+      completed.progress.primaryActionsPlayed,
     );
   });
 

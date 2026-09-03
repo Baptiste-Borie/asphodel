@@ -100,15 +100,30 @@ export type ForgeExternalAction =
       actionId: string;
       type: "pass";
       label: string;
+      cardRef: null;
       cardName: null;
+      sourceZone: null;
       abilityText: null;
+      manaCost: null;
+      requiresTargets: false;
     }
   | {
       actionId: string;
-      type: "forge_ai_suggestion";
+      type: "play_land" | "cast_spell" | "activate_ability";
       label: string;
-      cardName: string | null;
+      cardRef: string;
+      cardName: string;
+      sourceZone:
+        | "hand"
+        | "battlefield"
+        | "command"
+        | "graveyard"
+        | "exile"
+        | "library"
+        | "other";
       abilityText: string | null;
+      manaCost: string | null;
+      requiresTargets: boolean;
     };
 
 export interface ForgePendingDecision {
@@ -137,8 +152,11 @@ export interface ForgeExternalMatchProgress {
   decisionsRequested: number;
   decisionsSubmitted: number;
   passesSubmitted: number;
-  suggestionsAccepted: number;
-  suggestionAbilitiesPlayed: number;
+  primaryActionsSubmitted: number;
+  primaryActionsPlayed: number;
+  landsPlayed: number;
+  spellsCast: number;
+  abilitiesActivated: number;
 }
 
 export interface ForgeExternalMatchSnapshot {
