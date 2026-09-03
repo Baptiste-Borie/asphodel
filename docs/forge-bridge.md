@@ -1,13 +1,14 @@
-# Asphodel Forge Bridge — Deck Adapter V1b
+# Asphodel Forge Bridge — External Controller V1c
 
 ## Scope
 
 This bridge is an isolated validation seam between the Node.js backend and the
-original Java [Card-Forge/forge](https://github.com/Card-Forge/forge) engine. V1b
+original Java [Card-Forge/forge](https://github.com/Card-Forge/forge) engine. V1c
 loads real Forge card scripts, converts Deck Library views into real
-`forge.deck.Deck` instances, and lets two Forge AI controllers play them to
-completion. The integration is backend-only: it adds no product Game HTTP API,
-persistent Game model, human controller, or frontend behavior.
+`forge.deck.Deck` instances, and supports either two normal Forge AI controllers
+or an asynchronous match with one hybrid Asphodel controller. The integration
+is backend-only: it adds no product Game HTTP API, persistent Game model, full
+human controller, or frontend behavior.
 
 Forge is pinned as the `vendor/forge` Git submodule at revision
 `6356c1ad565029c82513c96e42ad5492c1b09c4e` (`2.0.15-SNAPSHOT`). The Asphodel
@@ -28,6 +29,7 @@ TypeScript backend
 Asphodel Forge Bridge (Java)
       |
       +-- ForgeDeckFactory -> PaperCard lookup -> forge.deck.Deck
+      +-- ExternalMatchSession -> PlayerControllerAsphodel
       +-- forge-core  (CardStorageReader, StaticData, card scripts)
       +-- forge-game  (GameRules, RegisteredPlayer, Match, Game)
       `-- forge-ai    (LobbyPlayerAi, PlayerControllerAi)
@@ -145,6 +147,125 @@ deferred.
 | Post-timeout second game | PASS | A new `run_deck_match` terminates normally in the same JVM after `GAME_TIMEOUT`. |
 | Commander legality | NOT TESTED | Deliberately non-legal small fixtures keep engine tests fast. |
 
+## External Controller V1c
+
+V1c adds asynchronous, in-memory match sessions without unsolicited NDJSON
+events:
+
+```text
+Node request / NDJSON reader thread
+        |
+        +---- remains responsive to ping/get/submit/cancel
+        |
+        v
+ExternalMatchManager (maximum one active Forge match)
+        |
+        v
+ExternalMatchSession worker thread
+        |
+        v
+Forge game -> LobbyPlayerAsphodel -> PlayerControllerAsphodel
+                                      |
+                                      v
+                              AsphodelDecisionBroker
+                                      ^
+                                      |
+                         submit_external_decision
+```
+
+`LobbyPlayerAsphodel` extends Forge's `LobbyPlayerAi` and overrides
+`createIngamePlayer(Game, int)`. It creates the Forge `Player`, then installs
+`new PlayerControllerAsphodel(game, player, this, broker)` with
+`Player.setFirstController(...)`. Player 2 is still created by the unmodified
+`LobbyPlayerAi` and therefore uses `forge.ai.PlayerControllerAi`.
+
+`PlayerControllerAsphodel` temporarily extends `PlayerControllerAi`. Its only
+externalized method is `chooseSpellAbilityToPlay()`: it first calls
+`super.chooseSpellAbilityToPlay()`, publishes either PASS alone or PASS plus the
+Forge suggestion, and waits on a `CompletableFuture`. The NDJSON reader thread
+submits an opaque action ID through the broker. PASS returns `null`; accepting
+the suggestion returns the retained `List<SpellAbility>` object. The overridden
+`playChosenSpellAbility(...)` delegates back to Forge AI and records, by object
+identity, that the retained ability was actually passed to Forge.
+
+No `Game`, `Player`, `Card`, or `SpellAbility` is serialized. The exact pending
+decision shape is:
+
+```ts
+interface ForgePendingDecision {
+  decisionId: string;
+  type: "priority_action";
+  playerId: string;
+  context: {
+    turn: number;
+    phase: string;
+    activePlayerId: string;
+    priorityPlayerId: string;
+    stackSize: number;
+  };
+  actions: Array<
+    | {
+        actionId: string;
+        type: "pass";
+        label: string;
+        cardName: null;
+        abilityText: null;
+      }
+    | {
+        actionId: string;
+        type: "forge_ai_suggestion";
+        label: string;
+        cardName: string | null;
+        abilityText: string | null;
+      }
+  >;
+}
+```
+
+The broker uses synchronization plus one `CompletableFuture` per decision; the
+game thread performs no sleep or busy-wait. Unknown actions leave the future and
+pending decision intact. Accepted decisions immediately become stale, and the
+action-to-`SpellAbility` references are cleared after the game thread resumes.
+Cancellation completes any wait exceptionally, marks the Forge game as a draw,
+interrupts the worker, clears retained abilities, and waits briefly for worker
+termination before allowing a replacement session.
+
+The session protocol consists of:
+
+- `start_external_match`: validates/builds exactly two Commander decks, starts
+  a worker, and immediately returns `{ sessionId, status: "running" }`.
+- `get_external_match`: returns `starting`, `running`,
+  `waiting_for_decision`, `completed`, `cancelled`, or `failed`, plus a pending
+  decision, terminal result, or sanitized error where applicable.
+- `submit_external_decision`: accepts `sessionId`, `decisionId`, and opaque
+  `actionId`.
+- `cancel_external_match`: releases a pending decision and allows another
+  session to start.
+
+Errors include `MATCH_ALREADY_RUNNING`, `MATCH_NOT_FOUND`,
+`MATCH_NOT_WAITING`, `DECISION_NOT_FOUND`, `STALE_DECISION`,
+`ACTION_NOT_FOUND`, and `MATCH_COMPLETED`. Synchronous Forge matches are refused
+while an external session is active, protecting Forge's global `MyRandom`.
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Asphodel controller created | PASS | `PlayerControllerAsphodel` extends `PlayerControllerAi`. |
+| Player 2 Forge AI | PASS | Exact controller class is `forge.ai.PlayerControllerAi`. |
+| Async game session | PASS | Forge runs on a dedicated daemon worker. |
+| Bridge responsive while waiting | PASS | `ping` returns `pong` during a pending decision. |
+| Pending decision | PASS | Sanitized priority context and opaque actions only. |
+| PASS from Node | PASS | Returns `null` to `PhaseHandler`; Forge continues. |
+| Accept Forge suggestion | PASS | Retained object identity is observed in `playChosenSpellAbility`. |
+| Stale action protection | PASS | Reusing an answered decision returns `STALE_DECISION`. |
+| Match cancel | PASS | Pending wait is released; a replacement starts in the same JVM. |
+| Full game driven by Node | PASS | Test auto-driver reaches a real terminal `GameOutcome`. |
+| Full legal actions | NOT IMPLEMENTED | V1d. |
+| Secondary decisions external | NOT IMPLEMENTED | Forge AI still handles targets, mana, combat, modes, triggers, and other secondary choices. |
+
+V1c exposes only PASS or the single recommendation returned by Forge AI. It
+does not enumerate all legal Magic actions and does not scan zones or abilities
+to imitate such an API. Full legal Asphodel action candidates remain V1d work.
+
 ## Card database initialization
 
 `ForgeDataRepository` initializes the pieces normally prepared by Forge's GUI
@@ -236,7 +357,7 @@ Forge code emits diagnostics through both logging and `System.out`.
 The client uses UUID request IDs, correlates in-flight requests, rejects pending
 work on exit, and supports clean shutdown. Supported commands are `ping`,
 `engine_info`, `forge_color_identity`, `run_test_game`, `inspect_deck`, and
-`run_deck_match`.
+`run_deck_match`, plus the four V1c external-session commands documented above.
 
 Example inspection request:
 
@@ -268,15 +389,16 @@ Errors are structured and do not normally stop the process. Codes are
 - Full Scryfall double-face names are not normalized to Forge front-face names
   in V1b and can return `FORGE_CARDS_NOT_FOUND`.
 - Commander tax, commander damage, and replacement effects are not asserted by
-  this V1 test.
+  these bridge tests.
 - Seed reproducibility is verified only for the pinned fixture in one JVM.
-- Requests are processed serially; a running match occupies the bridge until it
-  ends or times out.
-- There is no automatic restart after JVM failure, no pending-decision API, no
-  physical-table synchronization, and no Asphodel ML agent.
+- NDJSON requests are processed serially, but a V1c external game runs on its
+  worker so polling, decision submission, cancellation, and ping remain
+  responsive. Synchronous V1b matches still occupy the request thread.
+- There is no automatic restart after JVM failure, complete legal-action API,
+  physical-table synchronization, or Asphodel ML agent.
 - Missing Java, jar, assets, protocol mismatch, timeout, or JVM exit is surfaced
   as a typed bridge/process error.
-- Forge upstream is unmodified. V1b only reads its sources and runtime assets.
+- Forge upstream is unmodified. V1c only reads its sources and runtime assets.
 
 ## Updating Forge
 

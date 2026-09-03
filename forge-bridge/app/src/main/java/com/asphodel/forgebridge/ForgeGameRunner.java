@@ -1,5 +1,6 @@
 package com.asphodel.forgebridge;
 
+import forge.LobbyPlayer;
 import forge.ai.LobbyPlayerAi;
 import forge.deck.Deck;
 import forge.game.Game;
@@ -21,12 +22,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 final class ForgeGameRunner {
     Map<String, Object> run(
@@ -36,31 +40,78 @@ final class ForgeGameRunner {
             Deck playerOneDeck,
             Deck playerTwoDeck
     ) {
+        LobbyPlayerAi playerOne = createAiLobbyPlayer("Forge AI 1");
+        LobbyPlayerAi playerTwo = createAiLobbyPlayer("Forge AI 2");
+        AtomicReference<Game> game = new AtomicReference<>();
+
+        return runWithTimeout(
+                () -> runOnCurrentThread(
+                        requestedFormat,
+                        seed,
+                        timeoutSeconds,
+                        playerOneDeck,
+                        playerTwoDeck,
+                        playerOne,
+                        playerTwo,
+                        game::set
+                ),
+                game,
+                timeoutSeconds
+        );
+    }
+
+    Map<String, Object> runExternal(
+            String requestedFormat,
+            long seed,
+            Deck playerOneDeck,
+            Deck playerTwoDeck,
+            LobbyPlayer playerOne,
+            LobbyPlayer playerTwo,
+            Consumer<Game> onGameCreated
+    ) {
+        return runOnCurrentThread(
+                requestedFormat,
+                seed,
+                120,
+                playerOneDeck,
+                playerTwoDeck,
+                playerOne,
+                playerTwo,
+                onGameCreated
+        );
+    }
+
+    private static Map<String, Object> runOnCurrentThread(
+            String requestedFormat,
+            long seed,
+            int simulationTimeoutSeconds,
+            Deck playerOneDeck,
+            Deck playerTwoDeck,
+            LobbyPlayer playerOne,
+            LobbyPlayer playerTwo,
+            Consumer<Game> onGameCreated
+    ) {
         // GameType localizes its display names during static initialization, so
         // Forge's locale/resources must exist before this class is first used.
         GameType gameType = parseGameType(requestedFormat);
         MyRandom.setRandom(new Random(seed));
 
         List<RegisteredPlayer> registeredPlayers = List.of(
-                createPlayer(playerOneDeck, gameType, "Forge AI 1", 0),
-                createPlayer(playerTwoDeck, gameType, "Forge AI 2", 1)
+                createPlayer(playerOneDeck, gameType, playerOne, 0),
+                createPlayer(playerTwoDeck, gameType, playerTwo, 1)
         );
 
         GameRules rules = new GameRules(gameType);
         rules.setAppliedVariants(EnumSet.of(gameType));
         rules.setGamesPerMatch(1);
-        rules.setSimTimeout(timeoutSeconds);
+        rules.setSimTimeout(simulationTimeoutSeconds);
         rules.setWarnAboutAICards(false);
 
-        Match match = new Match(rules, registeredPlayers, "Asphodel Forge Bridge V1b");
+        Match match = new Match(rules, registeredPlayers, "Asphodel Forge Bridge V1c");
         Game game = match.createGame();
+        onGameCreated.accept(game);
         List<PlayerSetup> startingPlayers = new ArrayList<>();
-
-        runWithTimeout(
-                () -> match.startGame(game, () -> captureStartingState(game, startingPlayers)),
-                game,
-                timeoutSeconds
-        );
+        match.startGame(game, () -> captureStartingState(game, startingPlayers));
 
         GameOutcome outcome = game.getOutcome();
         RegisteredPlayer winner = outcome.getWinningPlayer();
@@ -90,19 +141,23 @@ final class ForgeGameRunner {
         };
     }
 
+    static LobbyPlayerAi createAiLobbyPlayer(String name) {
+        LobbyPlayerAi ai = new LobbyPlayerAi(name, Set.of());
+        ai.setAiProfile("Default");
+        return ai;
+    }
+
     private static RegisteredPlayer createPlayer(
             Deck deck,
             GameType gameType,
-            String name,
+            LobbyPlayer lobbyPlayer,
             int index
     ) {
-        LobbyPlayerAi ai = new LobbyPlayerAi(name, Set.of());
-        ai.setAiProfile("Default");
         RegisteredPlayer player = gameType == GameType.Commander
                 ? RegisteredPlayer.forCommander(deck)
                 : new RegisteredPlayer(deck);
         player.setId(index);
-        return player.setPlayer(ai);
+        return player.setPlayer(lobbyPlayer);
     }
 
     private static void captureStartingState(Game game, List<PlayerSetup> target) {
@@ -137,20 +192,25 @@ final class ForgeGameRunner {
         }
     }
 
-    private static void runWithTimeout(Runnable gameTask, Game game, int timeoutSeconds) {
+    private static Map<String, Object> runWithTimeout(
+            Callable<Map<String, Object>> gameTask,
+            AtomicReference<Game> game,
+            int timeoutSeconds
+    ) {
         ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "asphodel-forge-game");
             thread.setDaemon(true);
             return thread;
         });
-        Future<?> future = executor.submit(gameTask);
+        Future<Map<String, Object>> future = executor.submit(gameTask);
         executor.shutdown();
         try {
-            future.get(timeoutSeconds, TimeUnit.SECONDS);
+            return future.get(timeoutSeconds, TimeUnit.SECONDS);
         } catch (TimeoutException exception) {
             future.cancel(true);
-            if (!game.isGameOver()) {
-                game.setGameOver(GameEndReason.Draw);
+            Game runningGame = game.get();
+            if (runningGame != null && !runningGame.isGameOver()) {
+                runningGame.setGameOver(GameEndReason.Draw);
             }
             executor.shutdownNow();
             awaitTermination(executor);

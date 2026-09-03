@@ -9,7 +9,13 @@ import {
   ForgeBridgeProcessError,
 } from "./forge-bridge-client.js";
 import { ForgeDeckMatchRunner } from "./forge-deck-match-runner.js";
-import type { ForgeDeckSpec, ForgeGameResult } from "./forge-protocol.js";
+import { ForgeExternalMatchClient } from "./forge-external-match-client.js";
+import type {
+  ForgeDeckSpec,
+  ForgeExternalMatchSnapshot,
+  ForgeGameResult,
+  ForgePendingDecision,
+} from "./forge-protocol.js";
 
 const jarPath = process.env.FORGE_BRIDGE_JAR;
 const clients: ForgeBridgeClient[] = [];
@@ -46,7 +52,13 @@ function greenDeck(name = "Ayula from Asphodel"): ForgeDeckSpec {
   };
 }
 
-function assertTerminalDeckMatch(result: ForgeGameResult): void {
+function assertTerminalDeckMatch(
+  result: ForgeGameResult,
+  controllerClasses = [
+    "forge.ai.PlayerControllerAi",
+    "forge.ai.PlayerControllerAi",
+  ],
+): void {
   assert.match(result.gameId, /^forge-game-\d+$/);
   assert.equal(result.format, "commander");
   assert.equal(result.gameOver, true);
@@ -57,13 +69,111 @@ function assertTerminalDeckMatch(result: ForgeGameResult): void {
     result.players.map((player) => player.deckName),
     ["Krenko from Asphodel", "Ayula from Asphodel"],
   );
-  for (const player of result.players) {
+  for (const [index, player] of result.players.entries()) {
     assert.equal(player.ai, true);
-    assert.equal(player.controllerClass, "forge.ai.PlayerControllerAi");
+    assert.equal(player.controllerClass, controllerClasses[index]);
     assert.equal(player.startingLife, 40);
     assert.equal(player.commanders.length, 1);
     assert.equal(player.commandersInCommandZone, true);
   }
+}
+
+async function waitForExternalSnapshot(
+  external: ForgeExternalMatchClient,
+  sessionId: string,
+  predicate: (snapshot: ForgeExternalMatchSnapshot) => boolean,
+  timeoutMs = 10_000,
+): Promise<ForgeExternalMatchSnapshot> {
+  const deadline = Date.now() + timeoutMs;
+  let latest: ForgeExternalMatchSnapshot | undefined;
+  while (Date.now() < deadline) {
+    latest = await external.get(sessionId);
+    if (predicate(latest)) return latest;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error(`External match polling timed out: ${JSON.stringify(latest)}`);
+}
+
+async function waitForDecision(
+  external: ForgeExternalMatchClient,
+  sessionId: string,
+): Promise<ForgeExternalMatchSnapshot & {
+  pendingDecision: ForgePendingDecision;
+}> {
+  const snapshot = await waitForExternalSnapshot(
+    external,
+    sessionId,
+    (candidate) => candidate.status === "waiting_for_decision",
+  );
+  assert.ok(snapshot.pendingDecision);
+  return snapshot as ForgeExternalMatchSnapshot & {
+    pendingDecision: ForgePendingDecision;
+  };
+}
+
+async function driveUntilSuggestion(
+  external: ForgeExternalMatchClient,
+  sessionId: string,
+): Promise<{
+  snapshot: ForgeExternalMatchSnapshot;
+  decision: ForgePendingDecision;
+  actionId: string;
+}> {
+  for (let index = 0; index < 500; index += 1) {
+    const snapshot = await waitForDecision(external, sessionId);
+    const suggestion = snapshot.pendingDecision.actions.find(
+      (action) => action.type === "forge_ai_suggestion",
+    );
+    if (suggestion) {
+      return {
+        snapshot,
+        decision: snapshot.pendingDecision,
+        actionId: suggestion.actionId,
+      };
+    }
+    const pass = snapshot.pendingDecision.actions.find(
+      (action) => action.type === "pass",
+    );
+    assert.ok(pass);
+    await external.submitDecision(
+      sessionId,
+      snapshot.pendingDecision.decisionId,
+      pass.actionId,
+    );
+  }
+  throw new Error("Forge AI did not produce a suggestion in 500 decisions.");
+}
+
+async function autoDriveExternalMatch(
+  external: ForgeExternalMatchClient,
+  sessionId: string,
+): Promise<ForgeExternalMatchSnapshot> {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    const snapshot = await external.get(sessionId);
+    if (snapshot.status === "completed") return snapshot;
+    if (snapshot.status === "failed") {
+      throw new Error(`External match failed: ${JSON.stringify(snapshot.error)}`);
+    }
+    if (snapshot.pendingDecision) {
+      const action =
+        snapshot.pendingDecision.actions.find(
+          (candidate) => candidate.type === "forge_ai_suggestion",
+        ) ??
+        snapshot.pendingDecision.actions.find(
+          (candidate) => candidate.type === "pass",
+        );
+      assert.ok(action);
+      await external.submitDecision(
+        sessionId,
+        snapshot.pendingDecision.decisionId,
+        action.actionId,
+      );
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+  }
+  throw new Error("Node auto-driver did not reach a terminal Forge outcome.");
 }
 
 function createClient(): ForgeBridgeClient {
@@ -287,6 +397,211 @@ Mainboard
       result.players.map((player) => player.commanders),
       [["Krenko, Tin Street Kingpin"], ["Ayula, Queen Among Bears"]],
     );
+  });
+
+  it("keeps NDJSON responsive while the external game thread waits", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(redDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+
+    const waiting = await waitForDecision(external, started.sessionId);
+    assert.equal(waiting.pendingDecision.type, "priority_action");
+    assert.equal(waiting.pendingDecision.playerId, "player-1");
+    assert.equal(waiting.pendingDecision.context.priorityPlayerId, "player-1");
+    assert.deepEqual(await client.request({ type: "ping" }), {
+      message: "pong",
+    });
+    await assert.rejects(
+      client.request({
+        type: "run_deck_match",
+        format: "commander",
+        decks: [redDeck(), greenDeck()],
+      }),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError &&
+        error.code === "MATCH_ALREADY_RUNNING",
+    );
+    await external.cancel(started.sessionId);
+  });
+
+  it("submits PASS and protects pending, unknown, and stale actions", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(redDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+    const first = await waitForDecision(external, started.sessionId);
+    const { pendingDecision } = first;
+    const pass = pendingDecision.actions.find(
+      (action) => action.type === "pass",
+    );
+    assert.ok(pass);
+
+    await assert.rejects(
+      external.submitDecision(
+        started.sessionId,
+        pendingDecision.decisionId,
+        "action-does-not-exist",
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError && error.code === "ACTION_NOT_FOUND",
+    );
+    const stillWaiting = await external.get(started.sessionId);
+    assert.equal(
+      stillWaiting.pendingDecision?.decisionId,
+      pendingDecision.decisionId,
+    );
+
+    assert.deepEqual(
+      await external.submitDecision(
+        started.sessionId,
+        pendingDecision.decisionId,
+        pass.actionId,
+      ),
+      { accepted: true },
+    );
+    await assert.rejects(
+      external.submitDecision(
+        started.sessionId,
+        pendingDecision.decisionId,
+        pass.actionId,
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError && error.code === "STALE_DECISION",
+    );
+
+    const continued = await waitForExternalSnapshot(
+      external,
+      started.sessionId,
+      (snapshot) =>
+        snapshot.status === "completed" ||
+        (snapshot.status === "waiting_for_decision" &&
+          snapshot.pendingDecision?.decisionId !== pendingDecision.decisionId),
+    );
+    assert.ok(continued.progress.passesSubmitted >= 1);
+    if (continued.status !== "completed") {
+      await external.cancel(started.sessionId);
+    }
+  });
+
+  it("accepts the retained Forge suggestion and plays the same ability object", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(redDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+    const suggestion = await driveUntilSuggestion(external, started.sessionId);
+    const action = suggestion.decision.actions.find(
+      (candidate) => candidate.actionId === suggestion.actionId,
+    );
+    assert.equal(action?.type, "forge_ai_suggestion");
+    assert.ok(action?.cardName);
+
+    assert.deepEqual(
+      await external.submitDecision(
+        started.sessionId,
+        suggestion.decision.decisionId,
+        suggestion.actionId,
+      ),
+      { accepted: true },
+    );
+    const played = await waitForExternalSnapshot(
+      external,
+      started.sessionId,
+      (snapshot) => snapshot.progress.suggestionAbilitiesPlayed > 0,
+    );
+    assert.ok(played.progress.suggestionsAccepted > 0);
+    assert.ok(played.progress.suggestionAbilitiesPlayed > 0);
+    if (played.status !== "completed") {
+      await external.cancel(started.sessionId);
+    }
+  });
+
+  it("auto-drives a full Deck Library match from Node to GameOutcome", async () => {
+    const database = await createTestDatabase();
+    databases.push(database);
+    const deckService = new DeckService(database.db, new FakeCardProvider());
+    const red = await deckService.createDeck(
+      "Krenko from Asphodel",
+      `Commander
+1x Krenko, Tin Street Kingpin
+
+Mainboard
+10x Mountain
+5x Lightning Bolt
+5x Goblin Piker`,
+    );
+    const green = await deckService.createDeck(
+      "Ayula from Asphodel",
+      `Commander
+1x Ayula, Queen Among Bears
+
+Mainboard
+10x Forest
+10x Grizzly Bears`,
+    );
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.start(red, green, { seed: 12_345 });
+
+    const completed = await autoDriveExternalMatch(external, started.sessionId);
+    assert.equal(completed.status, "completed");
+    assert.ok(completed.result);
+    assertTerminalDeckMatch(completed.result, [
+      "com.asphodel.forgebridge.PlayerControllerAsphodel",
+      "forge.ai.PlayerControllerAi",
+    ]);
+    assert.equal(
+      completed.result.players[0]?.controllerClass,
+      "com.asphodel.forgebridge.PlayerControllerAsphodel",
+    );
+    assert.equal(
+      completed.result.players[1]?.controllerClass,
+      "forge.ai.PlayerControllerAi",
+    );
+    assert.ok(completed.progress.decisionsSubmitted > 0);
+    assert.ok(completed.progress.suggestionsAccepted > 0);
+    assert.equal(
+      completed.progress.suggestionsAccepted,
+      completed.progress.suggestionAbilitiesPlayed,
+    );
+  });
+
+  it("cancels a pending match and starts a replacement in the same JVM", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const first = await external.startSpecs(redDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+    await waitForDecision(external, first.sessionId);
+
+    await assert.rejects(
+      external.startSpecs(redDeck(), greenDeck(), { seed: 12_345 }),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError &&
+        error.code === "MATCH_ALREADY_RUNNING",
+    );
+    assert.deepEqual(await external.cancel(first.sessionId), {
+      sessionId: first.sessionId,
+      status: "cancelled",
+      cancelled: true,
+    });
+    assert.equal((await external.get(first.sessionId)).status, "cancelled");
+
+    const second = await external.startSpecs(redDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+    assert.notEqual(second.sessionId, first.sessionId);
+    const replacement = await waitForDecision(external, second.sessionId);
+    assert.equal(replacement.status, "waiting_for_decision");
+    await external.cancel(second.sessionId);
   });
 
   it("runs a real Commander game between two Forge AI players", async () => {

@@ -26,6 +26,7 @@ public final class BridgeMain {
     private static final int PROTOCOL_VERSION = 1;
     private static final Gson JSON = new GsonBuilder().serializeNulls().create();
     private static final Properties BUILD_INFO = loadBuildInfo();
+    private static final ExternalMatchManager EXTERNAL_MATCHES = new ExternalMatchManager();
 
     private BridgeMain() {
     }
@@ -81,8 +82,14 @@ public final class BridgeMain {
                 case "run_test_game" -> handleRunTestGame(requestId, request);
                 case "inspect_deck" -> handleInspectDeck(requestId, request);
                 case "run_deck_match" -> handleRunDeckMatch(requestId, request);
+                case "start_external_match" -> handleStartExternalMatch(requestId, request);
+                case "get_external_match" -> handleGetExternalMatch(requestId, request);
+                case "submit_external_decision" -> handleSubmitExternalDecision(requestId, request);
+                case "cancel_external_match" -> handleCancelExternalMatch(requestId, request);
                 default -> error(requestId, "UNKNOWN_COMMAND", "Unknown command: " + type, null);
             };
+        } catch (ExternalMatchException exception) {
+            return error(requestId, exception.code(), exception.getMessage(), exception.details());
         } catch (ForgeDeckFactory.CardsNotFoundException exception) {
             return error(
                     requestId,
@@ -117,34 +124,35 @@ public final class BridgeMain {
         long seed = getLong(request, "seed", 12345L);
         int timeoutSeconds = getTimeoutSeconds(request);
 
-        ForgeDeckFactory factory = new ForgeDeckFactory();
-        boolean commander = format.equalsIgnoreCase("commander");
-        Deck redDeck = factory.build(redFixture(commander), commander);
-        Deck greenDeck = factory.build(greenFixture(commander), commander);
-        Map<String, Object> result = new LinkedHashMap<>(new ForgeGameRunner().run(
-                format,
-                seed,
-                timeoutSeconds,
-                redDeck,
-                greenDeck
-        ));
-        result.put("fixtureConformance", commander
-                ? "engine-test fixture; duplicate cards and fewer than 100 cards"
-                : "engine-test fixture; fewer than 60 cards");
-        result.put("cardEvidence", lightningBoltEvidence(
-                ForgeDataRepository.instance().requireCard("Lightning Bolt")
-        ));
-        result.put("forgeClasses", Map.of(
-                "game", forge.game.Game.class.getName(),
-                "match", forge.game.Match.class.getName(),
-                "aiPlayer", forge.ai.LobbyPlayerAi.class.getName()
-        ));
+        EXTERNAL_MATCHES.beginSynchronousMatch();
+        try {
+            ForgeDeckFactory factory = new ForgeDeckFactory();
+            boolean commander = format.equalsIgnoreCase("commander");
+            Deck redDeck = factory.build(redFixture(commander), commander);
+            Deck greenDeck = factory.build(greenFixture(commander), commander);
+            Map<String, Object> result = new LinkedHashMap<>(new ForgeGameRunner().run(
+                    format,
+                    seed,
+                    timeoutSeconds,
+                    redDeck,
+                    greenDeck
+            ));
+            result.put("fixtureConformance", commander
+                    ? "engine-test fixture; duplicate cards and fewer than 100 cards"
+                    : "engine-test fixture; fewer than 60 cards");
+            result.put("cardEvidence", lightningBoltEvidence(
+                    ForgeDataRepository.instance().requireCard("Lightning Bolt")
+            ));
+            result.put("forgeClasses", Map.of(
+                    "game", forge.game.Game.class.getName(),
+                    "match", forge.game.Match.class.getName(),
+                    "aiPlayer", forge.ai.LobbyPlayerAi.class.getName()
+            ));
 
-        return success(
-                requestId,
-                "run_test_game",
-                result
-        );
+            return success(requestId, "run_test_game", result);
+        } finally {
+            EXTERNAL_MATCHES.endSynchronousMatch();
+        }
     }
 
     private static Map<String, Object> handleInspectDeck(String requestId, JsonObject request) {
@@ -177,20 +185,100 @@ public final class BridgeMain {
 
         long seed = getLong(request, "seed", 12345L);
         int timeoutSeconds = getTimeoutSeconds(request);
-        ForgeDeckFactory factory = new ForgeDeckFactory();
-        Deck playerOneDeck = factory.build(parseDeckSpec(decksElement.getAsJsonArray().get(0)));
-        Deck playerTwoDeck = factory.build(parseDeckSpec(decksElement.getAsJsonArray().get(1)));
+        EXTERNAL_MATCHES.beginSynchronousMatch();
+        try {
+            ForgeDeckFactory factory = new ForgeDeckFactory();
+            Deck playerOneDeck = factory.build(parseDeckSpec(decksElement.getAsJsonArray().get(0)));
+            Deck playerTwoDeck = factory.build(parseDeckSpec(decksElement.getAsJsonArray().get(1)));
 
+            return success(
+                    requestId,
+                    "run_deck_match",
+                    new ForgeGameRunner().run(
+                            format,
+                            seed,
+                            timeoutSeconds,
+                            playerOneDeck,
+                            playerTwoDeck
+                    )
+            );
+        } finally {
+            EXTERNAL_MATCHES.endSynchronousMatch();
+        }
+    }
+
+    private static Map<String, Object> handleStartExternalMatch(
+            String requestId,
+            JsonObject request
+    ) {
+        String format = getString(request, "format");
+        if (format == null || !format.equalsIgnoreCase("commander")) {
+            return error(
+                    requestId,
+                    "INVALID_PAYLOAD",
+                    "start_external_match format must be commander in V1c.",
+                    null
+            );
+        }
+        JsonElement decksElement = request.get("decks");
+        if (decksElement == null || !decksElement.isJsonArray()
+                || decksElement.getAsJsonArray().size() != 2) {
+            return error(
+                    requestId,
+                    "INVALID_PAYLOAD",
+                    "start_external_match requires exactly two decks.",
+                    null
+            );
+        }
+
+        EXTERNAL_MATCHES.ensureCanStart();
+        ForgeDeckFactory factory = new ForgeDeckFactory();
+        Deck playerDeck = factory.build(parseDeckSpec(decksElement.getAsJsonArray().get(0)));
+        Deck aiDeck = factory.build(parseDeckSpec(decksElement.getAsJsonArray().get(1)));
+        Map<String, Object> started = EXTERNAL_MATCHES.start(
+                format,
+                getLong(request, "seed", 12345L),
+                playerDeck,
+                aiDeck
+        );
+        return success(requestId, "start_external_match", started);
+    }
+
+    private static Map<String, Object> handleGetExternalMatch(
+            String requestId,
+            JsonObject request
+    ) {
+        String sessionId = requireString(request, "sessionId");
         return success(
                 requestId,
-                "run_deck_match",
-                new ForgeGameRunner().run(
-                        format,
-                        seed,
-                        timeoutSeconds,
-                        playerOneDeck,
-                        playerTwoDeck
-                )
+                "get_external_match",
+                EXTERNAL_MATCHES.get(sessionId)
+        );
+    }
+
+    private static Map<String, Object> handleSubmitExternalDecision(
+            String requestId,
+            JsonObject request
+    ) {
+        String sessionId = requireString(request, "sessionId");
+        String decisionId = requireString(request, "decisionId");
+        String actionId = requireString(request, "actionId");
+        return success(
+                requestId,
+                "submit_external_decision",
+                EXTERNAL_MATCHES.submit(sessionId, decisionId, actionId)
+        );
+    }
+
+    private static Map<String, Object> handleCancelExternalMatch(
+            String requestId,
+            JsonObject request
+    ) {
+        String sessionId = requireString(request, "sessionId");
+        return success(
+                requestId,
+                "cancel_external_match",
+                EXTERNAL_MATCHES.cancel(sessionId)
         );
     }
 
@@ -340,6 +428,14 @@ public final class BridgeMain {
             return null;
         }
         return value.getAsString();
+    }
+
+    private static String requireString(JsonObject object, String name) {
+        String value = getString(object, name);
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(name + " must be a non-empty string.");
+        }
+        return value;
     }
 
     private static Properties loadBuildInfo() {

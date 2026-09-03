@@ -33,6 +33,26 @@ export interface ForgeRequestMap {
     timeoutSeconds?: number;
     decks: [ForgeDeckSpec, ForgeDeckSpec];
   };
+  start_external_match: {
+    type: "start_external_match";
+    format: "commander";
+    seed?: number;
+    decks: [ForgeDeckSpec, ForgeDeckSpec];
+  };
+  get_external_match: {
+    type: "get_external_match";
+    sessionId: string;
+  };
+  submit_external_decision: {
+    type: "submit_external_decision";
+    sessionId: string;
+    decisionId: string;
+    actionId: string;
+  };
+  cancel_external_match: {
+    type: "cancel_external_match";
+    sessionId: string;
+  };
 }
 
 export interface ForgeTestGamePlayer {
@@ -73,6 +93,61 @@ export interface ForgeGameResult {
   draw: boolean;
   terminalReason: string;
   commanderRulesActive: boolean;
+}
+
+export type ForgeExternalAction =
+  | {
+      actionId: string;
+      type: "pass";
+      label: string;
+      cardName: null;
+      abilityText: null;
+    }
+  | {
+      actionId: string;
+      type: "forge_ai_suggestion";
+      label: string;
+      cardName: string | null;
+      abilityText: string | null;
+    };
+
+export interface ForgePendingDecision {
+  decisionId: string;
+  type: "priority_action";
+  playerId: string;
+  context: {
+    turn: number;
+    phase: string;
+    activePlayerId: string;
+    priorityPlayerId: string;
+    stackSize: number;
+  };
+  actions: ForgeExternalAction[];
+}
+
+export type ForgeExternalMatchStatus =
+  | "starting"
+  | "running"
+  | "waiting_for_decision"
+  | "completed"
+  | "cancelled"
+  | "failed";
+
+export interface ForgeExternalMatchProgress {
+  decisionsRequested: number;
+  decisionsSubmitted: number;
+  passesSubmitted: number;
+  suggestionsAccepted: number;
+  suggestionAbilitiesPlayed: number;
+}
+
+export interface ForgeExternalMatchSnapshot {
+  sessionId: string;
+  status: ForgeExternalMatchStatus;
+  progress: ForgeExternalMatchProgress;
+  pendingDecision?: ForgePendingDecision;
+  result?: ForgeGameResult;
+  error?: { code: string; message: string };
 }
 
 export interface ForgeResultMap {
@@ -119,6 +194,17 @@ export interface ForgeResultMap {
   };
   inspect_deck: ForgeDeckInspection;
   run_deck_match: ForgeGameResult;
+  start_external_match: {
+    sessionId: string;
+    status: "running";
+  };
+  get_external_match: ForgeExternalMatchSnapshot;
+  submit_external_decision: { accepted: true };
+  cancel_external_match: {
+    sessionId: string;
+    status: "cancelled";
+    cancelled: true;
+  };
 }
 
 export type ForgeRequestType = keyof ForgeRequestMap;
