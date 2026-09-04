@@ -1,6 +1,7 @@
 package com.asphodel.forgebridge;
 
 import forge.game.Game;
+import forge.game.GameObject;
 import forge.game.phase.PhaseHandler;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
@@ -21,9 +22,10 @@ import java.util.function.Consumer;
 final class AsphodelDecisionBroker {
     private final AtomicLong decisionIds = new AtomicLong();
     private final AtomicLong actionIds = new AtomicLong();
+    private final AtomicLong targetIds = new AtomicLong();
     private final Consumer<Boolean> waitingListener;
     private final Set<String> consumedDecisionIds = new LinkedHashSet<>();
-    private final Map<SpellAbility, ForgeLegalActionEnumerator.ActionType> acceptedAbilities =
+    private final Map<SpellAbility, AcceptedAbility> acceptedAbilities =
             new IdentityHashMap<>();
 
     private PendingInternal pending;
@@ -36,6 +38,9 @@ final class AsphodelDecisionBroker {
     private long landsPlayed;
     private long spellsCast;
     private long abilitiesActivated;
+    private long targetDecisionsRequested;
+    private long targetDecisionsSubmitted;
+    private long targetsSelected;
 
     AsphodelDecisionBroker(Consumer<Boolean> waitingListener) {
         this.waitingListener = waitingListener;
@@ -57,11 +62,11 @@ final class AsphodelDecisionBroker {
             }
 
             String decisionId = "decision-" + decisionIds.incrementAndGet();
-            Map<String, ActionChoice> choices = new LinkedHashMap<>();
+            Map<String, DecisionChoice> choices = new LinkedHashMap<>();
             List<ExternalAction> actions = new ArrayList<>();
 
             String passActionId = "action-" + actionIds.incrementAndGet();
-            choices.put(passActionId, new ActionChoice(null));
+            choices.put(passActionId, new PrimaryActionChoice(null, passActionId));
             actions.add(new ExternalAction(
                     passActionId,
                     "pass",
@@ -76,7 +81,7 @@ final class AsphodelDecisionBroker {
 
             for (ForgeLegalActionEnumerator.Candidate candidate : candidates) {
                 String actionId = "action-" + actionIds.incrementAndGet();
-                choices.put(actionId, new ActionChoice(candidate));
+                choices.put(actionId, new PrimaryActionChoice(candidate, actionId));
                 actions.add(new ExternalAction(
                         actionId,
                         candidate.type().wireName(),
@@ -111,7 +116,7 @@ final class AsphodelDecisionBroker {
 
         waitingListener.accept(true);
         try {
-            ActionChoice choice = decision.answer().get();
+            PrimaryActionChoice choice = (PrimaryActionChoice) decision.answer().get();
             return choice.candidate() == null
                     ? null
                     : List.of(choice.candidate().ability());
@@ -131,9 +136,99 @@ final class AsphodelDecisionBroker {
         }
     }
 
-    void submit(String decisionId, String actionId) {
+    TargetAnswer requestTargetDecision(
+            Game game,
+            Player player,
+            SpellAbility ability,
+            List<ForgeTargetChoiceEnumerator.Candidate> candidates,
+            List<String> selectedTargetIds,
+            boolean canFinish,
+            AgentObservation observation
+    ) {
         PendingInternal decision;
-        ActionChoice choice;
+        synchronized (this) {
+            if (cancelled) {
+                throw new ExternalMatchCancelledException();
+            }
+            if (pending != null) {
+                throw new IllegalStateException("Only one Asphodel decision may be pending.");
+            }
+
+            String decisionId = "decision-" + decisionIds.incrementAndGet();
+            Map<String, DecisionChoice> choices = new LinkedHashMap<>();
+            List<ExternalTarget> targets = new ArrayList<>();
+            for (ForgeTargetChoiceEnumerator.Candidate candidate : candidates) {
+                String targetId = "target-" + targetIds.incrementAndGet();
+                choices.put(targetId, new TargetChoice(candidate.target(), false, targetId));
+                targets.add(new ExternalTarget(
+                        targetId,
+                        candidate.targetType(),
+                        candidate.label(),
+                        candidate.playerId(),
+                        candidate.cardRef(),
+                        candidate.stackRef(),
+                        candidate.name(),
+                        candidate.zone(),
+                        candidate.controllerId(),
+                        candidate.faceDown(),
+                        candidate.hidden()
+                ));
+            }
+            String finishTargetId = null;
+            if (canFinish) {
+                finishTargetId = "target-" + targetIds.incrementAndGet();
+                choices.put(finishTargetId, new TargetChoice(null, true, finishTargetId));
+            }
+
+            PhaseHandler phase = game.getPhaseHandler();
+            AcceptedAbility accepted = acceptedAbilities.get(ability.getRootAbility());
+            PendingTargetDecision snapshot = new PendingTargetDecision(
+                    decisionId,
+                    "target_selection",
+                    playerId(player),
+                    context(game, phase),
+                    new TargetSource(
+                            accepted == null ? null : accepted.actionId(),
+                            AgentObservationBuilder.cardRef(ability.getHostCard()),
+                            ability.getHostCard().getName(),
+                            AgentObservationBuilder.shortText(ability.getDescription())
+                    ),
+                    ability.getTargetRestrictions().getVTSelection(),
+                    ability.getMinTargets(),
+                    ability.getMaxTargets(),
+                    List.copyOf(selectedTargetIds),
+                    canFinish,
+                    finishTargetId,
+                    List.copyOf(targets)
+            );
+            decision = new PendingInternal(snapshot, observation, choices);
+            pending = decision;
+            targetDecisionsRequested++;
+        }
+
+        waitingListener.accept(true);
+        try {
+            TargetChoice choice = (TargetChoice) decision.answer().get();
+            return new TargetAnswer(choice.target(), choice.finish(), choice.choiceId());
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new ExternalMatchCancelledException();
+        } catch (ExecutionException exception) {
+            throw new ExternalMatchCancelledException();
+        } finally {
+            decision.clear();
+            synchronized (this) {
+                if (pending == decision) {
+                    pending = null;
+                }
+            }
+            waitingListener.accept(false);
+        }
+    }
+
+    void submit(String decisionId, String choiceId, boolean targetSubmission) {
+        PendingInternal decision;
+        DecisionChoice choice;
         synchronized (this) {
             if (consumedDecisionIds.contains(decisionId)) {
                 throw new ExternalMatchException(
@@ -154,25 +249,43 @@ final class AsphodelDecisionBroker {
                         "The pending decision does not match decisionId."
                 );
             }
-            if (!decision.choices().containsKey(actionId)) {
+            boolean targetDecision = decision.snapshot() instanceof PendingTargetDecision;
+            if (targetDecision != targetSubmission) {
                 throw new ExternalMatchException(
-                        "ACTION_NOT_FOUND",
-                        "The action does not belong to the pending decision."
+                        targetDecision ? "TARGET_ID_REQUIRED" : "ACTION_ID_REQUIRED",
+                        targetDecision
+                                ? "targetId is required for a target selection."
+                                : "actionId is required for a priority action."
+                );
+            }
+            if (!decision.choices().containsKey(choiceId)) {
+                throw new ExternalMatchException(
+                        targetDecision
+                                ? "TARGET_NOT_FOUND"
+                                : "ACTION_NOT_FOUND",
+                        "The choice does not belong to the pending decision."
                 );
             }
 
-            choice = decision.choices().get(actionId);
+            choice = decision.choices().get(choiceId);
             consumedDecisionIds.add(decisionId);
             pending = null;
-            decisionsSubmitted++;
-            if (choice.candidate() == null) {
-                passesSubmitted++;
-            } else {
-                primaryActionsSubmitted++;
-                acceptedAbilities.put(
-                        choice.candidate().ability(),
-                        choice.candidate().type()
-                );
+            if (choice instanceof PrimaryActionChoice primary) {
+                decisionsSubmitted++;
+                if (primary.candidate() == null) {
+                    passesSubmitted++;
+                } else {
+                    primaryActionsSubmitted++;
+                    acceptedAbilities.put(
+                            primary.candidate().ability(),
+                            new AcceptedAbility(primary.candidate().type(), primary.actionId())
+                    );
+                }
+            } else if (choice instanceof TargetChoice target) {
+                targetDecisionsSubmitted++;
+                if (!target.finish()) {
+                    targetsSelected++;
+                }
             }
         }
 
@@ -195,17 +308,24 @@ final class AsphodelDecisionBroker {
                 primaryActionsPlayed,
                 landsPlayed,
                 spellsCast,
-                abilitiesActivated
+                abilitiesActivated,
+                targetDecisionsRequested,
+                targetDecisionsSubmitted,
+                targetsSelected
         );
     }
 
+    synchronized boolean isAcceptedPrimaryAbility(SpellAbility ability) {
+        return acceptedAbilities.containsKey(ability.getRootAbility());
+    }
+
     synchronized void recordPrimaryActionResult(SpellAbility ability, boolean played) {
-        ForgeLegalActionEnumerator.ActionType type = acceptedAbilities.remove(ability);
-        if (type == null || !played) {
+        AcceptedAbility accepted = acceptedAbilities.remove(ability);
+        if (accepted == null || !played) {
             return;
         }
         primaryActionsPlayed++;
-        switch (type) {
+        switch (accepted.type()) {
             case PLAY_LAND -> landsPlayed++;
             case CAST_SPELL -> spellsCast++;
             case ACTIVATE_ABILITY -> abilitiesActivated++;
@@ -231,6 +351,16 @@ final class AsphodelDecisionBroker {
         return player == null ? "" : "player-" + (player.getId() + 1);
     }
 
+    private static DecisionContext context(Game game, PhaseHandler phase) {
+        return new DecisionContext(
+                phase.getTurn(),
+                phase.getPhase().name().toLowerCase(Locale.ROOT),
+                playerId(phase.getPlayerTurn()),
+                playerId(phase.getPriorityPlayer()),
+                game.getStack().size()
+        );
+    }
+
     record DecisionContext(
             int turn,
             String phase,
@@ -253,18 +383,61 @@ final class AsphodelDecisionBroker {
     ) {
     }
 
+    sealed interface DecisionSnapshot permits PendingDecision, PendingTargetDecision {
+        String decisionId();
+    }
+
     record PendingDecision(
             String decisionId,
             String type,
             String playerId,
             DecisionContext context,
             List<ExternalAction> actions
+    ) implements DecisionSnapshot {
+    }
+
+    record TargetSource(
+            String actionId,
+            String cardRef,
+            String cardName,
+            String abilityText
     ) {
+    }
+
+    record ExternalTarget(
+            String targetId,
+            String type,
+            String label,
+            String playerId,
+            String cardRef,
+            String stackRef,
+            String name,
+            String zone,
+            String controllerId,
+            boolean faceDown,
+            boolean hidden
+    ) {
+    }
+
+    record PendingTargetDecision(
+            String decisionId,
+            String type,
+            String playerId,
+            DecisionContext context,
+            TargetSource source,
+            String prompt,
+            int minTargets,
+            int maxTargets,
+            List<String> selectedTargetIds,
+            boolean canFinish,
+            String finishTargetId,
+            List<ExternalTarget> targets
+    ) implements DecisionSnapshot {
     }
 
     record PendingAgentTurn(
             AgentObservation observation,
-            PendingDecision pendingDecision
+            DecisionSnapshot pendingDecision
     ) {
     }
 
@@ -276,23 +449,48 @@ final class AsphodelDecisionBroker {
             long primaryActionsPlayed,
             long landsPlayed,
             long spellsCast,
-            long abilitiesActivated
+            long abilitiesActivated,
+            long targetDecisionsRequested,
+            long targetDecisionsSubmitted,
+            long targetsSelected
     ) {
     }
 
-    private record ActionChoice(ForgeLegalActionEnumerator.Candidate candidate) {
+    record TargetAnswer(GameObject target, boolean finish, String targetId) {
+    }
+
+    private sealed interface DecisionChoice permits PrimaryActionChoice, TargetChoice {
+    }
+
+    private record PrimaryActionChoice(
+            ForgeLegalActionEnumerator.Candidate candidate,
+            String actionId
+    ) implements DecisionChoice {
+    }
+
+    private record TargetChoice(
+            GameObject target,
+            boolean finish,
+            String choiceId
+    ) implements DecisionChoice {
+    }
+
+    private record AcceptedAbility(
+            ForgeLegalActionEnumerator.ActionType type,
+            String actionId
+    ) {
     }
 
     private record PendingInternal(
-            PendingDecision snapshot,
+            DecisionSnapshot snapshot,
             AgentObservation observation,
-            Map<String, ActionChoice> choices,
-            CompletableFuture<ActionChoice> answer
+            Map<String, DecisionChoice> choices,
+            CompletableFuture<DecisionChoice> answer
     ) {
         PendingInternal(
-                PendingDecision snapshot,
+                DecisionSnapshot snapshot,
                 AgentObservation observation,
-                Map<String, ActionChoice> choices
+                Map<String, DecisionChoice> choices
         ) {
             this(snapshot, observation, choices, new CompletableFuture<>());
         }

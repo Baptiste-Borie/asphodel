@@ -19,6 +19,7 @@ import type {
   ForgeExternalMatchSnapshot,
   ForgeGameResult,
   ForgePendingDecision,
+  ForgePendingTargetDecision,
 } from "./forge-protocol.js";
 
 const jarPath = process.env.FORGE_BRIDGE_JAR;
@@ -166,14 +167,43 @@ async function waitForDecision(
 ): Promise<ForgeExternalMatchSnapshot & {
   pendingDecision: ForgePendingDecision;
 }> {
+  for (;;) {
+    const snapshot = await waitForExternalSnapshot(
+      external,
+      sessionId,
+      (candidate) => candidate.status === "waiting_for_decision",
+    );
+    assert.ok(snapshot.pendingDecision);
+    if (snapshot.pendingDecision.type === "priority_action") {
+      return snapshot as ForgeExternalMatchSnapshot & {
+        pendingDecision: ForgePendingDecision;
+      };
+    }
+    const target =
+      snapshot.pendingDecision.targets[0]?.targetId ??
+      snapshot.pendingDecision.finishTargetId;
+    assert.ok(target);
+    await external.submitTarget(
+      sessionId,
+      snapshot.pendingDecision.decisionId,
+      target,
+    );
+  }
+}
+
+async function waitForTargetDecision(
+  external: ForgeExternalMatchClient,
+  sessionId: string,
+): Promise<ForgeExternalMatchSnapshot & {
+  pendingDecision: ForgePendingTargetDecision;
+}> {
   const snapshot = await waitForExternalSnapshot(
     external,
     sessionId,
-    (candidate) => candidate.status === "waiting_for_decision",
+    (candidate) => candidate.pendingDecision?.type === "target_selection",
   );
-  assert.ok(snapshot.pendingDecision);
   return snapshot as ForgeExternalMatchSnapshot & {
-    pendingDecision: ForgePendingDecision;
+    pendingDecision: ForgePendingTargetDecision;
   };
 }
 
@@ -280,6 +310,18 @@ async function autoDriveExternalMatch(
       throw new Error(`External match failed: ${JSON.stringify(snapshot.error)}`);
     }
     if (snapshot.pendingDecision) {
+      if (snapshot.pendingDecision.type === "target_selection") {
+        const target =
+          snapshot.pendingDecision.targets[0]?.targetId ??
+          snapshot.pendingDecision.finishTargetId;
+        assert.ok(target);
+        await external.submitTarget(
+          sessionId,
+          snapshot.pendingDecision.decisionId,
+          target,
+        );
+        continue;
+      }
       const action =
         snapshot.pendingDecision.actions.find(
           (candidate) => candidate.type === "play_land",
@@ -799,6 +841,15 @@ Mainboard
     assert.ok(pass);
 
     await assert.rejects(
+      external.submitTarget(
+        started.sessionId,
+        pendingDecision.decisionId,
+        pass.actionId,
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError && error.code === "ACTION_ID_REQUIRED",
+    );
+    await assert.rejects(
       external.submitDecision(
         started.sessionId,
         pendingDecision.decisionId,
@@ -927,6 +978,16 @@ Mainboard
       if (!pendingDecision || seenDecisionIds.has(pendingDecision.decisionId)) {
         continue;
       }
+      if (pendingDecision.type === "target_selection") {
+        const target = pendingDecision.targets[0]?.targetId;
+        assert.ok(target);
+        await external.submitTarget(
+          started.sessionId,
+          pendingDecision.decisionId,
+          target,
+        );
+        continue;
+      }
       seenDecisionIds.add(pendingDecision.decisionId);
       decisionsInspected += 1;
 
@@ -1005,7 +1066,8 @@ Mainboard
     assert.equal(next.progress.primaryActionsPlayed, 1);
     assert.equal(next.progress.landsPlayed, 1);
     assert.ok(
-      !next.pendingDecision?.actions.some(
+      next.pendingDecision?.type !== "priority_action" ||
+      !next.pendingDecision.actions.some(
         (action) => action.type === "play_land" && action.cardRef === playedCardRef,
       ),
     );
@@ -1164,13 +1226,163 @@ Mainboard
       opponentInstant.decision.decisionId,
       opponentInstant.action.actionId,
     );
+    const targetSelection = await waitForTargetDecision(
+      external,
+      started.sessionId,
+    );
+    assert.equal(targetSelection.pendingDecision.source.actionId, opponentInstant.action.actionId);
+    assert.equal(targetSelection.pendingDecision.source.cardRef, opponentInstant.action.cardRef);
+    assert.equal(targetSelection.pendingDecision.source.cardName, "Lightning Bolt");
+    assert.equal(targetSelection.pendingDecision.minTargets, 1);
+    assert.equal(targetSelection.pendingDecision.maxTargets, 1);
+    assert.equal(targetSelection.pendingDecision.canFinish, false);
+    assert.deepEqual(
+      targetSelection.pendingDecision.targets
+        .filter((target) => target.type === "player")
+        .map((target) => target.playerId)
+        .sort(),
+      ["player-1", "player-2"],
+    );
+    const opponent = targetSelection.pendingDecision.targets.find(
+      (target) => target.type === "player" && target.playerId === "player-2",
+    );
+    assert.ok(opponent);
+    assert.match(opponent.targetId, /^target-\d+$/);
+    await external.submitTarget(
+      started.sessionId,
+      targetSelection.pendingDecision.decisionId,
+      opponent.targetId,
+    );
     const cast = await waitForExternalSnapshot(
       external,
       started.sessionId,
       (snapshot) => snapshot.progress.spellsCast === 1,
     );
     assert.equal(cast.progress.primaryActionsPlayed, 2);
+    assert.equal(cast.progress.targetDecisionsRequested, 1);
+    assert.equal(cast.progress.targetDecisionsSubmitted, 1);
+    assert.equal(cast.progress.targetsSelected, 1);
     if (cast.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("applies Node's card target to the retained Lightning Bolt ability", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(redDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+
+    let bolt:
+      | {
+          decision: ForgePendingDecision;
+          action: Exclude<ForgeExternalAction, { type: "pass" }>;
+          bearRef: string;
+        }
+      | undefined;
+    for (let index = 0; index < 500 && !bolt; index += 1) {
+      const snapshot = await waitForObservedDecision(
+        external,
+        started.sessionId,
+      );
+      const { opponent } = observedPlayers(snapshot.observation);
+      const bear = opponent.battlefield.find(
+        (card) => card.name === "Grizzly Bears",
+      );
+      const castBolt = snapshot.pendingDecision.actions.find(
+        (action) =>
+          action.type === "cast_spell" && action.cardName === "Lightning Bolt",
+      );
+      if (bear && castBolt && castBolt.type !== "pass") {
+        bolt = {
+          decision: snapshot.pendingDecision,
+          action: castBolt,
+          bearRef: bear.cardRef,
+        };
+        break;
+      }
+      const fallback =
+        snapshot.pendingDecision.actions.find(
+          (action) => action.type === "play_land",
+        ) ??
+        snapshot.pendingDecision.actions.find((action) => action.type === "pass");
+      assert.ok(fallback);
+      await external.submitDecision(
+        started.sessionId,
+        snapshot.pendingDecision.decisionId,
+        fallback.actionId,
+      );
+    }
+    assert.ok(bolt, "Forge did not reach a Bolt + Grizzly Bears target window");
+
+    await external.submitDecision(
+      started.sessionId,
+      bolt.decision.decisionId,
+      bolt.action.actionId,
+    );
+    const targeting = await waitForTargetDecision(external, started.sessionId);
+    const bearTarget = targeting.pendingDecision.targets.find(
+      (target) => target.type === "card" && target.cardRef === bolt.bearRef,
+    );
+    assert.ok(bearTarget);
+    assert.equal(bearTarget.name, "Grizzly Bears");
+    assert.equal(bearTarget.zone, "battlefield");
+    assert.equal(bearTarget.controllerId, "player-2");
+    await assert.rejects(
+      external.submitDecision(
+        started.sessionId,
+        targeting.pendingDecision.decisionId,
+        bearTarget.targetId,
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError && error.code === "TARGET_ID_REQUIRED",
+    );
+    await assert.rejects(
+      external.submitTarget(
+        started.sessionId,
+        targeting.pendingDecision.decisionId,
+        "target-does-not-exist",
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError && error.code === "TARGET_NOT_FOUND",
+    );
+    const stillTargeting = await external.get(started.sessionId);
+    assert.equal(
+      stillTargeting.pendingDecision?.decisionId,
+      targeting.pendingDecision.decisionId,
+    );
+    await external.submitTarget(
+      started.sessionId,
+      targeting.pendingDecision.decisionId,
+      bearTarget.targetId,
+    );
+    await assert.rejects(
+      external.submitTarget(
+        started.sessionId,
+        targeting.pendingDecision.decisionId,
+        bearTarget.targetId,
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError && error.code === "STALE_DECISION",
+    );
+
+    const resolved = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) => {
+        const { opponent } = observedPlayers(observation);
+        return opponent.graveyard.some((card) => card.cardRef === bolt.bearRef);
+      },
+    );
+    const { opponent } = observedPlayers(resolved.observation);
+    assert.ok(
+      opponent.graveyard.some(
+        (card) => card.cardRef === bolt.bearRef && card.name === "Grizzly Bears",
+      ),
+    );
+    if (resolved.status !== "completed") {
+      await external.cancel(started.sessionId);
+    }
   });
 
   it("submits a retained Forge-derived primary action and plays the same ability object", async () => {

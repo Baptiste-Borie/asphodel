@@ -43,12 +43,19 @@ export interface ForgeRequestMap {
     type: "get_external_match";
     sessionId: string;
   };
-  submit_external_decision: {
-    type: "submit_external_decision";
-    sessionId: string;
-    decisionId: string;
-    actionId: string;
-  };
+  submit_external_decision:
+    | {
+        type: "submit_external_decision";
+        sessionId: string;
+        decisionId: string;
+        actionId: string;
+      }
+    | {
+        type: "submit_external_decision";
+        sessionId: string;
+        decisionId: string;
+        targetId: string;
+      };
   cancel_external_match: {
     type: "cancel_external_match";
     sessionId: string;
@@ -140,6 +147,71 @@ export interface ForgePendingDecision {
   actions: ForgeExternalAction[];
 }
 
+export type ForgeExternalTarget =
+  | {
+      targetId: string;
+      type: "player";
+      label: string;
+      playerId: string;
+      cardRef: null;
+      stackRef: null;
+      name: string;
+      zone: null;
+      controllerId: string;
+      faceDown: false;
+      hidden: false;
+    }
+  | {
+      targetId: string;
+      type: "card";
+      label: string;
+      playerId: null;
+      cardRef: string;
+      stackRef: null;
+      name: string | null;
+      zone: string;
+      controllerId: string | null;
+      faceDown: boolean;
+      hidden: boolean;
+    }
+  | {
+      targetId: string;
+      type: "spell";
+      label: string;
+      playerId: null;
+      cardRef: string | null;
+      stackRef: string;
+      name: string | null;
+      zone: "stack";
+      controllerId: string | null;
+      faceDown: boolean;
+      hidden: boolean;
+    };
+
+export interface ForgePendingTargetDecision {
+  decisionId: string;
+  type: "target_selection";
+  playerId: string;
+  context: ForgePendingDecision["context"];
+  source: {
+    actionId: string | null;
+    cardRef: string;
+    cardName: string;
+    abilityText: string | null;
+  };
+  prompt: string;
+  minTargets: number;
+  maxTargets: number;
+  selectedTargetIds: string[];
+  canFinish: boolean;
+  finishTargetId: string | null;
+  targets: ForgeExternalTarget[];
+}
+
+export type ForgePendingExternalDecision =
+  | ForgePendingDecision
+  | ForgePendingTargetDecision;
+
 export type ForgeExternalMatchStatus =
   | "starting"
   | "running"
@@ -157,6 +229,9 @@ export interface ForgeExternalMatchProgress {
   landsPlayed: number;
   spellsCast: number;
   abilitiesActivated: number;
+  targetDecisionsRequested: number;
+  targetDecisionsSubmitted: number;
+  targetsSelected: number;
 }
 
 export type AgentCardZone =
@@ -252,7 +327,7 @@ export interface ForgeExternalMatchSnapshot {
   status: ForgeExternalMatchStatus;
   progress: ForgeExternalMatchProgress;
   observation?: AgentObservation;
-  pendingDecision?: ForgePendingDecision;
+  pendingDecision?: ForgePendingExternalDecision;
   result?: ForgeGameResult;
   error?: { code: string; message: string };
 }

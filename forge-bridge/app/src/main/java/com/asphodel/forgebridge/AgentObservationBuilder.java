@@ -139,7 +139,7 @@ final class AgentObservationBuilder {
         );
     }
 
-    private static boolean identityVisible(Card card, Player observer) {
+    static boolean identityVisible(Card card, Player observer) {
         CardView view = card.getView();
         return view.canBeShownTo(observer.getView())
                 && (!card.isFaceDown() || view.canFaceDownBeShownTo(observer.getView()));
@@ -195,7 +195,7 @@ final class AgentObservationBuilder {
         return List.copyOf(result);
     }
 
-    private static String shortText(String text) {
+    static String shortText(String text) {
         if (text == null || text.isBlank()) {
             return null;
         }
@@ -203,11 +203,11 @@ final class AgentObservationBuilder {
         return compact.length() <= 240 ? compact : compact.substring(0, 237) + "...";
     }
 
-    private static String cardRef(Card card) {
+    static String cardRef(Card card) {
         return card == null ? null : "card-" + card.getId();
     }
 
-    private static String playerId(Player player) {
+    static String playerId(Player player) {
         return player == null ? null : "player-" + (player.getId() + 1);
     }
 }

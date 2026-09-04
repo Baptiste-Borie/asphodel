@@ -1,4 +1,4 @@
-# Asphodel Forge Bridge — AgentObservation V1e
+# Asphodel Forge Bridge — External Targets V1f
 
 ## Scope
 
@@ -11,7 +11,10 @@ Asphodel controller's primary-action decisions driven by real, enumerated
 Forge legal actions instead of a single Forge AI suggestion (see
 [Primary Legal Actions V1d](#primary-legal-actions-v1d) below). V1e adds a
 player-specific, sanitized observation captured alongside each pending decision
-(see [AgentObservation V1e](#agentobservation-v1e)). The integration
+(see [AgentObservation V1e](#agentobservation-v1e)). V1f externalizes ordinary
+player, card, and stack-spell targets while retaining the exact Forge
+`SpellAbility` selected by Node (see
+[External Targets V1f](#external-targets-v1f)). The integration
 is backend-only: it adds no product Game HTTP API, persistent Game model, full
 human controller, or frontend behavior.
 
@@ -36,6 +39,7 @@ Asphodel Forge Bridge (Java)
       +-- ForgeDeckFactory -> PaperCard lookup -> forge.deck.Deck
       +-- ExternalMatchSession -> PlayerControllerAsphodel
       +-- AgentObservationBuilder -> sanitized immutable observation
+      +-- ForgeTargetChoiceEnumerator -> Forge-legal opaque targets
       +-- forge-core  (CardStorageReader, StaticData, card scripts)
       +-- forge-game  (GameRules, RegisteredPlayer, Match, Game)
       `-- forge-ai    (LobbyPlayerAi, PlayerControllerAi)
@@ -469,7 +473,7 @@ externalized in V1d.
 | Optional costs | PASS WITH LIMITATION | See Cost and variant support above. |
 | X costs | NOT IMPLEMENTED | See Cost and variant support above. |
 | Mana abilities | NOT EXPOSED | Excluded by `classify(...)`; mana payment remains an inherited Forge AI secondary decision. |
-| Targets external | NOT IMPLEMENTED | Delegated to inherited `PlayerControllerAi.chooseTargetsFor(...)`. |
+| Targets external | HISTORICAL V1d LIMITATION | Externalized by V1f below. |
 | Modes external | NOT IMPLEMENTED | Inherited Forge AI secondary decision. |
 | Combat external | NOT IMPLEMENTED | Inherited Forge AI secondary decision. |
 | Full legal-action completeness | PASS WITH LIMITATION | Proven for the four supported action types under the tested fixtures; not claimed as an exhaustive Magic legal-action API. |
@@ -613,9 +617,113 @@ state.
 | Known top-of-library memory | NOT IMPLEMENTED | Future knowledge model. |
 
 V1e adds no card score, recommendation, threat value, database persistence,
-frontend, Scryfall game-state lookup, or AI. Targets, mana, modes, X,
-sacrifices, mulligans, combat, triggers, and replacement decisions remain the
-same inherited `PlayerControllerAi` secondary layer documented for V1d.
+frontend, Scryfall game-state lookup, or AI. Its original snapshot contains no
+chosen-target annotations; V1f adds target decisions without changing this
+observation DTO.
+
+## External Targets V1f
+
+For an ordinary targeted primary action, control now crosses the process
+boundary twice:
+
+```text
+Node selects actionId for Lightning Bolt
+       |
+       v
+JVM retains that exact SpellAbility and asks Forge for current targets
+       |
+       v
+get_external_match -> target_selection (player/card/spell targetId values)
+       |
+       v
+Node submits one targetId
+       |
+       v
+JVM adds the retained GameObject to the retained SpellAbility TargetChoices
+       |
+       v
+Forge validates, pays costs, puts the spell on the stack, and continues
+```
+
+`PlayerControllerAsphodel.playChosenSpellAbility(...)` calls
+`SpellAbility.setupTargets()`. Forge walks the real root/sub-ability chain and
+calls the controller's overridden `chooseTargetsFor(...)` for each targeting
+block. `ForgeTargetChoiceEnumerator` derives cards through
+`CardUtil.getValidCardsToTarget`, players through `SpellAbility.canTarget`, and
+stack spells through `SpellAbility.canTargetSpellAbility`. Forge's
+`StaticAbilityMustTarget.filterMustTargetCards` is applied under the same
+parent/sub-ability condition used by Forge's human target flow. No target
+restriction is parsed or reimplemented from card text.
+
+The pending wire decision is a discriminated sibling of `priority_action`:
+
+```ts
+interface ForgePendingTargetDecision {
+  decisionId: string;
+  type: "target_selection";
+  playerId: string;
+  context: ForgePendingDecision["context"];
+  source: {
+    actionId: string | null;
+    cardRef: string;
+    cardName: string;
+    abilityText: string | null;
+  };
+  prompt: string;
+  minTargets: number;
+  maxTargets: number;
+  selectedTargetIds: string[];
+  canFinish: boolean;
+  finishTargetId: string | null;
+  targets: ForgeExternalTarget[];
+}
+```
+
+Each target has an opaque `targetId` and a `type` of `player`, `card`, or
+`spell`. Player targets carry `playerId`; card targets carry `cardRef`; stack
+targets carry `stackRef` and their source `cardRef`. Visible labels/names use
+the same `CardView` visibility checks as `AgentObservation`. A legal face-down
+or otherwise hidden card remains selectable by opaque reference but has
+`name: null` and `hidden: true`.
+
+The submission command accepts exactly one selector field:
+
+```ts
+{ type: "submit_external_decision", sessionId, decisionId, actionId }
+{ type: "submit_external_decision", sessionId, decisionId, targetId }
+```
+
+Using `actionId` for `target_selection` returns `TARGET_ID_REQUIRED`; using
+`targetId` for `priority_action` returns `ACTION_ID_REQUIRED`. Unknown targets
+return `TARGET_NOT_FOUND` without consuming the pending choice. Re-submitting
+an answered target decision returns `STALE_DECISION`.
+
+Targets with `maxTargets > 1` are selected sequentially. After every submitted
+target, Forge recomputes the candidates against the same ability and its
+already-populated `TargetChoices`, so constraints such as distinct targets or
+different controllers remain engine-authoritative. Once the minimum is met,
+`canFinish` and `finishTargetId` allow Node to stop before the maximum.
+
+The broker adds `targetDecisionsRequested`, `targetDecisionsSubmitted`, and
+`targetsSelected` progress counters. Integration tests prove both target kinds
+from the requested flow: Node chooses `player-2` for a retained Lightning Bolt,
+and separately chooses the public `cardRef` of Grizzly Bears; after Forge
+resolves the Bolt, that exact Bears reference is observed in the graveyard.
+
+### Target capability table
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Player targets | PASS | Both real players are exposed for Lightning Bolt and selected by `targetId`. |
+| Public card targets | PASS | Grizzly Bears is selected by `cardRef`/`targetId` and its real zone transition is verified. |
+| Hidden card targets | PASS WITH LIMITATION | Targetable via opaque reference; current Forge visibility is enforced and no historical knowledge is modeled. |
+| Stack spell targets | PASS WITH LIMITATION | Enumerated through `canTargetSpellAbility` with `stackRef`; the transport path is implemented but has no dedicated counterspell fixture test yet. |
+| Multiple targets | PASS WITH LIMITATION | Sequential recomputation and early finish are implemented; no dedicated multi-target card fixture test yet. |
+| Root/sub-ability target chains | PASS WITH LIMITATION | Traversed by Forge `setupTargets`; no dedicated chained-target fixture test yet. |
+| Must-target effects | PASS WITH LIMITATION | Forge filtering and final `setupTargets` validation are used; no dedicated fixture test yet. |
+| Random targets | FORGE FALLBACK | `TargetRestrictions.isRandomTarget()` remains with Forge so Node cannot override randomness. |
+| Divided allocations | FORGE FALLBACK | Target plus amount allocation remains with Forge until an allocation decision DTO exists. |
+| Modes, mana, X, sacrifices, combat, triggers, replacements | NOT IMPLEMENTED | Remain inherited Forge AI secondary decisions. |
 
 ## Card database initialization
 
@@ -708,7 +816,7 @@ Forge code emits diagnostics through both logging and `System.out`.
 The client uses UUID request IDs, correlates in-flight requests, rejects pending
 work on exit, and supports clean shutdown. Supported commands are `ping`,
 `engine_info`, `forge_color_identity`, `run_test_game`, `inspect_deck`, and
-`run_deck_match`, plus the four V1c external-session commands documented above.
+`run_deck_match`, plus the four external-session commands documented above.
 
 Example inspection request:
 
@@ -742,14 +850,14 @@ Errors are structured and do not normally stop the process. Codes are
 - Commander tax, commander damage, and replacement effects are not asserted by
   these bridge tests.
 - Seed reproducibility is verified only for the pinned fixture in one JVM.
-- NDJSON requests are processed serially, but a V1c external game runs on its
-  worker so polling, decision submission, cancellation, and ping remain
+- NDJSON requests are processed serially, but an external game runs on its
+  worker so polling, action/target submission, cancellation, and ping remain
   responsive. Synchronous V1b matches still occupy the request thread.
 - There is no automatic restart after JVM failure, complete legal-action API,
   physical-table synchronization, or Asphodel ML agent.
 - Missing Java, jar, assets, protocol mismatch, timeout, or JVM exit is surfaced
   as a typed bridge/process error.
-- Forge upstream is unmodified. V1e only reads its sources and runtime assets.
+- Forge upstream is unmodified. V1f only calls its public runtime APIs.
 
 ## Updating Forge
 

@@ -90,7 +90,7 @@ final class ExternalMatchSession {
         return snapshot;
     }
 
-    void submit(String decisionId, String actionId) {
+    void submit(String decisionId, String choiceId, boolean targetSubmission) {
         Status current = status;
         if (current.isTerminal()) {
             throw new ExternalMatchException(
@@ -98,7 +98,7 @@ final class ExternalMatchSession {
                     "The external match is already terminal."
             );
         }
-        decisions.submit(decisionId, actionId);
+        decisions.submit(decisionId, choiceId, targetSubmission);
     }
 
     Map<String, Object> cancel() {

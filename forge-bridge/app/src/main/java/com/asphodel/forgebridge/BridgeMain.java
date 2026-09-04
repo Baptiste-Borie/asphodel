@@ -262,11 +262,24 @@ public final class BridgeMain {
     ) {
         String sessionId = requireString(request, "sessionId");
         String decisionId = requireString(request, "decisionId");
-        String actionId = requireString(request, "actionId");
+        String actionId = getString(request, "actionId");
+        String targetId = getString(request, "targetId");
+        boolean hasActionId = actionId != null && !actionId.isBlank();
+        boolean hasTargetId = targetId != null && !targetId.isBlank();
+        if (hasActionId == hasTargetId) {
+            throw new IllegalArgumentException(
+                    "submit_external_decision requires exactly one of actionId or targetId."
+            );
+        }
         return success(
                 requestId,
                 "submit_external_decision",
-                EXTERNAL_MATCHES.submit(sessionId, decisionId, actionId)
+                EXTERNAL_MATCHES.submit(
+                        sessionId,
+                        decisionId,
+                        hasTargetId ? targetId : actionId,
+                        hasTargetId
+                )
         );
     }
 

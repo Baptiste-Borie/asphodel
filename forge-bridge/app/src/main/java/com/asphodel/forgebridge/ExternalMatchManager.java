@@ -45,10 +45,11 @@ final class ExternalMatchManager {
     synchronized Map<String, Object> submit(
             String sessionId,
             String decisionId,
-            String actionId
+            String choiceId,
+            boolean targetSubmission
     ) {
         ExternalMatchSession current = requireSession(sessionId);
-        current.submit(decisionId, actionId);
+        current.submit(decisionId, choiceId, targetSubmission);
         return Map.of("accepted", true);
     }
 
