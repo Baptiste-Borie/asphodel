@@ -265,24 +265,67 @@ public final class BridgeMain {
         String actionId = getString(request, "actionId");
         String targetId = getString(request, "targetId");
         String modeId = getString(request, "modeId");
+        String costId = getString(request, "costId");
+        String objectId = getString(request, "objectId");
+        JsonElement rawValue = request.get("value");
         boolean hasActionId = actionId != null && !actionId.isBlank();
         boolean hasTargetId = targetId != null && !targetId.isBlank();
         boolean hasModeId = modeId != null && !modeId.isBlank();
+        boolean hasCostId = costId != null && !costId.isBlank();
+        boolean hasObjectId = objectId != null && !objectId.isBlank();
+        boolean hasValue = rawValue != null && !rawValue.isJsonNull();
         int selectorCount = (hasActionId ? 1 : 0)
                 + (hasTargetId ? 1 : 0)
-                + (hasModeId ? 1 : 0);
+                + (hasModeId ? 1 : 0)
+                + (hasCostId ? 1 : 0)
+                + (hasObjectId ? 1 : 0)
+                + (hasValue ? 1 : 0);
         if (selectorCount != 1) {
             throw new IllegalArgumentException(
-                    "submit_external_decision requires exactly one of actionId, targetId, "
-                            + "or modeId."
+                    "submit_external_decision requires exactly one selector: actionId, "
+                            + "targetId, modeId, value, costId, or objectId."
             );
         }
-        String choiceId = hasActionId ? actionId : hasTargetId ? targetId : modeId;
+        if (hasValue) {
+            if (!rawValue.isJsonPrimitive() || !rawValue.getAsJsonPrimitive().isNumber()) {
+                throw new ExternalMatchException(
+                        "VALUE_NOT_INTEGER",
+                        "value must be an integer."
+                );
+            }
+            final int value;
+            try {
+                value = rawValue.getAsBigDecimal().intValueExact();
+            } catch (ArithmeticException | NumberFormatException exception) {
+                throw new ExternalMatchException(
+                        "VALUE_NOT_INTEGER",
+                        "value must be an integer."
+                );
+            }
+            return success(
+                    requestId,
+                    "submit_external_decision",
+                    EXTERNAL_MATCHES.submitValue(sessionId, decisionId, value)
+            );
+        }
+        String choiceId = hasActionId
+                ? actionId
+                : hasTargetId
+                ? targetId
+                : hasModeId
+                ? modeId
+                : hasCostId
+                ? costId
+                : objectId;
         AsphodelDecisionBroker.SubmissionKind submissionKind = hasActionId
                 ? AsphodelDecisionBroker.SubmissionKind.ACTION
                 : hasTargetId
                 ? AsphodelDecisionBroker.SubmissionKind.TARGET
-                : AsphodelDecisionBroker.SubmissionKind.MODE;
+                : hasModeId
+                ? AsphodelDecisionBroker.SubmissionKind.MODE
+                : hasCostId
+                ? AsphodelDecisionBroker.SubmissionKind.COST
+                : AsphodelDecisionBroker.SubmissionKind.OBJECT;
         return success(
                 requestId,
                 "submit_external_decision",

@@ -3,8 +3,11 @@ package com.asphodel.forgebridge;
 import forge.LobbyPlayer;
 import forge.ai.PlayerControllerAi;
 import forge.game.Game;
+import forge.game.cost.CostDecisionMakerBase;
 import forge.game.player.Player;
+import forge.game.player.PlaySpellAbility;
 import forge.game.spellability.AbilitySub;
+import forge.game.spellability.OptionalCostValue;
 import forge.game.spellability.SpellAbility;
 
 import java.util.ArrayList;
@@ -15,7 +18,11 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
     private final ForgeLegalActionEnumerator legalActions = new ForgeLegalActionEnumerator();
     private final ForgeTargetChoiceEnumerator targetChoices = new ForgeTargetChoiceEnumerator();
     private final ForgeModeChoiceEnumerator modeChoices = new ForgeModeChoiceEnumerator();
+    private final ForgeValueDecisionBuilder valueDecisions = new ForgeValueDecisionBuilder();
+    private final ForgeOptionalCostChoiceEnumerator optionalCosts =
+            new ForgeOptionalCostChoiceEnumerator();
     private final AgentObservationBuilder observations = new AgentObservationBuilder();
+    private SpellAbility executingPrimaryAbility;
 
     PlayerControllerAsphodel(
             Game game,
@@ -43,19 +50,22 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
 
     @Override
     public boolean playChosenSpellAbility(SpellAbility ability) {
-        if (ForgeLegalActionEnumerator.requiresTargets(ability)
-                && !ability.setupTargets()) {
-            decisions.recordPrimaryActionResult(ability, false);
-            return false;
+        executingPrimaryAbility = ability;
+        boolean played;
+        try {
+            // Use Forge's full player execution path so optional costs, X,
+            // modes, targets, and cost parts occur in native rules order.
+            played = PlaySpellAbility.playSpellAbility(this, getPlayer(), ability);
+        } finally {
+            executingPrimaryAbility = null;
         }
-        boolean played = super.playChosenSpellAbility(ability);
         decisions.recordPrimaryActionResult(ability, played);
         return played;
     }
 
     @Override
     public boolean chooseTargetsFor(SpellAbility ability) {
-        if (!decisions.isAcceptedPrimaryAbility(ability)) {
+        if (!isExecutingExternalAction(ability)) {
             return super.chooseTargetsFor(ability);
         }
         // Random target selection and divided allocations are separate kinds
@@ -83,6 +93,7 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
                     getGame(),
                     getPlayer(),
                     ability,
+                    sourceActionId(),
                     candidates,
                     selectedTargetIds,
                     canFinish,
@@ -108,7 +119,7 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
             int max,
             boolean allowRepeat
     ) {
-        if (!decisions.isAcceptedPrimaryAbility(ability)
+        if (!isExecutingExternalAction(ability)
                 || !modeChoices.supports(ability, possible, min, max, allowRepeat)) {
             return super.chooseModeForAbility(ability, possible, min, max, allowRepeat);
         }
@@ -117,6 +128,7 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
                 getGame(),
                 getPlayer(),
                 ability,
+                sourceActionId(),
                 modeChoices.enumerate(possible),
                 min,
                 max,
@@ -125,13 +137,85 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
         AbilitySub mode = chosen.mode();
         mode.setActivatingPlayer(ability.getActivatingPlayer());
         mode.setParent(ability);
-
-        // CharmEffect asks for modes before it chains Forge's copies of the
-        // selected AbilitySub objects. Target the retained selected mode now;
-        // SpellAbility.copy() preserves those TargetChoices when Forge chains it.
-        if (ForgeLegalActionEnumerator.requiresTargets(mode) && !mode.setupTargets()) {
-            return new ArrayList<>();
-        }
         return new ArrayList<>(List.of(mode));
+    }
+
+    @Override
+    public Integer announceRequirements(
+            SpellAbility ability,
+            int min,
+            int max,
+            String announce
+    ) {
+        if (!isExecutingExternalAction(ability) || !"X".equalsIgnoreCase(announce)) {
+            return super.announceRequirements(ability, min, max, announce);
+        }
+        ForgeValueDecisionBuilder.Decision decision = valueDecisions.buildX(
+                ability, getPlayer(), min, max
+        );
+        if (decision == null) {
+            return super.announceRequirements(ability, min, max, announce);
+        }
+        return decisions.requestValueDecision(
+                getGame(),
+                getPlayer(),
+                ability,
+                sourceActionId(),
+                decision,
+                observations.build(getGame(), getPlayer())
+        );
+    }
+
+    @Override
+    public List<OptionalCostValue> chooseOptionalCosts(
+            SpellAbility ability,
+            List<OptionalCostValue> costs
+    ) {
+        if (!isExecutingExternalAction(ability) || !optionalCosts.supports(costs)) {
+            return super.chooseOptionalCosts(ability, costs);
+        }
+        return decisions.requestOptionalCostDecision(
+                getGame(),
+                getPlayer(),
+                ability,
+                sourceActionId(),
+                optionalCosts.enumerate(costs),
+                observations.build(getGame(), getPlayer())
+        );
+    }
+
+    @Override
+    public CostDecisionMakerBase getCostDecisionMaker(
+            Player player,
+            SpellAbility ability,
+            boolean effect,
+            String prompt
+    ) {
+        String actionId = sourceActionId();
+        if (actionId == null) {
+            return super.getCostDecisionMaker(player, ability, effect, prompt);
+        }
+        return new AsphodelCostDecision(
+                getGame(),
+                player,
+                ability,
+                effect,
+                decisions,
+                actionId,
+                observations
+        );
+    }
+
+    private boolean isExecutingExternalAction(SpellAbility ability) {
+        return executingPrimaryAbility != null
+                && decisions.isAcceptedPrimaryAbility(executingPrimaryAbility)
+                && (ability == executingPrimaryAbility
+                || ability.getHostCard().equals(executingPrimaryAbility.getHostCard()));
+    }
+
+    private String sourceActionId() {
+        return executingPrimaryAbility == null
+                ? null
+                : decisions.acceptedActionId(executingPrimaryAbility);
     }
 }

@@ -5,6 +5,7 @@ import forge.game.GameObject;
 import forge.game.phase.PhaseHandler;
 import forge.game.player.Player;
 import forge.game.spellability.AbilitySub;
+import forge.game.spellability.OptionalCostValue;
 import forge.game.spellability.SpellAbility;
 
 import java.util.ArrayList;
@@ -25,6 +26,8 @@ final class AsphodelDecisionBroker {
     private final AtomicLong actionIds = new AtomicLong();
     private final AtomicLong targetIds = new AtomicLong();
     private final AtomicLong modeIds = new AtomicLong();
+    private final AtomicLong costIds = new AtomicLong();
+    private final AtomicLong objectIds = new AtomicLong();
     private final Consumer<Boolean> waitingListener;
     private final Set<String> consumedDecisionIds = new LinkedHashSet<>();
     private final Map<SpellAbility, AcceptedAbility> acceptedAbilities =
@@ -46,6 +49,12 @@ final class AsphodelDecisionBroker {
     private long modeDecisionsRequested;
     private long modeDecisionsSubmitted;
     private long modesSelected;
+    private long valueDecisionsRequested;
+    private long valueDecisionsSubmitted;
+    private long optionalCostDecisionsRequested;
+    private long optionalCostsSelected;
+    private long costObjectDecisionsRequested;
+    private long costObjectsSelected;
 
     AsphodelDecisionBroker(Consumer<Boolean> waitingListener) {
         this.waitingListener = waitingListener;
@@ -145,6 +154,7 @@ final class AsphodelDecisionBroker {
             Game game,
             Player player,
             SpellAbility ability,
+            String sourceActionId,
             List<ForgeTargetChoiceEnumerator.Candidate> candidates,
             List<String> selectedTargetIds,
             boolean canFinish,
@@ -186,14 +196,13 @@ final class AsphodelDecisionBroker {
             }
 
             PhaseHandler phase = game.getPhaseHandler();
-            AcceptedAbility accepted = acceptedAbilities.get(ability.getRootAbility());
             PendingTargetDecision snapshot = new PendingTargetDecision(
                     decisionId,
                     "target_selection",
                     playerId(player),
                     context(game, phase),
                     new TargetSource(
-                            accepted == null ? null : accepted.actionId(),
+                            sourceActionId,
                             AgentObservationBuilder.cardRef(ability.getHostCard()),
                             ability.getHostCard().getName(),
                             AgentObservationBuilder.shortText(ability.getDescription())
@@ -235,6 +244,7 @@ final class AsphodelDecisionBroker {
             Game game,
             Player player,
             SpellAbility ability,
+            String sourceActionId,
             List<ForgeModeChoiceEnumerator.Candidate> candidates,
             int minModes,
             int maxModes,
@@ -262,14 +272,13 @@ final class AsphodelDecisionBroker {
                 ));
             }
 
-            AcceptedAbility accepted = acceptedAbilities.get(ability.getRootAbility());
             PendingModeDecision snapshot = new PendingModeDecision(
                     decisionId,
                     "mode_selection",
                     playerId(player),
                     context(game, game.getPhaseHandler()),
                     new TargetSource(
-                            accepted == null ? null : accepted.actionId(),
+                            sourceActionId,
                             AgentObservationBuilder.cardRef(ability.getHostCard()),
                             ability.getHostCard().getName(),
                             AgentObservationBuilder.shortText(ability.getDescription())
@@ -305,6 +314,136 @@ final class AsphodelDecisionBroker {
             }
             waitingListener.accept(false);
         }
+    }
+
+    int requestValueDecision(
+            Game game,
+            Player player,
+            SpellAbility ability,
+            String sourceActionId,
+            ForgeValueDecisionBuilder.Decision value,
+            AgentObservation observation
+    ) {
+        PendingInternal decision;
+        synchronized (this) {
+            ensureCanRequest();
+            String decisionId = "decision-" + decisionIds.incrementAndGet();
+            PendingValueDecision snapshot = new PendingValueDecision(
+                    decisionId,
+                    "value_selection",
+                    playerId(player),
+                    context(game, game.getPhaseHandler()),
+                    source(sourceActionId, ability),
+                    value.prompt(),
+                    value.valueKind(),
+                    value.minValue(),
+                    value.maxValue(),
+                    suggestedValues(value.minValue(), value.maxValue())
+            );
+            decision = new PendingInternal(snapshot, observation, new LinkedHashMap<>());
+            pending = decision;
+            valueDecisionsRequested++;
+        }
+        ValueChoice answer = (ValueChoice) await(decision);
+        return answer.value();
+    }
+
+    List<OptionalCostValue> requestOptionalCostDecision(
+            Game game,
+            Player player,
+            SpellAbility ability,
+            String sourceActionId,
+            List<ForgeOptionalCostChoiceEnumerator.Candidate> candidates,
+            AgentObservation observation
+    ) {
+        PendingInternal decision;
+        synchronized (this) {
+            ensureCanRequest();
+            String decisionId = "decision-" + decisionIds.incrementAndGet();
+            Map<String, DecisionChoice> choices = new LinkedHashMap<>();
+            List<ExternalOptionalCost> costs = new ArrayList<>();
+            for (ForgeOptionalCostChoiceEnumerator.Candidate candidate : candidates) {
+                String costId = "cost-" + costIds.incrementAndGet();
+                choices.put(costId, new OptionalCostChoice(candidate.cost(), costId));
+                costs.add(new ExternalOptionalCost(
+                        costId,
+                        candidate.type(),
+                        candidate.label(),
+                        candidate.costText()
+                ));
+            }
+            String declineCostId = "cost-" + costIds.incrementAndGet();
+            choices.put(declineCostId, new OptionalCostChoice(null, declineCostId));
+            PendingOptionalCostDecision snapshot = new PendingOptionalCostDecision(
+                    decisionId,
+                    "optional_cost_selection",
+                    playerId(player),
+                    context(game, game.getPhaseHandler()),
+                    source(sourceActionId, ability),
+                    "Choose an optional cost or decline.",
+                    0,
+                    1,
+                    declineCostId,
+                    List.copyOf(costs)
+            );
+            decision = new PendingInternal(snapshot, observation, choices);
+            pending = decision;
+            optionalCostDecisionsRequested++;
+        }
+        OptionalCostChoice answer = (OptionalCostChoice) await(decision);
+        return answer.cost() == null ? List.of() : List.of(answer.cost());
+    }
+
+    ForgeCostObjectChoiceEnumerator.Candidate requestCostObjectDecision(
+            Game game,
+            Player player,
+            SpellAbility ability,
+            String sourceActionId,
+            String selectionKind,
+            String prompt,
+            List<ForgeCostObjectChoiceEnumerator.Candidate> candidates,
+            AgentObservation observation
+    ) {
+        PendingInternal decision;
+        synchronized (this) {
+            ensureCanRequest();
+            String decisionId = "decision-" + decisionIds.incrementAndGet();
+            Map<String, DecisionChoice> choices = new LinkedHashMap<>();
+            List<ExternalCostObject> options = new ArrayList<>();
+            for (ForgeCostObjectChoiceEnumerator.Candidate candidate : candidates) {
+                String objectId = "object-" + objectIds.incrementAndGet();
+                choices.put(objectId, new CostObjectChoice(candidate, objectId));
+                options.add(new ExternalCostObject(
+                        objectId,
+                        candidate.cardRef(),
+                        candidate.name(),
+                        candidate.zone(),
+                        candidate.controllerId(),
+                        candidate.faceDown(),
+                        candidate.hidden()
+                ));
+            }
+            PendingCostObjectDecision snapshot = new PendingCostObjectDecision(
+                    decisionId,
+                    "cost_object_selection",
+                    playerId(player),
+                    context(game, game.getPhaseHandler()),
+                    source(sourceActionId, ability),
+                    prompt,
+                    selectionKind,
+                    1,
+                    1,
+                    List.of(),
+                    false,
+                    null,
+                    List.copyOf(options)
+            );
+            decision = new PendingInternal(snapshot, observation, choices);
+            pending = decision;
+            costObjectDecisionsRequested++;
+        }
+        CostObjectChoice answer = (CostObjectChoice) await(decision);
+        return answer.candidate();
     }
 
     void submit(String decisionId, String choiceId, SubmissionKind submissionKind) {
@@ -366,11 +505,61 @@ final class AsphodelDecisionBroker {
             } else if (choice instanceof ModeChoice) {
                 modeDecisionsSubmitted++;
                 modesSelected++;
+            } else if (choice instanceof OptionalCostChoice optionalCost) {
+                if (optionalCost.cost() != null) {
+                    optionalCostsSelected++;
+                }
+            } else if (choice instanceof CostObjectChoice) {
+                costObjectsSelected++;
             }
         }
 
         waitingListener.accept(false);
         decision.answer().complete(choice);
+    }
+
+    void submitValue(String decisionId, int value) {
+        PendingInternal decision;
+        synchronized (this) {
+            if (consumedDecisionIds.contains(decisionId)) {
+                throw new ExternalMatchException(
+                        "STALE_DECISION",
+                        "The decision has already been answered."
+                );
+            }
+            decision = pending;
+            if (decision == null) {
+                throw new ExternalMatchException(
+                        "MATCH_NOT_WAITING",
+                        "The external match is not waiting for a decision."
+                );
+            }
+            if (!decision.snapshot().decisionId().equals(decisionId)) {
+                throw new ExternalMatchException(
+                        "DECISION_NOT_FOUND",
+                        "The pending decision does not match decisionId."
+                );
+            }
+            if (!(decision.snapshot() instanceof PendingValueDecision valueDecision)) {
+                SubmissionKind expected = submissionKind(decision.snapshot());
+                throw new ExternalMatchException(
+                        expected.requiredCode(),
+                        expected.selectorName() + " is required for this decision."
+                );
+            }
+            if (value < valueDecision.minValue() || value > valueDecision.maxValue()) {
+                throw new ExternalMatchException(
+                        "VALUE_OUT_OF_RANGE",
+                        "value must be between " + valueDecision.minValue()
+                                + " and " + valueDecision.maxValue() + "."
+                );
+            }
+            consumedDecisionIds.add(decisionId);
+            pending = null;
+            valueDecisionsSubmitted++;
+        }
+        waitingListener.accept(false);
+        decision.answer().complete(new ValueChoice(value));
     }
 
     synchronized PendingAgentTurn pendingAgentTurn() {
@@ -394,12 +583,23 @@ final class AsphodelDecisionBroker {
                 targetsSelected,
                 modeDecisionsRequested,
                 modeDecisionsSubmitted,
-                modesSelected
+                modesSelected,
+                valueDecisionsRequested,
+                valueDecisionsSubmitted,
+                optionalCostDecisionsRequested,
+                optionalCostsSelected,
+                costObjectDecisionsRequested,
+                costObjectsSelected
         );
     }
 
     synchronized boolean isAcceptedPrimaryAbility(SpellAbility ability) {
         return acceptedAbilities.containsKey(ability.getRootAbility());
+    }
+
+    synchronized String acceptedActionId(SpellAbility ability) {
+        AcceptedAbility accepted = acceptedAbilities.get(ability.getRootAbility());
+        return accepted == null ? null : accepted.actionId();
     }
 
     synchronized void recordPrimaryActionResult(SpellAbility ability, boolean played) {
@@ -428,6 +628,54 @@ final class AsphodelDecisionBroker {
             decision.clear();
             decision.answer().completeExceptionally(new ExternalMatchCancelledException());
         }
+    }
+
+    private void ensureCanRequest() {
+        if (cancelled) {
+            throw new ExternalMatchCancelledException();
+        }
+        if (pending != null) {
+            throw new IllegalStateException("Only one Asphodel decision may be pending.");
+        }
+    }
+
+    private DecisionChoice await(PendingInternal decision) {
+        waitingListener.accept(true);
+        try {
+            return decision.answer().get();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new ExternalMatchCancelledException();
+        } catch (ExecutionException exception) {
+            throw new ExternalMatchCancelledException();
+        } finally {
+            decision.clear();
+            synchronized (this) {
+                if (pending == decision) {
+                    pending = null;
+                }
+            }
+            waitingListener.accept(false);
+        }
+    }
+
+    private static TargetSource source(String actionId, SpellAbility ability) {
+        return new TargetSource(
+                actionId,
+                AgentObservationBuilder.cardRef(ability.getHostCard()),
+                ability.getHostCard().getName(),
+                AgentObservationBuilder.shortText(ability.getDescription())
+        );
+    }
+
+    private static List<Integer> suggestedValues(int min, int max) {
+        if (min == max) {
+            return List.of(min);
+        }
+        if (min + 1 == max) {
+            return List.of(min, max);
+        }
+        return List.of(min, min + 1, max);
     }
 
     private static String playerId(Player player) {
@@ -473,13 +721,25 @@ final class AsphodelDecisionBroker {
         if (snapshot instanceof PendingModeDecision) {
             return SubmissionKind.MODE;
         }
+        if (snapshot instanceof PendingValueDecision) {
+            return SubmissionKind.VALUE;
+        }
+        if (snapshot instanceof PendingOptionalCostDecision) {
+            return SubmissionKind.COST;
+        }
+        if (snapshot instanceof PendingCostObjectDecision) {
+            return SubmissionKind.OBJECT;
+        }
         return SubmissionKind.ACTION;
     }
 
     enum SubmissionKind {
         ACTION("actionId", "ACTION_ID_REQUIRED", "ACTION_NOT_FOUND"),
         TARGET("targetId", "TARGET_ID_REQUIRED", "TARGET_NOT_FOUND"),
-        MODE("modeId", "MODE_ID_REQUIRED", "MODE_NOT_FOUND");
+        MODE("modeId", "MODE_ID_REQUIRED", "MODE_NOT_FOUND"),
+        VALUE("value", "VALUE_REQUIRED", "VALUE_OUT_OF_RANGE"),
+        COST("costId", "COST_ID_REQUIRED", "COST_NOT_FOUND"),
+        OBJECT("objectId", "OBJECT_ID_REQUIRED", "OBJECT_NOT_FOUND");
 
         private final String selectorName;
         private final String requiredCode;
@@ -505,7 +765,8 @@ final class AsphodelDecisionBroker {
     }
 
     sealed interface DecisionSnapshot permits PendingDecision, PendingTargetDecision,
-            PendingModeDecision {
+            PendingModeDecision, PendingValueDecision, PendingOptionalCostDecision,
+            PendingCostObjectDecision {
         String decisionId();
     }
 
@@ -580,6 +841,70 @@ final class AsphodelDecisionBroker {
     ) implements DecisionSnapshot {
     }
 
+    record PendingValueDecision(
+            String decisionId,
+            String type,
+            String playerId,
+            DecisionContext context,
+            TargetSource source,
+            String prompt,
+            String valueKind,
+            int minValue,
+            int maxValue,
+            List<Integer> suggestedValues
+    ) implements DecisionSnapshot {
+    }
+
+    record ExternalOptionalCost(
+            String costId,
+            String type,
+            String label,
+            String costText
+    ) {
+    }
+
+    record PendingOptionalCostDecision(
+            String decisionId,
+            String type,
+            String playerId,
+            DecisionContext context,
+            TargetSource source,
+            String prompt,
+            int minSelections,
+            int maxSelections,
+            String declineCostId,
+            List<ExternalOptionalCost> costs
+    ) implements DecisionSnapshot {
+    }
+
+    record ExternalCostObject(
+            String objectId,
+            String cardRef,
+            String name,
+            String zone,
+            String controllerId,
+            boolean faceDown,
+            boolean hidden
+    ) {
+    }
+
+    record PendingCostObjectDecision(
+            String decisionId,
+            String type,
+            String playerId,
+            DecisionContext context,
+            TargetSource source,
+            String prompt,
+            String selectionKind,
+            int minSelections,
+            int maxSelections,
+            List<String> selectedIds,
+            boolean canFinish,
+            String finishChoiceId,
+            List<ExternalCostObject> options
+    ) implements DecisionSnapshot {
+    }
+
     record PendingAgentTurn(
             AgentObservation observation,
             DecisionSnapshot pendingDecision
@@ -600,7 +925,13 @@ final class AsphodelDecisionBroker {
             long targetsSelected,
             long modeDecisionsRequested,
             long modeDecisionsSubmitted,
-            long modesSelected
+            long modesSelected,
+            long valueDecisionsRequested,
+            long valueDecisionsSubmitted,
+            long optionalCostDecisionsRequested,
+            long optionalCostsSelected,
+            long costObjectDecisionsRequested,
+            long costObjectsSelected
     ) {
     }
 
@@ -608,7 +939,7 @@ final class AsphodelDecisionBroker {
     }
 
     private sealed interface DecisionChoice permits PrimaryActionChoice, TargetChoice,
-            ModeChoice {
+            ModeChoice, ValueChoice, OptionalCostChoice, CostObjectChoice {
     }
 
     private record PrimaryActionChoice(
@@ -626,6 +957,21 @@ final class AsphodelDecisionBroker {
 
     private record ModeChoice(
             ForgeModeChoiceEnumerator.Candidate candidate,
+            String choiceId
+    ) implements DecisionChoice {
+    }
+
+    private record ValueChoice(int value) implements DecisionChoice {
+    }
+
+    private record OptionalCostChoice(
+            OptionalCostValue cost,
+            String choiceId
+    ) implements DecisionChoice {
+    }
+
+    private record CostObjectChoice(
+            ForgeCostObjectChoiceEnumerator.Candidate candidate,
             String choiceId
     ) implements DecisionChoice {
     }

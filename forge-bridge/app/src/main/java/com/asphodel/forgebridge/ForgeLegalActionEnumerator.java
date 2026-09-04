@@ -30,16 +30,16 @@ import java.util.Set;
  * affordability checks as a normal cast, but this is PASS WITH LIMITATION —
  * it is not proven correct end-to-end by a dedicated test. Mandatory
  * additional costs (e.g. sacrifice) are accounted for by
- * {@link ComputerUtilCost#canPayCost} for affordability, but the actual
- * choice of what to pay remains an inherited Forge AI secondary decision, not
- * a primary Node choice. Optional additional costs (e.g. Kicker) are not
- * modeled as distinct primary actions at all; Forge asks the controller for
- * them only during execution, which is likewise an inherited Forge AI
- * secondary decision. X costs are excluded outright (see {@link #isPlayable})
- * because a value must be chosen before affordability can be established, and
- * that primary choice is out of scope for V1d.</p>
+ * {@link ComputerUtilCost#canPayCost} for affordability; V1h externalizes the
+ * supported fixed-one object choices during execution. Optional costs are
+ * likewise execution-time choices. Bounded untargeted {@code Count$xPaid}
+ * actions are exposed after Forge computes their legal X range; other X shapes
+ * remain omitted.</p>
  */
 final class ForgeLegalActionEnumerator {
+    private final ForgeValueDecisionBuilder valueDecisions =
+            new ForgeValueDecisionBuilder();
+
     List<Candidate> enumerate(Game game, forge.game.player.Player player) {
         List<Candidate> candidates = new ArrayList<>();
         for (Card card : visibleCandidateCards(player)) {
@@ -101,16 +101,25 @@ final class ForgeLegalActionEnumerator {
         return null;
     }
 
-    private static boolean isPlayable(
+    private boolean isPlayable(
             Card card,
             SpellAbility ability,
             forge.game.player.Player player
     ) {
-        // X needs a value chosen before Forge can establish affordability. That
-        // primary choice is outside V1d, so omitting it is safer than exposing a
-        // candidate whose retained object is not execution-ready.
         if (ability.getPayCosts() != null && ability.getPayCosts().hasXInAnyCostPart()) {
-            return false;
+            if (!valueDecisions.supportsPrimaryAction(ability, player)) {
+                return false;
+            }
+            Integer previousX = ability.getXManaCostPaid();
+            ForgeValueDecisionBuilder.Decision value = valueDecisions.buildX(
+                    ability, player, 0, Integer.MAX_VALUE
+            );
+            ability.setXManaCostPaid(value.minValue());
+            boolean payable = ComputerUtilCost.canPayCost(ability, player, false);
+            ability.setXManaCostPaid(previousX);
+            if (!payable) {
+                return false;
+            }
         }
         if (!ability.checkRestrictions(card, player)) {
             return false;

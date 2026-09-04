@@ -105,6 +105,17 @@ final class ExternalMatchSession {
         decisions.submit(decisionId, choiceId, submissionKind);
     }
 
+    void submitValue(String decisionId, int value) {
+        Status current = status;
+        if (current.isTerminal()) {
+            throw new ExternalMatchException(
+                    "MATCH_COMPLETED",
+                    "The external match is already terminal."
+            );
+        }
+        decisions.submitValue(decisionId, value);
+    }
+
     Map<String, Object> cancel() {
         synchronized (this) {
             if (status == Status.COMPLETED || status == Status.FAILED) {

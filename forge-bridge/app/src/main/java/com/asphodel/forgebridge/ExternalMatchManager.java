@@ -53,6 +53,16 @@ final class ExternalMatchManager {
         return Map.of("accepted", true);
     }
 
+    synchronized Map<String, Object> submitValue(
+            String sessionId,
+            String decisionId,
+            int value
+    ) {
+        ExternalMatchSession current = requireSession(sessionId);
+        current.submitValue(decisionId, value);
+        return Map.of("accepted", true);
+    }
+
     Map<String, Object> cancel(String sessionId) {
         ExternalMatchSession current;
         synchronized (this) {

@@ -72,6 +72,33 @@ export class ForgeExternalMatchClient {
     });
   }
 
+  submitValue(sessionId: string, decisionId: string, value: number) {
+    return this.bridge.request({
+      type: "submit_external_decision",
+      sessionId,
+      decisionId,
+      value,
+    });
+  }
+
+  submitOptionalCost(sessionId: string, decisionId: string, costId: string) {
+    return this.bridge.request({
+      type: "submit_external_decision",
+      sessionId,
+      decisionId,
+      costId,
+    });
+  }
+
+  submitCostObject(sessionId: string, decisionId: string, objectId: string) {
+    return this.bridge.request({
+      type: "submit_external_decision",
+      sessionId,
+      decisionId,
+      objectId,
+    });
+  }
+
   cancel(sessionId: string) {
     return this.bridge.request({ type: "cancel_external_match", sessionId });
   }

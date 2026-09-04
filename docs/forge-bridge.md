@@ -310,8 +310,8 @@ Node chooses actionId
 exact retained SpellAbility object (no re-lookup, no re-derivation)
       |
       v
-Forge executes (targets/modes/mana/X/sacrifices/combat/triggers remain
-                 inherited PlayerControllerAi secondary decisions)
+Forge executes (supported modes/targets/X/cost choices return to Node;
+                mana/combat/unsupported choices remain Forge AI)
 ```
 
 `PlayerControllerAsphodel.chooseSpellAbilityToPlay()` no longer calls
@@ -333,18 +333,11 @@ of advancing.
 
 The retained `SpellAbility` object accepted by the Node is the exact object
 Forge produced during enumeration — there is no re-lookup or re-derivation
-step between selection and execution. `playChosenSpellAbility(SpellAbility)`
-resolves targets via the inherited `PlayerControllerAi.chooseTargetsFor(...)`
-when the ability requires them (`ForgeLegalActionEnumerator.requiresTargets`),
-then delegates execution to `super.playChosenSpellAbility(ability)` and records
-the result by object identity through
-`AsphodelDecisionBroker.recordPrimaryActionResult(...)`. Every other secondary
-decision Forge asks the controller for during that execution — modes, mana
-payment, X values, sacrifice/additional-cost choices, optional additional
-costs (e.g. Kicker), combat, and triggered-ability decisions — falls through
-to the inherited `PlayerControllerAi` untouched. `PlayerControllerAsphodel`
-still extends `PlayerControllerAi` and `isAI()` is unchanged (`true`); V1d
-externalizes only the primary priority decision.
+step between selection and execution. Later V1f, V1g, and V1h sections
+document the supported target, mode, X, optional-cost, and cost-object
+branches. `PlayerControllerAsphodel` still extends `PlayerControllerAi`,
+`isAI()` remains `true`, and unsupported secondary choices fall through to
+Forge AI.
 
 ### Legal action enumeration
 
@@ -372,8 +365,8 @@ an objectively bad but legal action is enumerable like any other.
 A classified candidate must then pass real Forge feasibility checks, in order,
 with no AI heuristic among them:
 
-1. `Cost.hasXInAnyCostPart()` — X-cost abilities are excluded outright (see
-   Cost/variant support below).
+1. `Cost.hasXInAnyCostPart()` — V1h admits only bounded `Count$xPaid` X
+   actions without target-dependent X semantics.
 2. `SpellAbility.checkRestrictions(card, player)` — Forge's own restriction
    checks (e.g. sorcery-speed-only, "activate only once per turn").
 3. `SpellAbility.isLegalAfterStack()` and `SpellAbility.canPlay()` — Forge's
@@ -437,22 +430,16 @@ enumerator, since the library is not scanned.
 | --- | --- | --- |
 | Normal costs | PASS | Checked via `ComputerUtilCost.canPayCost` against real player resources. |
 | Alternative costs (e.g. Flashback) | PASS WITH LIMITATION | Mechanically exposed as separate `SpellAbility` instances by `Card.getAllPossibleAbilities`, filtered through the same restriction/affordability chain, but not proven correct end-to-end by a dedicated test. |
-| Mandatory additional costs (e.g. sacrifice) | PASS WITH LIMITATION | Affordability is checked by `ComputerUtilCost.canPayCost`; the actual choice of what to pay is an inherited `PlayerControllerAi` secondary decision, not externalized. |
-| Optional additional costs (e.g. Kicker) | PASS WITH LIMITATION | Not modeled as a distinct primary action; Forge asks the controller during execution, which falls through to inherited `PlayerControllerAi`. |
-| X costs | NOT IMPLEMENTED | Excluded outright (`Cost.hasXInAnyCostPart()`) because a value must be chosen before affordability can be established, and that primary choice is out of scope for V1d. Forge AI is not used to manufacture a value. |
+| Mandatory additional costs (e.g. sacrifice) | PASS WITH LIMITATION | V1h externalizes fixed-one sacrifice/discard choices; other shapes remain Forge AI. |
+| Optional additional costs (e.g. Kicker) | PASS WITH LIMITATION | V1h proves one optional Kicker and decline; multiple/dependent choices remain Forge AI. |
+| X costs | PASS WITH LIMITATION | V1h proves bounded, untargeted `Count$xPaid` X; other X shapes remain excluded or Forge fallback. |
 
 ### Execution and secondary decisions
 
-Actions produced by `ForgeLegalActionEnumerator` are execution-ready without
-any Forge AI primary-selection step: the Node's chosen `actionId` maps
-directly back to the retained `SpellAbility`, which is handed straight to
-`playChosenSpellAbility(...)`. For abilities that require targets, V1d still
-delegates target selection to the inherited `PlayerControllerAi` — this is
-explicit and intentional, not an oversight. The same applies to every other
-secondary decision Forge requests during execution: modes, mana payment, X
-values, sacrifice/additional-cost choices, combat, and triggered-ability
-decisions are all inherited `PlayerControllerAi` behavior and are not
-externalized in V1d.
+Actions produced by `ForgeLegalActionEnumerator` need no Forge AI primary
+selection: the Node's `actionId` maps directly to the retained `SpellAbility`,
+which enters native `PlaySpellAbility`. See V1f–V1h for supported secondary
+choices; mana, combat, and unsupported shapes remain Forge AI behavior.
 
 ### Capability table
 
@@ -470,11 +457,11 @@ externalized in V1d.
 | Hidden-info safety | PASS | Opponent zones are never scanned; the acting player's own `Library` (including its top card) is never scanned either. Regression-tested. |
 | Play from library | NOT IMPLEMENTED | Deferred until Forge's play/reveal permissions and visibility are explicitly modeled. |
 | Alternative costs | PASS WITH LIMITATION | See Cost and variant support above. |
-| Optional costs | PASS WITH LIMITATION | See Cost and variant support above. |
-| X costs | NOT IMPLEMENTED | See Cost and variant support above. |
+| Optional costs | PASS WITH LIMITATION | Single optional cost and decline are proven by V1h. |
+| X costs | PASS WITH LIMITATION | Bounded untargeted `Count$xPaid` is proven by V1h. |
 | Mana abilities | NOT EXPOSED | Excluded by `classify(...)`; mana payment remains an inherited Forge AI secondary decision. |
 | Targets external | HISTORICAL V1d LIMITATION | Externalized by V1f below. |
-| Modes external | NOT IMPLEMENTED | Inherited Forge AI secondary decision. |
+| Modes external | PASS WITH LIMITATION | Fixed choose-one modes are externalized by V1g. |
 | Combat external | NOT IMPLEMENTED | Inherited Forge AI secondary decision. |
 | Full legal-action completeness | PASS WITH LIMITATION | Proven for the four supported action types under the tested fixtures; not claimed as an exhaustive Magic legal-action API. |
 
@@ -741,7 +728,8 @@ explicit random-target and divided-allocation fallback.
 | Must-target effects | PASS WITH LIMITATION | Forge filtering and final `setupTargets` validation are used; no dedicated fixture test yet. |
 | Random targets | FORGE FALLBACK | `TargetRestrictions.isRandomTarget()` remains with Forge so Node cannot override randomness. |
 | Divided allocations | FORGE FALLBACK | Target plus amount allocation remains with Forge until an allocation decision DTO exists. |
-| Mana, X, sacrifices, combat, triggers, replacements | NOT IMPLEMENTED | Remain inherited Forge AI secondary decisions; fixed single modes are covered by V1g below. |
+| X and fixed-one sacrifice/discard costs | PASS WITH LIMITATION | Externalized by V1h below. |
+| Mana, combat, triggers, replacements | NOT IMPLEMENTED | Remain inherited Forge AI secondary decisions. |
 
 ## External Mode Selection V1g
 
@@ -794,10 +782,9 @@ copies of the chosen `AbilitySub` objects.
 
 `PlayerControllerAsphodel` overrides exactly that seam for a Node-accepted
 primary ability. The supported branch returns the broker-retained `AbilitySub`
-to Forge rather than reconstructing it. If that mode targets, it calls
-`setupTargets()` on the retained mode after Node selects it and before
-`CharmEffect` copies and chains it; Forge's `SpellAbility.copy()` preserves the
-real `TargetChoices`. This gives the required mode-before-target order. No
+to Forge rather than reconstructing it. `PlaySpellAbility` then chains Forge's
+copy and calls the normal `setupTargets()` path, which reaches Asphodel's target
+override. This gives the required mode-before-target order. No
 `PlayerControllerAi` mode or target strategy runs on this supported branch.
 
 ### Mode decision protocol
@@ -837,8 +824,9 @@ names. A missing static description, mode cost, nonliteral count, optional
 count, random choice, or repeatable mode shape makes the whole request fall
 back to inherited Forge AI.
 
-`submit_external_decision` accepts exactly one of `actionId`, `targetId`, or
-`modeId`. A wrong selector for a mode decision returns `MODE_ID_REQUIRED`; an
+`submit_external_decision` accepts exactly one selector. V1g uses `actionId`,
+`targetId`, or `modeId`; V1h adds `value`, `costId`, and `objectId`. A wrong
+selector for a mode decision returns `MODE_ID_REQUIRED`; an
 unknown mode returns `MODE_NOT_FOUND` without consuming the decision; reuse of
 an answered decision returns `STALE_DECISION`. Progress adds
 `modeDecisionsRequested`, `modeDecisionsSubmitted`, and `modesSelected`.
@@ -869,11 +857,149 @@ paused Forge game thread.
 | Optional mode count | FORGE FALLBACK | `MinCharmNum` shapes other than fixed one are not externalized. |
 | Repeated same mode | FORGE FALLBACK | `CanRepeatModes` is not externalized. |
 | Dynamic/hidden modes | FORGE FALLBACK | Only nonblank static script `SpellDescription` values are exposed; other shapes remain with Forge AI. |
-| X-dependent modes | NOT IMPLEMENTED | Primary X actions remain omitted; nonliteral modal counts are not externalized. |
+| X-dependent modes | NOT IMPLEMENTED | Nonliteral modal counts and X-dependent target counts are not externalized. |
 
-V1g does not externalize X, mana selection/payment, optional or mandatory
-additional costs, sacrifices, combat, triggers, replacement effects, or
-mulligans. `PlayerControllerAsphodel.isAI()` remains inherited as `true`.
+`PlayerControllerAsphodel.isAI()` remains inherited as `true`.
+
+# External Cost & Value Decisions V1h
+
+V1h routes Node-accepted primary actions through Forge's public
+`PlaySpellAbility.playSpellAbility(...)` entry point. This is the pinned
+engine path that performs optional-cost selection, announcements, modes,
+targets, and `CostPayment` in rules order. Source-level mana choice is not
+externalized: `CostPartMana.payAsDecided` still calls the inherited
+`PlayerControllerAi.payManaCost`, so Forge AI pays mana exactly as before.
+
+## Pinned Forge controller and cost APIs
+
+The inspected revision exposes these exact seams and paths:
+
+- X and announced values: `PlaySpellAbility.announceValuesLikeX()` calls
+  `PlayerController.announceRequirements(SpellAbility,int,int,String)`, then
+  stores X with `SpellAbility.setXManaCostPaid`. Bounds come from
+  `AbilityUtils.getAnnouncementBounds`; mana affordability comes from
+  `ComputerUtilMana.determineLeftoverMana`; non-mana X is bounded by
+  `Cost.getMaxForNonManaX`.
+- Optional costs: `PlaySpellAbility.chooseOptionalAdditionalCosts()` calls
+  `GameActionUtil.getOptionalCostValues`,
+  `PlayerController.chooseOptionalCosts`, and
+  `GameActionUtil.addOptionalCosts`. Forge supplies retained
+  `OptionalCostValue`/`OptionalCost`/`Cost` objects. Human uses a zero-to-many
+  chooser; AI delegates to the spell API AI.
+- Actual costs: `PlaySpellAbility.playAbility()` creates `CostPayment` and
+  calls `CostPayment.payCost(controller.getCostDecisionMaker(...))`. Each
+  `CostPart` dispatches through `CostDecisionMakerBase`/`ICostVisitor` to a
+  `PaymentDecision` and is then paid by `CostPart.payAsDecided`.
+- Sacrifice and discard costs: the relevant visitor methods are
+  `AiCostDecision.visit(CostSacrifice)` and
+  `AiCostDecision.visit(CostDiscard)`. Human derives sacrifice candidates with
+  `CardPredicates.canBeSacrificedBy` plus `CardLists.getValidCards`, and
+  discard candidates from the payer's hand plus `CardLists.getValidCards`.
+- The separate controller seams
+  `choosePermanentsToSacrifice`, `chooseCardsToDiscardFrom`, and
+  `chooseCardsForCost` exist, but they serve effects or human payment paths;
+  the AI primary-cost path does not use them. V1h therefore uses a hybrid
+  `AiCostDecision`, not those misleading seams.
+
+`PlayerControllerAsphodel` intercepts `announceRequirements` and
+`chooseOptionalCosts`, and returns `AsphodelCostDecision` from
+`getCostDecisionMaker` for the active Node action. The hybrid overrides only
+fixed-one sacrifice and discard visitors; every other visitor remains the
+inherited `AiCostDecision` implementation.
+
+## V1h wire decisions
+
+The pending-decision union adds:
+
+```ts
+type ForgePendingValueDecision = {
+  type: "value_selection";
+  source: ForgeDecisionSource;
+  valueKind: "x" | "amount" | "life" | "generic";
+  minValue: number;
+  maxValue: number;
+  suggestedValues: number[];
+};
+
+type ForgePendingOptionalCostDecision = {
+  type: "optional_cost_selection";
+  source: ForgeDecisionSource;
+  minSelections: 0;
+  maxSelections: 1;
+  declineCostId: string;
+  costs: Array<{ costId: string; type: string; label: string; costText: string }>;
+};
+
+type ForgePendingCostObjectDecision = {
+  type: "cost_object_selection";
+  source: ForgeDecisionSource;
+  selectionKind: "sacrifice" | "discard";
+  minSelections: 1;
+  maxSelections: 1;
+  options: Array<{
+    objectId: string;
+    cardRef: string;
+    name: string | null;
+    zone: string;
+    controllerId: string | null;
+    faceDown: boolean;
+    hidden: boolean;
+  }>;
+};
+```
+
+Each decision contains full `decisionId`, player, Forge context, prompt, and a
+fresh same-pause `AgentObservation`. `source.actionId` is carried explicitly
+through Forge's optional-cost ability copies. `submit_external_decision`
+requires exactly one matching selector. Invalid IDs and out-of-range or
+non-integer values do not consume the pending decision; answered IDs become
+stale; cancellation still completes the wait exceptionally.
+
+## Real V1h proofs and fallback policy
+
+- Walking Ballista is exposed once Forge establishes a legal bounded X range.
+  Node submits X=2; the exact retained card enters with two +1/+1 counters.
+  Below-range, above-range, fractional, wrong-selector, and stale submissions
+  are covered.
+- Burst Lightning supplies Forge's real `OptionalCostValue(Kicker1, Cost)`.
+  Accepting it before target selection deals four damage to the Node-selected
+  player; declining it deals two.
+- Village Rites supplies two Forge-derived, sacrifice-legal Skeleton objects.
+  Node selects one opaque `objectId`; that exact `cardRef` goes to the
+  graveyard and the other remains on the battlefield.
+- Thrill of Possibility supplies only visible cards from the acting player's
+  own hand. The exact Node-selected `cardRef` is discarded and the spell
+  resolves.
+
+Unsupported shapes are delegated wholly to Forge AI: multiple/dependent or
+repeated optional costs; multi-kicker; X-dependent target counts and targeted X
+spells; unbounded/determined/non-`Count$xPaid` X; sacrifice/discard counts other
+than fixed one; source, all, random, same-name, different-name, and dynamic X
+object costs; exile/reveal/tap/counter/life object or amount choices; and any
+hidden dynamic cost. No partial option set is externalized.
+
+## V1h capability table
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| X value selection | PASS | Real Walking Ballista, Node X=2, exact two-counter result. |
+| Numeric amount selection | NOT IMPLEMENTED | V1h supports bounded `Count$xPaid` X only. |
+| Optional cost selection | PASS | Real single Kicker cost retained and selected. |
+| Optional cost decline | PASS | Real Burst Lightning resolves for two damage. |
+| Sacrifice-as-cost | PASS | Fixed-one real Village Rites selection from two legal permanents. |
+| Discard-as-cost | PASS | Fixed-one real Thrill of Possibility selection from visible self hand. |
+| Exact runtime object identity | PASS | Selected and unselected `cardRef` zone transitions are asserted. |
+| Observation/decision consistency | PASS | Fresh observation context matches every paused decision. |
+| Invalid value protection | PASS | Range, integer, selector, unknown-ID, and pending retention are tested. |
+| Stale decision protection | PASS | Reusing the answered X decision returns `STALE_DECISION`; broker semantics are shared. |
+| Mode/target composition | PASS | Existing Light of Hope remains green; Kicker→target is also proven. |
+| Multi-kicker / repeated optional cost | FORGE FALLBACK | Multiple `OptionalCostValue` entries are not partially exposed. |
+| Dynamic costs | FORGE FALLBACK | Non-fixed and dependent object/value shapes remain AI decisions. |
+| Mana source selection | NOT IMPLEMENTED — V1i | Forge AI still pays/taps mana sources. |
+
+Combat remains outside this work and is reserved for V1j. No arbitrary
+effect confirmations, triggers, replacements, mulligans, DB, frontend, or ML
+work is included.
 
 ## Card database initialization
 
@@ -896,7 +1022,8 @@ may create them during play. Fixtures include Mountain, Island, Swamp, Plains,
 Forest, Lightning Bolt, Counterintelligence, Predict, Counterspell, Gruesome
 Realization, Light of Hope, Grizzly Bears, Goblin Piker, Krenko, Tin Street
 Kingpin, Talrand, Sky Summoner, Ayara, First of Locthwain, Isamaru, Hound of
-Konda, and Ayula, Queen Among Bears. No rules text or ability is hardcoded. The
+Konda, Ayula, Queen Among Bears, Walking Ballista, Burst Lightning, Sanitarium
+Skeleton, Village Rites, and Thrill of Possibility. No rules text or ability is hardcoded. The
 response exposes Lightning Bolt's parsed `CardRules`, Oracle text, mana cost,
 and raw `SP$ DealDamage` script ability as integration evidence.
 

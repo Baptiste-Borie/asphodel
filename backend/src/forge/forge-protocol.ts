@@ -61,6 +61,24 @@ export interface ForgeRequestMap {
         sessionId: string;
         decisionId: string;
         modeId: string;
+      }
+    | {
+        type: "submit_external_decision";
+        sessionId: string;
+        decisionId: string;
+        value: number;
+      }
+    | {
+        type: "submit_external_decision";
+        sessionId: string;
+        decisionId: string;
+        costId: string;
+      }
+    | {
+        type: "submit_external_decision";
+        sessionId: string;
+        decisionId: string;
+        objectId: string;
       };
   cancel_external_match: {
     type: "cancel_external_match";
@@ -240,10 +258,72 @@ export interface ForgePendingModeDecision {
   modes: ForgeExternalMode[];
 }
 
+export interface ForgePendingValueDecision {
+  decisionId: string;
+  type: "value_selection";
+  playerId: string;
+  context: ForgePendingDecision["context"];
+  source: ForgePendingModeDecision["source"];
+  prompt: string | null;
+  valueKind: "x" | "amount" | "life" | "generic";
+  minValue: number;
+  maxValue: number;
+  suggestedValues: number[];
+}
+
+export interface ForgeExternalOptionalCost {
+  costId: string;
+  type: string;
+  label: string;
+  costText: string;
+}
+
+export interface ForgePendingOptionalCostDecision {
+  decisionId: string;
+  type: "optional_cost_selection";
+  playerId: string;
+  context: ForgePendingDecision["context"];
+  source: ForgePendingModeDecision["source"];
+  prompt: string | null;
+  minSelections: number;
+  maxSelections: number;
+  declineCostId: string;
+  costs: ForgeExternalOptionalCost[];
+}
+
+export interface ForgeExternalCostObject {
+  objectId: string;
+  cardRef: string;
+  name: string | null;
+  zone: string;
+  controllerId: string | null;
+  faceDown: boolean;
+  hidden: boolean;
+}
+
+export interface ForgePendingCostObjectDecision {
+  decisionId: string;
+  type: "cost_object_selection";
+  playerId: string;
+  context: ForgePendingDecision["context"];
+  source: ForgePendingModeDecision["source"];
+  prompt: string | null;
+  selectionKind: "sacrifice" | "discard" | "exile" | "reveal" | "generic";
+  minSelections: number;
+  maxSelections: number;
+  selectedIds: string[];
+  canFinish: boolean;
+  finishChoiceId: string | null;
+  options: ForgeExternalCostObject[];
+}
+
 export type ForgePendingExternalDecision =
   | ForgePendingDecision
   | ForgePendingTargetDecision
-  | ForgePendingModeDecision;
+  | ForgePendingModeDecision
+  | ForgePendingValueDecision
+  | ForgePendingOptionalCostDecision
+  | ForgePendingCostObjectDecision;
 
 export type ForgeExternalMatchStatus =
   | "starting"
@@ -268,6 +348,12 @@ export interface ForgeExternalMatchProgress {
   modeDecisionsRequested: number;
   modeDecisionsSubmitted: number;
   modesSelected: number;
+  valueDecisionsRequested: number;
+  valueDecisionsSubmitted: number;
+  optionalCostDecisionsRequested: number;
+  optionalCostsSelected: number;
+  costObjectDecisionsRequested: number;
+  costObjectsSelected: number;
 }
 
 export type AgentCardZone =

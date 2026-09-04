@@ -19,8 +19,11 @@ import type {
   ForgeExternalMatchSnapshot,
   ForgeGameResult,
   ForgePendingDecision,
+  ForgePendingCostObjectDecision,
   ForgePendingModeDecision,
+  ForgePendingOptionalCostDecision,
   ForgePendingTargetDecision,
+  ForgePendingValueDecision,
 } from "./forge-protocol.js";
 
 const jarPath = process.env.FORGE_BRIDGE_JAR;
@@ -179,6 +182,64 @@ function targetedModeDeck(name = "Mode then target fixture"): ForgeDeckSpec {
   };
 }
 
+function xValueDeck(name = "X value fixture"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      { name: "Karn, Silver Golem", quantity: 1, section: "commander" },
+      { name: "Wastes", quantity: 30, section: "mainboard" },
+      { name: "Walking Ballista", quantity: 30, section: "mainboard" },
+    ],
+  };
+}
+
+function kickerDeck(name = "Optional kicker fixture"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      {
+        name: "Krenko, Tin Street Kingpin",
+        quantity: 1,
+        section: "commander",
+      },
+      { name: "Mountain", quantity: 30, section: "mainboard" },
+      { name: "Burst Lightning", quantity: 30, section: "mainboard" },
+    ],
+  };
+}
+
+function sacrificeCostDeck(name = "Sacrifice cost fixture"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      {
+        name: "Ayara, First of Locthwain",
+        quantity: 1,
+        section: "commander",
+      },
+      { name: "Swamp", quantity: 30, section: "mainboard" },
+      { name: "Sanitarium Skeleton", quantity: 20, section: "mainboard" },
+      { name: "Village Rites", quantity: 20, section: "mainboard" },
+    ],
+  };
+}
+
+function discardCostDeck(name = "Discard cost fixture"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      {
+        name: "Krenko, Tin Street Kingpin",
+        quantity: 1,
+        section: "commander",
+      },
+      { name: "Mountain", quantity: 30, section: "mainboard" },
+      { name: "Goblin Piker", quantity: 15, section: "mainboard" },
+      { name: "Thrill of Possibility", quantity: 15, section: "mainboard" },
+    ],
+  };
+}
+
 function assertTerminalDeckMatch(
   result: ForgeGameResult,
   controllerClasses = [
@@ -239,28 +300,50 @@ async function waitForDecision(
         pendingDecision: ForgePendingDecision;
       };
     }
-    if (snapshot.pendingDecision.type === "mode_selection") {
-      const mode =
-        snapshot.pendingDecision.modes[0]?.modeId ??
-        snapshot.pendingDecision.finishModeId;
-      assert.ok(mode);
-      await external.submitMode(
-        sessionId,
-        snapshot.pendingDecision.decisionId,
-        mode,
-      );
-      continue;
-    }
-    const target =
-      snapshot.pendingDecision.targets[0]?.targetId ??
-      snapshot.pendingDecision.finishTargetId;
-    assert.ok(target);
-    await external.submitTarget(
+    await submitDeterministicSecondary(
+      external,
       sessionId,
-      snapshot.pendingDecision.decisionId,
-      target,
+      snapshot.pendingDecision,
     );
   }
+}
+
+async function submitDeterministicSecondary(
+  external: ForgeExternalMatchClient,
+  sessionId: string,
+  decision: Exclude<
+    NonNullable<ForgeExternalMatchSnapshot["pendingDecision"]>,
+    ForgePendingDecision
+  >,
+): Promise<void> {
+  if (decision.type === "target_selection") {
+    const target = decision.targets[0]?.targetId ?? decision.finishTargetId;
+    assert.ok(target);
+    await external.submitTarget(sessionId, decision.decisionId, target);
+    return;
+  }
+  if (decision.type === "mode_selection") {
+    const mode = decision.modes[0]?.modeId ?? decision.finishModeId;
+    assert.ok(mode);
+    await external.submitMode(sessionId, decision.decisionId, mode);
+    return;
+  }
+  if (decision.type === "value_selection") {
+    const value =
+      decision.minValue <= 1 && decision.maxValue >= 1
+        ? 1
+        : decision.minValue;
+    await external.submitValue(sessionId, decision.decisionId, value);
+    return;
+  }
+  if (decision.type === "optional_cost_selection") {
+    const costId = decision.costs[0]?.costId ?? decision.declineCostId;
+    await external.submitOptionalCost(sessionId, decision.decisionId, costId);
+    return;
+  }
+  const objectId = decision.options[0]?.objectId ?? decision.finishChoiceId;
+  assert.ok(objectId);
+  await external.submitCostObject(sessionId, decision.decisionId, objectId);
 }
 
 async function waitForTargetDecision(
@@ -292,6 +375,52 @@ async function waitForModeDecision(
   );
   return snapshot as ForgeExternalMatchSnapshot & {
     pendingDecision: ForgePendingModeDecision;
+  };
+}
+
+async function waitForValueDecision(
+  external: ForgeExternalMatchClient,
+  sessionId: string,
+): Promise<ForgeExternalMatchSnapshot & {
+  pendingDecision: ForgePendingValueDecision;
+}> {
+  return (await waitForExternalSnapshot(
+    external,
+    sessionId,
+    (candidate) => candidate.pendingDecision?.type === "value_selection",
+  )) as ForgeExternalMatchSnapshot & {
+    pendingDecision: ForgePendingValueDecision;
+  };
+}
+
+async function waitForOptionalCostDecision(
+  external: ForgeExternalMatchClient,
+  sessionId: string,
+): Promise<ForgeExternalMatchSnapshot & {
+  pendingDecision: ForgePendingOptionalCostDecision;
+}> {
+  return (await waitForExternalSnapshot(
+    external,
+    sessionId,
+    (candidate) =>
+      candidate.pendingDecision?.type === "optional_cost_selection",
+  )) as ForgeExternalMatchSnapshot & {
+    pendingDecision: ForgePendingOptionalCostDecision;
+  };
+}
+
+async function waitForCostObjectDecision(
+  external: ForgeExternalMatchClient,
+  sessionId: string,
+): Promise<ForgeExternalMatchSnapshot & {
+  pendingDecision: ForgePendingCostObjectDecision;
+}> {
+  return (await waitForExternalSnapshot(
+    external,
+    sessionId,
+    (candidate) => candidate.pendingDecision?.type === "cost_object_selection",
+  )) as ForgeExternalMatchSnapshot & {
+    pendingDecision: ForgePendingCostObjectDecision;
   };
 }
 
@@ -393,6 +522,12 @@ async function driveUntilObservedAction(
     observation: AgentObservation,
     action: Exclude<ForgeExternalAction, { type: "pass" }>,
   ) => boolean,
+  fallback: (
+    observation: AgentObservation,
+    decision: ForgePendingDecision,
+  ) => ForgeExternalAction = (_observation, decision) =>
+    decision.actions.find((candidate) => candidate.type === "play_land") ??
+    decision.actions.find((candidate) => candidate.type === "pass")!,
 ): Promise<{
   snapshot: ForgeExternalMatchSnapshot & { observation: AgentObservation };
   decision: ForgePendingDecision;
@@ -413,18 +548,12 @@ async function driveUntilObservedAction(
         action,
       };
     }
-    const fallback =
-      snapshot.pendingDecision.actions.find(
-        (candidate) => candidate.type === "play_land",
-      ) ??
-      snapshot.pendingDecision.actions.find(
-        (candidate) => candidate.type === "pass",
-      );
-    assert.ok(fallback);
+    const fallbackAction = fallback(snapshot.observation, snapshot.pendingDecision);
+    assert.ok(fallbackAction);
     await external.submitDecision(
       sessionId,
       snapshot.pendingDecision.decisionId,
-      fallback.actionId,
+      fallbackAction.actionId,
     );
   }
   throw new Error("Forge did not reach the requested observed action state.");
@@ -442,27 +571,11 @@ async function autoDriveExternalMatch(
       throw new Error(`External match failed: ${JSON.stringify(snapshot.error)}`);
     }
     if (snapshot.pendingDecision) {
-      if (snapshot.pendingDecision.type === "target_selection") {
-        const target =
-          snapshot.pendingDecision.targets[0]?.targetId ??
-          snapshot.pendingDecision.finishTargetId;
-        assert.ok(target);
-        await external.submitTarget(
+      if (snapshot.pendingDecision.type !== "priority_action") {
+        await submitDeterministicSecondary(
+          external,
           sessionId,
-          snapshot.pendingDecision.decisionId,
-          target,
-        );
-        continue;
-      }
-      if (snapshot.pendingDecision.type === "mode_selection") {
-        const mode =
-          snapshot.pendingDecision.modes[0]?.modeId ??
-          snapshot.pendingDecision.finishModeId;
-        assert.ok(mode);
-        await external.submitMode(
-          sessionId,
-          snapshot.pendingDecision.decisionId,
-          mode,
+          snapshot.pendingDecision,
         );
         continue;
       }
@@ -1122,23 +1235,11 @@ Mainboard
       if (!pendingDecision || seenDecisionIds.has(pendingDecision.decisionId)) {
         continue;
       }
-      if (pendingDecision.type === "target_selection") {
-        const target = pendingDecision.targets[0]?.targetId;
-        assert.ok(target);
-        await external.submitTarget(
+      if (pendingDecision.type !== "priority_action") {
+        await submitDeterministicSecondary(
+          external,
           started.sessionId,
-          pendingDecision.decisionId,
-          target,
-        );
-        continue;
-      }
-      if (pendingDecision.type === "mode_selection") {
-        const mode = pendingDecision.modes[0]?.modeId;
-        assert.ok(mode);
-        await external.submitMode(
-          started.sessionId,
-          pendingDecision.decisionId,
-          mode,
+          pendingDecision,
         );
         continue;
       }
@@ -2164,6 +2265,410 @@ Mainboard
     assert.equal(resolved.progress.targetDecisionsRequested, 1);
     assert.equal(resolved.progress.targetDecisionsSubmitted, 1);
     assert.equal(resolved.progress.targetsSelected, 1);
+    if (resolved.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("casts a real X spell with Node-selected X=2 and rejects invalid values", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(xValueDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+    const found = await driveUntilObservedAction(
+      external,
+      started.sessionId,
+      (observation, action) =>
+        action.type === "cast_spell" &&
+        action.cardName === "Walking Ballista" &&
+        observedPlayers(observation).self.battlefield.filter(
+          (card) => card.name === "Wastes",
+        ).length >= 4,
+    );
+    await external.submitDecision(
+      started.sessionId,
+      found.decision.decisionId,
+      found.action.actionId,
+    );
+
+    const choosingValue = await waitForValueDecision(
+      external,
+      started.sessionId,
+    );
+    assert.ok(choosingValue.observation);
+    assert.equal(choosingValue.pendingDecision.valueKind, "x");
+    assert.equal(choosingValue.pendingDecision.source.actionId, found.action.actionId);
+    assert.equal(choosingValue.pendingDecision.source.cardRef, found.action.cardRef);
+    assert.equal(choosingValue.pendingDecision.minValue, 0);
+    assert.ok(choosingValue.pendingDecision.maxValue >= 2);
+    assert.equal(
+      choosingValue.observation.game.turn,
+      choosingValue.pendingDecision.context.turn,
+    );
+    assert.ok(
+      !observedPlayers(choosingValue.observation).self.hand.some(
+        (card) => card.cardRef === found.action.cardRef,
+      ),
+      "the fresh paused state reflects that Forge moved the spell out of hand",
+    );
+
+    await assert.rejects(
+      external.submitDecision(
+        started.sessionId,
+        choosingValue.pendingDecision.decisionId,
+        found.action.actionId,
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError && error.code === "VALUE_REQUIRED",
+    );
+    await assert.rejects(
+      external.submitValue(
+        started.sessionId,
+        choosingValue.pendingDecision.decisionId,
+        -1,
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError && error.code === "VALUE_OUT_OF_RANGE",
+    );
+    await assert.rejects(
+      external.submitValue(
+        started.sessionId,
+        choosingValue.pendingDecision.decisionId,
+        choosingValue.pendingDecision.maxValue + 1,
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError && error.code === "VALUE_OUT_OF_RANGE",
+    );
+    await assert.rejects(
+      client.request({
+        type: "submit_external_decision",
+        sessionId: started.sessionId,
+        decisionId: choosingValue.pendingDecision.decisionId,
+        value: 1.5,
+      }),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError && error.code === "VALUE_NOT_INTEGER",
+    );
+    const stillPending = await external.get(started.sessionId);
+    assert.equal(
+      stillPending.pendingDecision?.decisionId,
+      choosingValue.pendingDecision.decisionId,
+    );
+
+    await external.submitValue(
+      started.sessionId,
+      choosingValue.pendingDecision.decisionId,
+      2,
+    );
+    await assert.rejects(
+      external.submitValue(
+        started.sessionId,
+        choosingValue.pendingDecision.decisionId,
+        2,
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError && error.code === "STALE_DECISION",
+    );
+    const resolved = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) => {
+        const ballista = observedPlayers(observation).self.battlefield.find(
+          (card) => card.cardRef === found.action.cardRef,
+        );
+        return (
+          ballista !== undefined &&
+          Object.values(ballista.counters ?? {}).reduce(
+            (total, count) => total + count,
+            0,
+          ) === 2
+        );
+      },
+    );
+    assert.equal(resolved.progress.valueDecisionsRequested, 1);
+    assert.equal(resolved.progress.valueDecisionsSubmitted, 1);
+    if (resolved.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("accepts a real kicker cost before Node target selection", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(kickerDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+    const found = await driveUntilObservedAction(
+      external,
+      started.sessionId,
+      (observation, action) =>
+        action.type === "cast_spell" &&
+        action.cardName === "Burst Lightning" &&
+        observedPlayers(observation).self.battlefield.filter(
+          (card) => card.name === "Mountain",
+        ).length >= 5,
+    );
+    const before = observedPlayers(found.snapshot.observation);
+    await external.submitDecision(
+      started.sessionId,
+      found.decision.decisionId,
+      found.action.actionId,
+    );
+    const optional = await waitForOptionalCostDecision(
+      external,
+      started.sessionId,
+    );
+    assert.equal(optional.pendingDecision.source.actionId, found.action.actionId);
+    assert.equal(optional.pendingDecision.minSelections, 0);
+    assert.equal(optional.pendingDecision.maxSelections, 1);
+    assert.equal(optional.pendingDecision.costs.length, 1);
+    assert.equal(optional.pendingDecision.costs[0]?.type, "kicker1");
+    assert.match(optional.pendingDecision.costs[0]?.costText ?? "", /4/);
+    await assert.rejects(
+      external.submitOptionalCost(
+        started.sessionId,
+        optional.pendingDecision.decisionId,
+        "cost-does-not-exist",
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError && error.code === "COST_NOT_FOUND",
+    );
+    await external.submitOptionalCost(
+      started.sessionId,
+      optional.pendingDecision.decisionId,
+      optional.pendingDecision.costs[0]!.costId,
+    );
+
+    const targeting = await waitForTargetDecision(external, started.sessionId);
+    assert.equal(targeting.pendingDecision.source.actionId, found.action.actionId);
+    const opponent = targeting.pendingDecision.targets.find(
+      (target) => target.type === "player" && target.playerId === "player-2",
+    );
+    assert.ok(opponent);
+    await external.submitTarget(
+      started.sessionId,
+      targeting.pendingDecision.decisionId,
+      opponent.targetId,
+    );
+    const resolved = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) => {
+        const players = observedPlayers(observation);
+        return (
+          players.self.graveyard.some(
+            (card) => card.cardRef === found.action.cardRef,
+          ) && players.opponent.life === before.opponent.life - 4
+        );
+      },
+    );
+    assert.equal(resolved.progress.optionalCostDecisionsRequested, 1);
+    assert.equal(resolved.progress.optionalCostsSelected, 1);
+    assert.equal(resolved.progress.targetDecisionsRequested, 1);
+    if (resolved.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("declines a real kicker cost and resolves the un-kicked effect", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(kickerDeck(), greenDeck(), {
+      seed: 54_321,
+    });
+    const found = await driveUntilObservedAction(
+      external,
+      started.sessionId,
+      (observation, action) =>
+        action.type === "cast_spell" &&
+        action.cardName === "Burst Lightning" &&
+        observedPlayers(observation).self.battlefield.some(
+          (card) => card.name === "Mountain",
+        ),
+    );
+    const beforeLife = observedPlayers(found.snapshot.observation).opponent.life;
+    await external.submitDecision(
+      started.sessionId,
+      found.decision.decisionId,
+      found.action.actionId,
+    );
+    const optional = await waitForOptionalCostDecision(
+      external,
+      started.sessionId,
+    );
+    await external.submitOptionalCost(
+      started.sessionId,
+      optional.pendingDecision.decisionId,
+      optional.pendingDecision.declineCostId,
+    );
+    const targeting = await waitForTargetDecision(external, started.sessionId);
+    const opponent = targeting.pendingDecision.targets.find(
+      (target) => target.type === "player" && target.playerId === "player-2",
+    );
+    assert.ok(opponent);
+    await external.submitTarget(
+      started.sessionId,
+      targeting.pendingDecision.decisionId,
+      opponent.targetId,
+    );
+    const resolved = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) =>
+        observedPlayers(observation).opponent.life === beforeLife - 2,
+    );
+    assert.equal(resolved.progress.optionalCostDecisionsRequested, 1);
+    assert.equal(resolved.progress.optionalCostsSelected, 0);
+    if (resolved.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("sacrifices the exact Forge permanent selected by opaque objectId", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(
+      sacrificeCostDeck(),
+      greenDeck(),
+      { seed: 12_345 },
+    );
+    const found = await driveUntilObservedAction(
+      external,
+      started.sessionId,
+      (observation, action) =>
+        action.type === "cast_spell" &&
+        action.cardName === "Village Rites" &&
+        observedPlayers(observation).self.battlefield.filter(
+          (card) => card.name === "Sanitarium Skeleton",
+        ).length >= 2,
+      (observation, decision) => {
+        const skeletons = observedPlayers(observation).self.battlefield.filter(
+          (card) => card.name === "Sanitarium Skeleton",
+        ).length;
+        return (
+          decision.actions.find((action) => action.type === "play_land") ??
+          (skeletons < 2
+            ? decision.actions.find(
+                (action) =>
+                  action.type === "cast_spell" &&
+                  action.cardName === "Sanitarium Skeleton",
+              )
+            : undefined) ??
+          decision.actions.find((action) => action.type === "pass")!
+        );
+      },
+    );
+    await external.submitDecision(
+      started.sessionId,
+      found.decision.decisionId,
+      found.action.actionId,
+    );
+    const choosingObject = await waitForCostObjectDecision(
+      external,
+      started.sessionId,
+    );
+    assert.ok(choosingObject.observation);
+    assert.equal(choosingObject.pendingDecision.selectionKind, "sacrifice");
+    assert.equal(choosingObject.pendingDecision.source.actionId, found.action.actionId);
+    assert.ok(choosingObject.pendingDecision.options.length >= 2);
+    assert.ok(
+      choosingObject.pendingDecision.options.every(
+        (option) =>
+          /^object-\d+$/.test(option.objectId) &&
+          option.zone === "battlefield" &&
+          option.name === "Sanitarium Skeleton" &&
+          option.hidden === false,
+      ),
+    );
+    const selected = choosingObject.pendingDecision.options[1]!;
+    const unselected = choosingObject.pendingDecision.options[0]!;
+    await assert.rejects(
+      external.submitCostObject(
+        started.sessionId,
+        choosingObject.pendingDecision.decisionId,
+        "object-does-not-exist",
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError && error.code === "OBJECT_NOT_FOUND",
+    );
+    await external.submitCostObject(
+      started.sessionId,
+      choosingObject.pendingDecision.decisionId,
+      selected.objectId,
+    );
+    const resolved = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) => {
+        const self = observedPlayers(observation).self;
+        return (
+          self.graveyard.some((card) => card.cardRef === selected.cardRef) &&
+          self.graveyard.some((card) => card.cardRef === found.action.cardRef)
+        );
+      },
+    );
+    const after = observedPlayers(resolved.observation).self;
+    assert.ok(after.battlefield.some((card) => card.cardRef === unselected.cardRef));
+    assert.ok(!after.battlefield.some((card) => card.cardRef === selected.cardRef));
+    assert.equal(resolved.progress.costObjectDecisionsRequested, 1);
+    assert.equal(resolved.progress.costObjectsSelected, 1);
+    if (resolved.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("discards the exact visible self-hand card selected by opaque objectId", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(discardCostDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+    const found = await driveUntilObservedAction(
+      external,
+      started.sessionId,
+      (observation, action) =>
+        action.type === "cast_spell" &&
+        action.cardName === "Thrill of Possibility" &&
+        observedPlayers(observation).self.battlefield.filter(
+          (card) => card.name === "Mountain",
+        ).length >= 2,
+    );
+    await external.submitDecision(
+      started.sessionId,
+      found.decision.decisionId,
+      found.action.actionId,
+    );
+    const choosingObject = await waitForCostObjectDecision(
+      external,
+      started.sessionId,
+    );
+    assert.equal(choosingObject.pendingDecision.selectionKind, "discard");
+    assert.equal(choosingObject.pendingDecision.source.actionId, found.action.actionId);
+    assert.ok(choosingObject.pendingDecision.options.length >= 1);
+    assert.ok(
+      choosingObject.pendingDecision.options.every(
+        (option) =>
+          option.zone === "hand" && option.name !== null && !option.hidden,
+      ),
+    );
+    const selected = choosingObject.pendingDecision.options.at(-1)!;
+    assert.notEqual(selected.cardRef, found.action.cardRef);
+    await external.submitCostObject(
+      started.sessionId,
+      choosingObject.pendingDecision.decisionId,
+      selected.objectId,
+    );
+    const resolved = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) => {
+        const self = observedPlayers(observation).self;
+        return (
+          self.graveyard.some((card) => card.cardRef === selected.cardRef) &&
+          self.graveyard.some((card) => card.cardRef === found.action.cardRef)
+        );
+      },
+    );
+    const after = observedPlayers(resolved.observation).self;
+    assert.ok(after.graveyard.some((card) => card.cardRef === selected.cardRef));
+    assert.equal(resolved.progress.costObjectDecisionsRequested, 1);
+    assert.equal(resolved.progress.costObjectsSelected, 1);
     if (resolved.status !== "completed") await external.cancel(started.sessionId);
   });
 
