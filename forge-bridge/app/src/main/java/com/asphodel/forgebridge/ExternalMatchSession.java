@@ -66,19 +66,25 @@ final class ExternalMatchSession {
     }
 
     synchronized Map<String, Object> snapshot() {
+        AsphodelDecisionBroker.PendingAgentTurn pending = decisions.pendingAgentTurn();
+        Status snapshotStatus = status;
+        if (snapshotStatus == Status.RUNNING || snapshotStatus == Status.WAITING_FOR_DECISION) {
+            snapshotStatus = pending == null ? Status.RUNNING : Status.WAITING_FOR_DECISION;
+        }
+
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("sessionId", sessionId);
-        snapshot.put("status", status.wireName());
+        snapshot.put("status", snapshotStatus.wireName());
         snapshot.put("progress", decisions.progress());
 
-        AsphodelDecisionBroker.PendingDecision pending = decisions.pendingDecision();
-        if (status == Status.WAITING_FOR_DECISION && pending != null) {
-            snapshot.put("pendingDecision", pending);
+        if (snapshotStatus == Status.WAITING_FOR_DECISION) {
+            snapshot.put("observation", pending.observation());
+            snapshot.put("pendingDecision", pending.pendingDecision());
         }
-        if (status == Status.COMPLETED && result != null) {
+        if (snapshotStatus == Status.COMPLETED && result != null) {
             snapshot.put("result", result);
         }
-        if (status == Status.FAILED && failure != null) {
+        if (snapshotStatus == Status.FAILED && failure != null) {
             snapshot.put("error", failure);
         }
         return snapshot;

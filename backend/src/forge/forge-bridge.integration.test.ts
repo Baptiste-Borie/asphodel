@@ -11,6 +11,9 @@ import {
 import { ForgeDeckMatchRunner } from "./forge-deck-match-runner.js";
 import { ForgeExternalMatchClient } from "./forge-external-match-client.js";
 import type {
+  AgentObservation,
+  AgentOpponentPlayerObservation,
+  AgentSelfPlayerObservation,
   ForgeDeckSpec,
   ForgeExternalAction,
   ForgeExternalMatchSnapshot,
@@ -89,6 +92,32 @@ function unaffordableDeck(name = "Insufficient mana"): ForgeDeckSpec {
   };
 }
 
+function pyxisDeck(name = "Face-down exile observation"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      { name: "Ashling the Pilgrim", quantity: 1, section: "commander" },
+      { name: "Mountain", quantity: 20, section: "mainboard" },
+      { name: "Pyxis of Pandemonium", quantity: 40, section: "mainboard" },
+    ],
+  };
+}
+
+function manifestDeck(name = "Opponent face-down battlefield"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      {
+        name: "Isamaru, Hound of Konda",
+        quantity: 1,
+        section: "commander",
+      },
+      { name: "Plains", quantity: 20, section: "mainboard" },
+      { name: "Soul Summons", quantity: 40, section: "mainboard" },
+    ],
+  };
+}
+
 function assertTerminalDeckMatch(
   result: ForgeGameResult,
   controllerClasses = [
@@ -146,6 +175,59 @@ async function waitForDecision(
   return snapshot as ForgeExternalMatchSnapshot & {
     pendingDecision: ForgePendingDecision;
   };
+}
+
+async function waitForObservedDecision(
+  external: ForgeExternalMatchClient,
+  sessionId: string,
+): Promise<ForgeExternalMatchSnapshot & {
+  observation: AgentObservation;
+  pendingDecision: ForgePendingDecision;
+}> {
+  const snapshot = await waitForDecision(external, sessionId);
+  assert.ok(snapshot.observation);
+  return snapshot as ForgeExternalMatchSnapshot & {
+    observation: AgentObservation;
+    pendingDecision: ForgePendingDecision;
+  };
+}
+
+function observedPlayers(observation: AgentObservation): {
+  self: AgentSelfPlayerObservation;
+  opponent: AgentOpponentPlayerObservation;
+} {
+  const self = observation.players.find((player) => player.role === "self");
+  const opponent = observation.players.find(
+    (player) => player.role === "opponent",
+  );
+  assert.ok(self);
+  assert.ok(opponent);
+  return { self, opponent };
+}
+
+async function driveUntilObservation(
+  external: ForgeExternalMatchClient,
+  sessionId: string,
+  predicate: (observation: AgentObservation) => boolean,
+  timeoutDecisions = 500,
+): Promise<ForgeExternalMatchSnapshot & {
+  observation: AgentObservation;
+  pendingDecision: ForgePendingDecision;
+}> {
+  for (let index = 0; index < timeoutDecisions; index += 1) {
+    const snapshot = await waitForObservedDecision(external, sessionId);
+    if (predicate(snapshot.observation)) return snapshot;
+    const pass = snapshot.pendingDecision.actions.find(
+      (action) => action.type === "pass",
+    );
+    assert.ok(pass);
+    await external.submitDecision(
+      sessionId,
+      snapshot.pendingDecision.decisionId,
+      pass.actionId,
+    );
+  }
+  throw new Error("Forge did not reach the requested observed state.");
 }
 
 async function driveUntilAction(
@@ -473,6 +555,233 @@ Mainboard
         error.code === "MATCH_ALREADY_RUNNING",
     );
     await external.cancel(started.sessionId);
+  });
+
+  it("captures a player-specific observation with self hand, hidden opponent hand/library, and public commanders", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(ashlingDeck(), manifestDeck(), {
+      seed: 12_345,
+    });
+    const waiting = await waitForObservedDecision(external, started.sessionId);
+    const { observation, pendingDecision } = waiting;
+    const { self, opponent } = observedPlayers(observation);
+
+    assert.match(observation.gameRef, /^forge-game-\d+$/);
+    assert.equal(observation.selfPlayerId, "player-1");
+    assert.equal(self.playerId, "player-1");
+    assert.equal(opponent.playerId, "player-2");
+    assert.equal(self.externalController, true);
+    assert.equal(opponent.externalController, false);
+    assert.equal(self.hand.length, self.handSize);
+    assert.ok(self.hand.length > 0);
+    assert.ok(self.hand.every((card) => card.zone === "hand" && card.name));
+    assert.equal("hand" in opponent, false);
+    assert.ok(opponent.handSize > 0);
+    assert.ok(self.librarySize > 0);
+    assert.ok(opponent.librarySize > 0);
+    assert.equal(
+      JSON.stringify(observation).includes('"library":'),
+      false,
+    );
+    assert.equal(
+      JSON.stringify(observation).includes("Soul Summons"),
+      false,
+      "the opponent's distinctive hidden main-deck card must not leak",
+    );
+    assert.deepEqual(
+      self.commanders.map((commander) => ({
+        name: commander.name,
+        inCommandZone: commander.inCommandZone,
+        castsFromCommand: commander.castsFromCommand,
+      })),
+      [
+        {
+          name: "Ashling the Pilgrim",
+          inCommandZone: true,
+          castsFromCommand: 0,
+        },
+      ],
+    );
+    assert.deepEqual(
+      opponent.commanders.map((commander) => commander.name),
+      ["Isamaru, Hound of Konda"],
+    );
+    assert.equal(observation.game.turn, pendingDecision.context.turn);
+    assert.equal(observation.game.phase, pendingDecision.context.phase);
+    assert.equal(
+      observation.game.activePlayerId,
+      pendingDecision.context.activePlayerId,
+    );
+    assert.equal(
+      observation.game.priorityPlayerId,
+      pendingDecision.context.priorityPlayerId,
+    );
+    await external.cancel(started.sessionId);
+  });
+
+  it("cross-links cardRef and observes the exact land transition from hand to battlefield", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(ashlingDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+    const found = await driveUntilAction(
+      external,
+      started.sessionId,
+      (action) => action.type === "play_land",
+      (decision) =>
+        decision.actions.find((action) => action.type === "pass")!,
+    );
+    assert.ok(found.snapshot.observation);
+    assert.notEqual(found.action.type, "pass");
+    const before = observedPlayers(found.snapshot.observation).self;
+    const observedCard = before.hand.find(
+      (card) => card.cardRef === found.action.cardRef,
+    );
+    assert.ok(observedCard);
+    assert.equal(observedCard.name, found.action.cardName);
+    assert.equal(observedCard.zone, "hand");
+
+    await external.submitDecision(
+      started.sessionId,
+      found.decision.decisionId,
+      found.action.actionId,
+    );
+    const afterSnapshot = await waitForExternalSnapshot(
+      external,
+      started.sessionId,
+      (snapshot) =>
+        snapshot.progress.landsPlayed === 1 &&
+        snapshot.pendingDecision?.decisionId !== found.decision.decisionId &&
+        snapshot.observation !== undefined,
+    );
+    assert.ok(afterSnapshot.observation);
+    const after = observedPlayers(afterSnapshot.observation).self;
+    assert.ok(!after.hand.some((card) => card.cardRef === found.action.cardRef));
+    const battlefieldCard = after.battlefield.find(
+      (card) => card.cardRef === found.action.cardRef,
+    );
+    assert.ok(battlefieldCard);
+    assert.equal(battlefieldCard.name, "Mountain");
+    assert.equal(battlefieldCard.zone, "battlefield");
+    assert.equal(battlefieldCard.tapped, false);
+    assert.equal(battlefieldCard.hidden, false);
+    if (afterSnapshot.status !== "completed") {
+      await external.cancel(started.sessionId);
+    }
+  });
+
+  it("summarizes the real stack and sanitizes face-down cards exiled by Pyxis", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(pyxisDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+    const pyxis = await driveUntilAction(
+      external,
+      started.sessionId,
+      (action) =>
+        action.type === "cast_spell" &&
+        action.cardName === "Pyxis of Pandemonium",
+    );
+    assert.notEqual(pyxis.action.type, "pass");
+    await external.submitDecision(
+      started.sessionId,
+      pyxis.decision.decisionId,
+      pyxis.action.actionId,
+    );
+    const onStack = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) =>
+        observation.stack.some(
+          (item) => item.sourceCardRef === pyxis.action.cardRef,
+        ),
+    );
+    const stackItem = onStack.observation.stack.find(
+      (item) => item.sourceCardRef === pyxis.action.cardRef,
+    );
+    assert.ok(stackItem);
+    assert.match(stackItem.stackRef, /^stack-\d+$/);
+    assert.equal(stackItem.position, 0);
+    assert.equal(stackItem.sourceCardName, "Pyxis of Pandemonium");
+    assert.equal(stackItem.controllerId, "player-1");
+    assert.equal(stackItem.hidden, false);
+    assert.match(stackItem.description ?? "", /Pyxis of Pandemonium/i);
+
+    const activation = await driveUntilAction(
+      external,
+      started.sessionId,
+      (action) =>
+        action.type === "activate_ability" &&
+        action.cardName === "Pyxis of Pandemonium",
+      (decision) =>
+        decision.actions.find((action) => action.type === "pass")!,
+    );
+    await external.submitDecision(
+      started.sessionId,
+      activation.decision.decisionId,
+      activation.action.actionId,
+    );
+    const exiled = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) =>
+        observation.players.every((player) => player.exile.length > 0),
+    );
+    for (const player of exiled.observation.players) {
+      const hiddenExile = player.exile.find((card) => card.faceDown);
+      assert.ok(hiddenExile);
+      assert.equal(hiddenExile.name, null);
+      assert.equal(hiddenExile.hidden, true);
+      assert.equal(hiddenExile.typeLine, null);
+      assert.match(hiddenExile.cardRef, /^card-\d+$/);
+    }
+    if (exiled.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("shows opponent public battlefield/graveyard state while hiding a manifested permanent's identity", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(ashlingDeck(), manifestDeck(), {
+      seed: 12_345,
+    });
+    const manifested = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) => {
+        const opponent = observation.players.find(
+          (player) => player.role === "opponent",
+        );
+        return opponent?.battlefield.some((card) => card.faceDown) ?? false;
+      },
+    );
+    const opponent = observedPlayers(manifested.observation).opponent;
+    assert.ok(
+      opponent.battlefield.some(
+        (card) => card.name === "Plains" && !card.hidden,
+      ),
+    );
+    const faceDown = opponent.battlefield.find((card) => card.faceDown);
+    assert.ok(faceDown);
+    assert.equal(faceDown.name, null);
+    assert.equal(faceDown.hidden, true);
+    assert.equal(faceDown.power, 2);
+    assert.equal(faceDown.toughness, 2);
+    assert.ok(
+      opponent.graveyard.some(
+        (card) => card.name === "Soul Summons" && !card.hidden,
+      ),
+    );
+    assert.equal(opponent.graveyard.length, opponent.graveyardSize);
+    if (manifested.status !== "completed") {
+      await external.cancel(started.sessionId);
+    }
   });
 
   it("submits PASS and protects pending, unknown, and stale actions", async () => {

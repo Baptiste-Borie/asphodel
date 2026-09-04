@@ -159,10 +159,99 @@ export interface ForgeExternalMatchProgress {
   abilitiesActivated: number;
 }
 
+export type AgentCardZone =
+  | "hand"
+  | "battlefield"
+  | "graveyard"
+  | "exile"
+  | "command";
+
+export interface AgentCardObservation {
+  cardRef: string;
+  name: string | null;
+  zone: AgentCardZone;
+  ownerId: string | null;
+  controllerId: string | null;
+  faceDown: boolean;
+  hidden: boolean;
+  tapped: boolean | null;
+  summoningSick: boolean | null;
+  counters: Record<string, number> | null;
+  power: number | null;
+  toughness: number | null;
+  typeLine: string | null;
+}
+
+export interface AgentCommanderObservation {
+  cardRef: string;
+  name: string;
+  inCommandZone: boolean;
+  castsFromCommand: number;
+}
+
+interface AgentPlayerObservationBase {
+  playerId: string;
+  name: string;
+  life: number;
+  startingLife: number;
+  handSize: number;
+  librarySize: number;
+  graveyardSize: number;
+  exileSize: number;
+  commandZoneSize: number;
+  battlefieldSize: number;
+  externalController: boolean;
+  battlefield: AgentCardObservation[];
+  graveyard: AgentCardObservation[];
+  exile: AgentCardObservation[];
+  command: AgentCardObservation[];
+  commanders: AgentCommanderObservation[];
+}
+
+export interface AgentSelfPlayerObservation
+  extends AgentPlayerObservationBase {
+  role: "self";
+  hand: AgentCardObservation[];
+}
+
+export interface AgentOpponentPlayerObservation
+  extends AgentPlayerObservationBase {
+  role: "opponent";
+}
+
+export type AgentPlayerObservation =
+  | AgentSelfPlayerObservation
+  | AgentOpponentPlayerObservation;
+
+export interface AgentStackItem {
+  stackRef: string;
+  position: number;
+  sourceCardRef: string | null;
+  sourceCardName: string | null;
+  controllerId: string | null;
+  description: string | null;
+  faceDown: boolean;
+  hidden: boolean;
+}
+
+export interface AgentObservation {
+  gameRef: string;
+  game: {
+    turn: number;
+    phase: string;
+    activePlayerId: string;
+    priorityPlayerId: string;
+  };
+  selfPlayerId: string;
+  players: AgentPlayerObservation[];
+  stack: AgentStackItem[];
+}
+
 export interface ForgeExternalMatchSnapshot {
   sessionId: string;
   status: ForgeExternalMatchStatus;
   progress: ForgeExternalMatchProgress;
+  observation?: AgentObservation;
   pendingDecision?: ForgePendingDecision;
   result?: ForgeGameResult;
   error?: { code: string; message: string };

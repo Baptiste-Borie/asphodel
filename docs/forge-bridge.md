@@ -1,4 +1,4 @@
-# Asphodel Forge Bridge — Primary Legal Actions V1d
+# Asphodel Forge Bridge — AgentObservation V1e
 
 ## Scope
 
@@ -6,10 +6,12 @@ This bridge is an isolated validation seam between the Node.js backend and the
 original Java [Card-Forge/forge](https://github.com/Card-Forge/forge) engine. It
 loads real Forge card scripts, converts Deck Library views into real
 `forge.deck.Deck` instances, and supports either two normal Forge AI controllers
-or an asynchronous match with one hybrid Asphodel controller. As of V1d, the
-Asphodel controller's primary-action decisions are driven by real, enumerated
+or an asynchronous match with one hybrid Asphodel controller. V1d made the
+Asphodel controller's primary-action decisions driven by real, enumerated
 Forge legal actions instead of a single Forge AI suggestion (see
-[Primary Legal Actions V1d](#primary-legal-actions-v1d) below). The integration
+[Primary Legal Actions V1d](#primary-legal-actions-v1d) below). V1e adds a
+player-specific, sanitized observation captured alongside each pending decision
+(see [AgentObservation V1e](#agentobservation-v1e)). The integration
 is backend-only: it adds no product Game HTTP API, persistent Game model, full
 human controller, or frontend behavior.
 
@@ -33,6 +35,7 @@ Asphodel Forge Bridge (Java)
       |
       +-- ForgeDeckFactory -> PaperCard lookup -> forge.deck.Deck
       +-- ExternalMatchSession -> PlayerControllerAsphodel
+      +-- AgentObservationBuilder -> sanitized immutable observation
       +-- forge-core  (CardStorageReader, StaticData, card scripts)
       +-- forge-game  (GameRules, RegisteredPlayer, Match, Game)
       `-- forge-ai    (LobbyPlayerAi, PlayerControllerAi)
@@ -480,6 +483,140 @@ V1c "Forge suggestion" counters to remove — V1c's counters already matched
 this shape; only the meaning of "primary action" changed, from a single Forge
 AI suggestion to any enumerated candidate.
 
+## AgentObservation V1e
+
+Forge owns the complete game truth, including hidden zones. V1e introduces
+`AgentObservationBuilder` as an explicit visibility boundary:
+
+```text
+Forge Game (complete truth)
+      |
+      v
+AgentObservationBuilder(Game, observing Player)
+      |  CardView visibility + conservative face-down sanitization
+      v
+immutable AgentObservation (only what player-1 may know)
+      |
+      v
+get_external_match: observation + pendingDecision
+```
+
+The builder is read-only and factual. It neither chooses/evaluates actions nor
+calls Forge AI strategy, and it never serializes a raw Forge object. Runtime
+cards use the same `card-<Card.id>` identity as V1d actions, allowing a client
+to join a visible hand entry directly to its `play_land` or `cast_spell`
+candidate.
+
+### Observation DTO
+
+```ts
+interface AgentObservation {
+  gameRef: string;
+  game: {
+    turn: number;
+    phase: string;
+    activePlayerId: string;
+    priorityPlayerId: string;
+  };
+  selfPlayerId: string;
+  players: (AgentSelfPlayerObservation | AgentOpponentPlayerObservation)[];
+  stack: AgentStackItem[];
+}
+
+interface AgentCardObservation {
+  cardRef: string;
+  name: string | null;
+  zone: "hand" | "battlefield" | "graveyard" | "exile" | "command";
+  ownerId: string | null;
+  controllerId: string | null;
+  faceDown: boolean;
+  hidden: boolean;
+  tapped: boolean | null;
+  summoningSick: boolean | null;
+  counters: Record<string, number> | null;
+  power: number | null;
+  toughness: number | null;
+  typeLine: string | null;
+}
+```
+
+Both player variants contain identity, life/starting life, zone sizes, public
+zone arrays, commander summaries, and a diagnostic `externalController` flag.
+Only `AgentSelfPlayerObservation` has a `hand` field. The opponent concrete DTO
+has no such field at all, so Gson cannot accidentally emit opponent hand card
+objects; only `handSize` is transported. Neither variant has a library-card
+array or top-card field.
+
+Commander summaries contain `cardRef`, public name, `inCommandZone`, and
+Forge's `castsFromCommand` count. Stack entries contain `stackRef`, top-first
+`position`, source card reference/name when visible, activating player,
+sanitized description, and face-down/hidden flags. Targets and internal mode
+choices are deliberately absent.
+
+### Visibility and engine APIs
+
+Global context comes from `Game.getId()`, `Game.getPhaseHandler()`,
+`PhaseHandler.getTurn()/getPhase()/getPlayerTurn()/getPriorityPlayer()`, and
+`Game.getRegisteredPlayers()`. Player facts and zone contents come from
+`Player.getLife()`, `getStartingLife()`, `getCardsIn(ZoneType)`, and
+`getCommanders()`.
+
+For every serialized card, `CardView.canBeShownTo(observer.getView())` checks
+zone visibility. A face-down card additionally requires
+`CardView.canFaceDownBeShownTo(observer.getView())` before its real name or
+identity-bearing characteristics are exposed. Otherwise `name` is `null`,
+`hidden` is `true`, and non-public characteristics are `null`. This applies to
+face-down exile, command/graveyard edge cases, and face-down stack sources. A
+face-down battlefield permanent still exposes public current P/T, type,
+tapped state, and counters while hiding its underlying name.
+
+Public runtime state comes directly from `Card.getOwner()/getController()`,
+`isTapped()`, `isSick()`, `getCounters()`, `getNetPower()`,
+`getNetToughness()`, and `getType()`. Commander status uses
+`Game.getCardState()`, `Card.isInZone(ZoneType.Command)`, and
+`Player.getCommanderCast()`. The stack is iterated through `Game.getStack()`;
+each `SpellAbilityStackInstance` supplies its stable runtime ID, source card,
+activating player, and stack description.
+
+### Snapshot consistency
+
+`PlayerControllerAsphodel.chooseSpellAbilityToPlay()` enumerates legal actions,
+then builds the observation on the game thread before publishing either.
+`AsphodelDecisionBroker` stores both immutable DTOs in one `PendingInternal`
+object and only then pauses that thread on its `CompletableFuture`.
+`ExternalMatchSession.snapshot()` reads one `PendingAgentTurn` under the
+broker's synchronization and returns its `observation` and `pendingDecision`
+together. The NDJSON thread never traverses a mutating `Game`; during
+`waiting_for_decision`, context and actions therefore describe the same paused
+state.
+
+### Capability table
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Turn/phase context | PASS | Captured from the paused Forge `PhaseHandler`. |
+| Active/priority player | PASS | Uses the existing `player-1`/`player-2` IDs and is cross-checked against `PendingDecision.context`. |
+| Own hand identities | PASS | Full sanitized card summaries; `hand.length === handSize` is tested. |
+| Opponent hand size | PASS | Numeric size only. |
+| Opponent hand identities hidden | PASS | Opponent DTO has no `hand` field; a distinctive hidden card-name regression test passes. |
+| Library sizes | PASS | Numeric sizes for every player. |
+| Library identities hidden | PASS | No library array, top card, or known-card field exists in the DTO. |
+| Battlefield public state | PASS | Names plus engine-derived controller/owner, tapped, counters, type, and creature P/T. |
+| Graveyard public state | PASS | Opponent `Soul Summons` is observed after real resolution. |
+| Exile visibility | PASS WITH LIMITATION | `CardView` current visibility is enforced; Pyxis face-down exile is regression-tested. Historical knowledge is not retained. |
+| Command zone | PASS | Public cards plus commander presence and Forge commander-cast count. |
+| Stack summary | PASS WITH LIMITATION | Top-first public source/activator/description; targets and hidden descriptions are omitted. |
+| Runtime cardRef consistency | PASS | Same `cardRef` is tested across self hand, legal action, then battlefield after play. |
+| Face-down sanitization | PASS WITH LIMITATION | Opponent manifest and both players' Pyxis exile are tested; current Forge visibility is authoritative, with no historical knowledge model. |
+| Historical known information | NOT IMPLEMENTED | Future knowledge model. |
+| Revealed hand memory | NOT IMPLEMENTED | Future knowledge model. |
+| Known top-of-library memory | NOT IMPLEMENTED | Future knowledge model. |
+
+V1e adds no card score, recommendation, threat value, database persistence,
+frontend, Scryfall game-state lookup, or AI. Targets, mana, modes, X,
+sacrifices, mulligans, combat, triggers, and replacement decisions remain the
+same inherited `PlayerControllerAi` secondary layer documented for V1d.
+
 ## Card database initialization
 
 `ForgeDataRepository` initializes the pieces normally prepared by Forge's GUI
@@ -612,7 +749,7 @@ Errors are structured and do not normally stop the process. Codes are
   physical-table synchronization, or Asphodel ML agent.
 - Missing Java, jar, assets, protocol mismatch, timeout, or JVM exit is surfaced
   as a typed bridge/process error.
-- Forge upstream is unmodified. V1c only reads its sources and runtime assets.
+- Forge upstream is unmodified. V1e only reads its sources and runtime assets.
 
 ## Updating Forge
 

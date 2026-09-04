@@ -44,7 +44,8 @@ final class AsphodelDecisionBroker {
     List<SpellAbility> requestPriorityDecision(
             Game game,
             Player player,
-            List<ForgeLegalActionEnumerator.Candidate> candidates
+            List<ForgeLegalActionEnumerator.Candidate> candidates,
+            AgentObservation observation
     ) {
         PendingInternal decision;
         synchronized (this) {
@@ -103,7 +104,7 @@ final class AsphodelDecisionBroker {
                     ),
                     List.copyOf(actions)
             );
-            decision = new PendingInternal(snapshot, choices);
+            decision = new PendingInternal(snapshot, observation, choices);
             pending = decision;
             decisionsRequested++;
         }
@@ -179,8 +180,10 @@ final class AsphodelDecisionBroker {
         decision.answer().complete(choice);
     }
 
-    synchronized PendingDecision pendingDecision() {
-        return pending == null ? null : pending.snapshot();
+    synchronized PendingAgentTurn pendingAgentTurn() {
+        return pending == null
+                ? null
+                : new PendingAgentTurn(pending.observation(), pending.snapshot());
     }
 
     synchronized Progress progress() {
@@ -259,6 +262,12 @@ final class AsphodelDecisionBroker {
     ) {
     }
 
+    record PendingAgentTurn(
+            AgentObservation observation,
+            PendingDecision pendingDecision
+    ) {
+    }
+
     record Progress(
             long decisionsRequested,
             long decisionsSubmitted,
@@ -276,11 +285,16 @@ final class AsphodelDecisionBroker {
 
     private record PendingInternal(
             PendingDecision snapshot,
+            AgentObservation observation,
             Map<String, ActionChoice> choices,
             CompletableFuture<ActionChoice> answer
     ) {
-        PendingInternal(PendingDecision snapshot, Map<String, ActionChoice> choices) {
-            this(snapshot, choices, new CompletableFuture<>());
+        PendingInternal(
+                PendingDecision snapshot,
+                AgentObservation observation,
+                Map<String, ActionChoice> choices
+        ) {
+            this(snapshot, observation, choices, new CompletableFuture<>());
         }
 
         void clear() {

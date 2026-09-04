@@ -11,6 +11,7 @@ import java.util.List;
 public final class PlayerControllerAsphodel extends PlayerControllerAi {
     private final AsphodelDecisionBroker decisions;
     private final ForgeLegalActionEnumerator legalActions = new ForgeLegalActionEnumerator();
+    private final AgentObservationBuilder observations = new AgentObservationBuilder();
 
     PlayerControllerAsphodel(
             Game game,
@@ -24,10 +25,15 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
 
     @Override
     public List<SpellAbility> chooseSpellAbilityToPlay() {
+        List<ForgeLegalActionEnumerator.Candidate> candidates = legalActions.enumerate(
+                getGame(),
+                getPlayer()
+        );
         return decisions.requestPriorityDecision(
                 getGame(),
                 getPlayer(),
-                legalActions.enumerate(getGame(), getPlayer())
+                candidates,
+                observations.build(getGame(), getPlayer())
         );
     }
 
