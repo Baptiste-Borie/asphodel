@@ -63,6 +63,15 @@ export class ForgeExternalMatchClient {
     });
   }
 
+  submitMode(sessionId: string, decisionId: string, modeId: string) {
+    return this.bridge.request({
+      type: "submit_external_decision",
+      sessionId,
+      decisionId,
+      modeId,
+    });
+  }
+
   cancel(sessionId: string) {
     return this.bridge.request({ type: "cancel_external_match", sessionId });
   }

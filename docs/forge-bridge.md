@@ -741,7 +741,139 @@ explicit random-target and divided-allocation fallback.
 | Must-target effects | PASS WITH LIMITATION | Forge filtering and final `setupTargets` validation are used; no dedicated fixture test yet. |
 | Random targets | FORGE FALLBACK | `TargetRestrictions.isRandomTarget()` remains with Forge so Node cannot override randomness. |
 | Divided allocations | FORGE FALLBACK | Target plus amount allocation remains with Forge until an allocation decision DTO exists. |
-| Modes, mana, X, sacrifices, combat, triggers, replacements | NOT IMPLEMENTED | Remain inherited Forge AI secondary decisions. |
+| Mana, X, sacrifices, combat, triggers, replacements | NOT IMPLEMENTED | Remain inherited Forge AI secondary decisions; fixed single modes are covered by V1g below. |
+
+## External Mode Selection V1g
+
+V1g externalizes the fixed, choose-exactly-one subset of Forge modal choices
+without changing primary action enumeration:
+
+```text
+Node selects CAST SPELL / ACTIVATE ABILITY
+       |
+       v
+Forge CharmEffect.makeChoices asks the controller for a mode
+       |
+       v
+mode_selection exposes Forge-filtered AbilitySub objects by opaque modeId
+       |
+       v
+Node selects modeId
+       |
+       v
+if the retained mode targets: target_selection -> Node selects targetId
+       |
+       v
+Forge chains its copy of the selected mode and resolves normally
+```
+
+### Pinned Forge API and call path
+
+At Forge revision `6356c1ad565029c82513c96e42ad5492c1b09c4e`, the
+controller seam is:
+
+```java
+List<AbilitySub> chooseModeForAbility(
+    SpellAbility sa,
+    List<AbilitySub> possible,
+    int min,
+    int num,
+    boolean allowRepeat
+)
+```
+
+`PlayerController` declares it, while `PlayerControllerAi` delegates to
+`AiController.chooseModeForAbility` and then the Charm AI chosen list.
+`ComputerUtil.handlePlayingSpellAbility` calls `CharmEffect.makeChoices(sa)`
+while playing a modal spell. `makeChoices` calls
+`CharmEffect.makePossibleOptions(sa)`, which removes a mode when its mandatory
+targets have no candidate and applies `ChoiceRestriction`; it then invokes the
+choosing player's `chooseModeForAbility`. Finally,
+`CharmEffect.chainAbilities` sorts the returned mutable list and appends Forge
+copies of the chosen `AbilitySub` objects.
+
+`PlayerControllerAsphodel` overrides exactly that seam for a Node-accepted
+primary ability. The supported branch returns the broker-retained `AbilitySub`
+to Forge rather than reconstructing it. If that mode targets, it calls
+`setupTargets()` on the retained mode after Node selects it and before
+`CharmEffect` copies and chains it; Forge's `SpellAbility.copy()` preserves the
+real `TargetChoices`. This gives the required mode-before-target order. No
+`PlayerControllerAi` mode or target strategy runs on this supported branch.
+
+### Mode decision protocol
+
+`ForgePendingExternalDecision` now includes:
+
+```ts
+interface ForgePendingModeDecision {
+  decisionId: string;
+  type: "mode_selection";
+  playerId: string;
+  context: ForgeDecisionContext;
+  source: {
+    actionId: string | null;
+    cardRef: string | null;
+    cardName: string | null;
+    abilityText: string | null;
+  };
+  prompt: string | null;
+  minModes: number;
+  maxModes: number;
+  selectedModeIds: string[];
+  canFinish: boolean;
+  finishModeId: string | null;
+  modes: Array<{
+    modeId: string;
+    label: string;
+    description: string | null;
+  }>;
+}
+```
+
+The broker maps each `mode-N` to the exact `AbilitySub` instance supplied by
+Forge. Mode labels and descriptions come only from the static card-script
+`SpellDescription`; the bridge does not interpolate game state or hidden card
+names. A missing static description, mode cost, nonliteral count, optional
+count, random choice, or repeatable mode shape makes the whole request fall
+back to inherited Forge AI.
+
+`submit_external_decision` accepts exactly one of `actionId`, `targetId`, or
+`modeId`. A wrong selector for a mode decision returns `MODE_ID_REQUIRED`; an
+unknown mode returns `MODE_NOT_FOUND` without consuming the decision; reuse of
+an answered decision returns `STALE_DECISION`. Progress adds
+`modeDecisionsRequested`, `modeDecisionsSubmitted`, and `modesSelected`.
+
+The real `Gruesome Realization` fixture proves a fixed single mode: Node chooses
+the draw-two/lose-two mode, observes both effects, and observes that the
+opponent's Grizzly Bears did not receive the alternative -1/-1 effect. The real
+`Light of Hope` fixture proves legal filtering and composition: with no legal
+enchantment target, Forge exposes only gain-life and put-counter; Node chooses
+put-counter, then V1f exposes the observed Grizzly Bears `cardRef`, and the exact
+creature receives the counter while life does not change. Both decisions link
+back to the original primary `actionId` and capture their observation on the
+paused Forge game thread.
+
+### Mode capability table
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Single-mode choice | PASS | Real Gruesome Realization and Light of Hope choose-exactly-one fixtures resolve Node-selected modes. |
+| Legal mode enumeration | PASS | Forge's `makePossibleOptions` removes Light of Hope's destroy-enchantment mode when it has no legal target. |
+| Real Forge mode object retained | PASS | Opaque `modeId` maps to the exact supplied `AbilitySub`; Forge then performs its normal copy/chain operation. |
+| Observation/mode same snapshot | PASS | Mode context is cross-checked against the fresh observation captured at the paused call. |
+| Primary action link | PASS | Both fixtures preserve the original cast action in `source.actionId`. |
+| Mode -> target composition | PASS | Light of Hope produces mode selection, then V1f card targeting, then the exact counter result. |
+| Invalid mode protection | PASS | Wrong selector and unknown `modeId` are rejected without consuming the decision. |
+| Stale mode protection | PASS | Reusing the answered mode decision returns `STALE_DECISION`. |
+| Multiple modes | FORGE FALLBACK | Counts other than fixed one are deliberately delegated to inherited Forge AI. |
+| Optional mode count | FORGE FALLBACK | `MinCharmNum` shapes other than fixed one are not externalized. |
+| Repeated same mode | FORGE FALLBACK | `CanRepeatModes` is not externalized. |
+| Dynamic/hidden modes | FORGE FALLBACK | Only nonblank static script `SpellDescription` values are exposed; other shapes remain with Forge AI. |
+| X-dependent modes | NOT IMPLEMENTED | Primary X actions remain omitted; nonliteral modal counts are not externalized. |
+
+V1g does not externalize X, mana selection/payment, optional or mandatory
+additional costs, sacrifices, combat, triggers, replacement effects, or
+mulligans. `PlayerControllerAsphodel.isAI()` remains inherited as `true`.
 
 ## Card database initialization
 
@@ -760,12 +892,13 @@ vendor/forge/forge-gui/res/setlookup
 
 Normal cards are indexed lazily and resolved with
 `StaticData.attemptToLoadCard`; tokens are loaded eagerly because card scripts
-may create them during play. Fixtures include Mountain, Island, Forest,
-Lightning Bolt, Counterintelligence, Predict, Counterspell, Grizzly Bears,
-Goblin Piker, Krenko, Tin Street Kingpin, Talrand, Sky Summoner, and Ayula,
-Queen Among Bears. No rules text or ability is hardcoded. The response exposes
-Lightning Bolt's parsed `CardRules`, Oracle text, mana cost, and raw
-`SP$ DealDamage` script ability as integration evidence.
+may create them during play. Fixtures include Mountain, Island, Swamp, Plains,
+Forest, Lightning Bolt, Counterintelligence, Predict, Counterspell, Gruesome
+Realization, Light of Hope, Grizzly Bears, Goblin Piker, Krenko, Tin Street
+Kingpin, Talrand, Sky Summoner, Ayara, First of Locthwain, Isamaru, Hound of
+Konda, and Ayula, Queen Among Bears. No rules text or ability is hardcoded. The
+response exposes Lightning Bolt's parsed `CardRules`, Oracle text, mana cost,
+and raw `SP$ DealDamage` script ability as integration evidence.
 
 ## Fixture and game orchestration
 

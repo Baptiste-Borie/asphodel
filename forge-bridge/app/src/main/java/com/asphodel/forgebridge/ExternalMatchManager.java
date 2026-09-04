@@ -46,10 +46,10 @@ final class ExternalMatchManager {
             String sessionId,
             String decisionId,
             String choiceId,
-            boolean targetSubmission
+            AsphodelDecisionBroker.SubmissionKind submissionKind
     ) {
         ExternalMatchSession current = requireSession(sessionId);
-        current.submit(decisionId, choiceId, targetSubmission);
+        current.submit(decisionId, choiceId, submissionKind);
         return Map.of("accepted", true);
     }
 

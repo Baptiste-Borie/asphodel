@@ -4,6 +4,7 @@ import forge.LobbyPlayer;
 import forge.ai.PlayerControllerAi;
 import forge.game.Game;
 import forge.game.player.Player;
+import forge.game.spellability.AbilitySub;
 import forge.game.spellability.SpellAbility;
 
 import java.util.ArrayList;
@@ -13,6 +14,7 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
     private final AsphodelDecisionBroker decisions;
     private final ForgeLegalActionEnumerator legalActions = new ForgeLegalActionEnumerator();
     private final ForgeTargetChoiceEnumerator targetChoices = new ForgeTargetChoiceEnumerator();
+    private final ForgeModeChoiceEnumerator modeChoices = new ForgeModeChoiceEnumerator();
     private final AgentObservationBuilder observations = new AgentObservationBuilder();
 
     PlayerControllerAsphodel(
@@ -96,5 +98,40 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
             selectedTargetIds.add(answer.targetId());
         }
         return ability.isTargetNumberValid();
+    }
+
+    @Override
+    public List<AbilitySub> chooseModeForAbility(
+            SpellAbility ability,
+            List<AbilitySub> possible,
+            int min,
+            int max,
+            boolean allowRepeat
+    ) {
+        if (!decisions.isAcceptedPrimaryAbility(ability)
+                || !modeChoices.supports(ability, possible, min, max, allowRepeat)) {
+            return super.chooseModeForAbility(ability, possible, min, max, allowRepeat);
+        }
+
+        ForgeModeChoiceEnumerator.Candidate chosen = decisions.requestModeDecision(
+                getGame(),
+                getPlayer(),
+                ability,
+                modeChoices.enumerate(possible),
+                min,
+                max,
+                observations.build(getGame(), getPlayer())
+        );
+        AbilitySub mode = chosen.mode();
+        mode.setActivatingPlayer(ability.getActivatingPlayer());
+        mode.setParent(ability);
+
+        // CharmEffect asks for modes before it chains Forge's copies of the
+        // selected AbilitySub objects. Target the retained selected mode now;
+        // SpellAbility.copy() preserves those TargetChoices when Forge chains it.
+        if (ForgeLegalActionEnumerator.requiresTargets(mode) && !mode.setupTargets()) {
+            return new ArrayList<>();
+        }
+        return new ArrayList<>(List.of(mode));
     }
 }

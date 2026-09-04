@@ -90,7 +90,11 @@ final class ExternalMatchSession {
         return snapshot;
     }
 
-    void submit(String decisionId, String choiceId, boolean targetSubmission) {
+    void submit(
+            String decisionId,
+            String choiceId,
+            AsphodelDecisionBroker.SubmissionKind submissionKind
+    ) {
         Status current = status;
         if (current.isTerminal()) {
             throw new ExternalMatchException(
@@ -98,7 +102,7 @@ final class ExternalMatchSession {
                     "The external match is already terminal."
             );
         }
-        decisions.submit(decisionId, choiceId, targetSubmission);
+        decisions.submit(decisionId, choiceId, submissionKind);
     }
 
     Map<String, Object> cancel() {

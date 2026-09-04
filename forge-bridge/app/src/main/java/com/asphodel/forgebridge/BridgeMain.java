@@ -264,21 +264,33 @@ public final class BridgeMain {
         String decisionId = requireString(request, "decisionId");
         String actionId = getString(request, "actionId");
         String targetId = getString(request, "targetId");
+        String modeId = getString(request, "modeId");
         boolean hasActionId = actionId != null && !actionId.isBlank();
         boolean hasTargetId = targetId != null && !targetId.isBlank();
-        if (hasActionId == hasTargetId) {
+        boolean hasModeId = modeId != null && !modeId.isBlank();
+        int selectorCount = (hasActionId ? 1 : 0)
+                + (hasTargetId ? 1 : 0)
+                + (hasModeId ? 1 : 0);
+        if (selectorCount != 1) {
             throw new IllegalArgumentException(
-                    "submit_external_decision requires exactly one of actionId or targetId."
+                    "submit_external_decision requires exactly one of actionId, targetId, "
+                            + "or modeId."
             );
         }
+        String choiceId = hasActionId ? actionId : hasTargetId ? targetId : modeId;
+        AsphodelDecisionBroker.SubmissionKind submissionKind = hasActionId
+                ? AsphodelDecisionBroker.SubmissionKind.ACTION
+                : hasTargetId
+                ? AsphodelDecisionBroker.SubmissionKind.TARGET
+                : AsphodelDecisionBroker.SubmissionKind.MODE;
         return success(
                 requestId,
                 "submit_external_decision",
                 EXTERNAL_MATCHES.submit(
                         sessionId,
                         decisionId,
-                        hasTargetId ? targetId : actionId,
-                        hasTargetId
+                        choiceId,
+                        submissionKind
                 )
         );
     }

@@ -19,6 +19,7 @@ import type {
   ForgeExternalMatchSnapshot,
   ForgeGameResult,
   ForgePendingDecision,
+  ForgePendingModeDecision,
   ForgePendingTargetDecision,
 } from "./forge-protocol.js";
 
@@ -148,6 +149,36 @@ function creatureFixtureDeck(name = "Target fixture creatures"): ForgeDeckSpec {
   };
 }
 
+function singleModeDeck(name = "Single mode fixture"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      {
+        name: "Ayara, First of Locthwain",
+        quantity: 1,
+        section: "commander",
+      },
+      { name: "Swamp", quantity: 30, section: "mainboard" },
+      { name: "Gruesome Realization", quantity: 30, section: "mainboard" },
+    ],
+  };
+}
+
+function targetedModeDeck(name = "Mode then target fixture"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      {
+        name: "Isamaru, Hound of Konda",
+        quantity: 1,
+        section: "commander",
+      },
+      { name: "Plains", quantity: 30, section: "mainboard" },
+      { name: "Light of Hope", quantity: 30, section: "mainboard" },
+    ],
+  };
+}
+
 function assertTerminalDeckMatch(
   result: ForgeGameResult,
   controllerClasses = [
@@ -208,6 +239,18 @@ async function waitForDecision(
         pendingDecision: ForgePendingDecision;
       };
     }
+    if (snapshot.pendingDecision.type === "mode_selection") {
+      const mode =
+        snapshot.pendingDecision.modes[0]?.modeId ??
+        snapshot.pendingDecision.finishModeId;
+      assert.ok(mode);
+      await external.submitMode(
+        sessionId,
+        snapshot.pendingDecision.decisionId,
+        mode,
+      );
+      continue;
+    }
     const target =
       snapshot.pendingDecision.targets[0]?.targetId ??
       snapshot.pendingDecision.finishTargetId;
@@ -233,6 +276,22 @@ async function waitForTargetDecision(
   );
   return snapshot as ForgeExternalMatchSnapshot & {
     pendingDecision: ForgePendingTargetDecision;
+  };
+}
+
+async function waitForModeDecision(
+  external: ForgeExternalMatchClient,
+  sessionId: string,
+): Promise<ForgeExternalMatchSnapshot & {
+  pendingDecision: ForgePendingModeDecision;
+}> {
+  const snapshot = await waitForExternalSnapshot(
+    external,
+    sessionId,
+    (candidate) => candidate.pendingDecision?.type === "mode_selection",
+  );
+  return snapshot as ForgeExternalMatchSnapshot & {
+    pendingDecision: ForgePendingModeDecision;
   };
 }
 
@@ -392,6 +451,18 @@ async function autoDriveExternalMatch(
           sessionId,
           snapshot.pendingDecision.decisionId,
           target,
+        );
+        continue;
+      }
+      if (snapshot.pendingDecision.type === "mode_selection") {
+        const mode =
+          snapshot.pendingDecision.modes[0]?.modeId ??
+          snapshot.pendingDecision.finishModeId;
+        assert.ok(mode);
+        await external.submitMode(
+          sessionId,
+          snapshot.pendingDecision.decisionId,
+          mode,
         );
         continue;
       }
@@ -1058,6 +1129,16 @@ Mainboard
           started.sessionId,
           pendingDecision.decisionId,
           target,
+        );
+        continue;
+      }
+      if (pendingDecision.type === "mode_selection") {
+        const mode = pendingDecision.modes[0]?.modeId;
+        assert.ok(mode);
+        await external.submitMode(
+          started.sessionId,
+          pendingDecision.decisionId,
+          mode,
         );
         continue;
       }
@@ -1823,6 +1904,263 @@ Mainboard
           item.sourceCardRef === found.action.cardRef,
       ),
     );
+    assert.equal(resolved.progress.targetDecisionsRequested, 1);
+    assert.equal(resolved.progress.targetDecisionsSubmitted, 1);
+    assert.equal(resolved.progress.targetsSelected, 1);
+    if (resolved.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("applies Node's fixed single mode to a retained Gruesome Realization", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(
+      singleModeDeck(),
+      creatureFixtureDeck(),
+      { seed: 12_345 },
+    );
+    const found = await driveUntilObservedAction(
+      external,
+      started.sessionId,
+      (observation, action) =>
+        action.type === "cast_spell" &&
+        action.cardName === "Gruesome Realization" &&
+        observedPlayers(observation).opponent.battlefield.some(
+          (card) => card.name === "Grizzly Bears",
+        ),
+    );
+    const before = observedPlayers(found.snapshot.observation);
+    const bearRef = before.opponent.battlefield.find(
+      (card) => card.name === "Grizzly Bears",
+    )?.cardRef;
+    assert.ok(bearRef);
+
+    await external.submitDecision(
+      started.sessionId,
+      found.decision.decisionId,
+      found.action.actionId,
+    );
+    const choosingMode = await waitForModeDecision(
+      external,
+      started.sessionId,
+    );
+    assert.ok(choosingMode.observation);
+    assert.equal(choosingMode.pendingDecision.playerId, "player-1");
+    assert.equal(
+      choosingMode.pendingDecision.source.actionId,
+      found.action.actionId,
+    );
+    assert.equal(
+      choosingMode.pendingDecision.source.cardRef,
+      found.action.cardRef,
+    );
+    assert.equal(
+      choosingMode.pendingDecision.source.cardName,
+      "Gruesome Realization",
+    );
+    assert.equal(
+      choosingMode.observation.game.turn,
+      choosingMode.pendingDecision.context.turn,
+    );
+    assert.equal(
+      choosingMode.observation.game.phase,
+      choosingMode.pendingDecision.context.phase,
+    );
+    assert.equal(choosingMode.pendingDecision.minModes, 1);
+    assert.equal(choosingMode.pendingDecision.maxModes, 1);
+    assert.deepEqual(choosingMode.pendingDecision.selectedModeIds, []);
+    assert.equal(choosingMode.pendingDecision.canFinish, false);
+    assert.equal(choosingMode.pendingDecision.finishModeId, null);
+    assert.deepEqual(
+      choosingMode.pendingDecision.modes.map((mode) => mode.description),
+      [
+        "You draw two cards and you lose 2 life.",
+        "Creatures your opponents control get -1/-1 until end of turn.",
+      ],
+    );
+    assert.ok(
+      choosingMode.pendingDecision.modes.every(
+        (mode) => /^mode-\d+$/.test(mode.modeId) && mode.label === mode.description,
+      ),
+    );
+    const drawMode = choosingMode.pendingDecision.modes.find((mode) =>
+      mode.description?.includes("draw two cards"),
+    );
+    assert.ok(drawMode);
+    await external.submitMode(
+      started.sessionId,
+      choosingMode.pendingDecision.decisionId,
+      drawMode.modeId,
+    );
+
+    const resolved = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) => {
+        const { self } = observedPlayers(observation);
+        return (
+          self.graveyard.some((card) => card.cardRef === found.action.cardRef) &&
+          self.life === before.self.life - 2
+        );
+      },
+    );
+    const after = observedPlayers(resolved.observation);
+    const unchangedBear = after.opponent.battlefield.find(
+      (card) => card.cardRef === bearRef,
+    );
+    assert.ok(unchangedBear);
+    assert.equal(after.self.handSize, before.self.handSize + 1);
+    assert.equal(after.self.life, before.self.life - 2);
+    assert.equal(unchangedBear.power, 2);
+    assert.equal(unchangedBear.toughness, 2);
+    assert.equal(resolved.progress.modeDecisionsRequested, 1);
+    assert.equal(resolved.progress.modeDecisionsSubmitted, 1);
+    assert.equal(resolved.progress.modesSelected, 1);
+    if (resolved.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("composes Light of Hope mode selection with Node target selection", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(
+      targetedModeDeck(),
+      creatureFixtureDeck(),
+      { seed: 12_345 },
+    );
+    const found = await driveUntilObservedAction(
+      external,
+      started.sessionId,
+      (observation, action) =>
+        action.type === "cast_spell" &&
+        action.cardName === "Light of Hope" &&
+        observedPlayers(observation).opponent.battlefield.some(
+          (card) => card.name === "Grizzly Bears",
+        ),
+    );
+    const before = observedPlayers(found.snapshot.observation);
+    const bear = before.opponent.battlefield.find(
+      (card) => card.name === "Grizzly Bears",
+    );
+    assert.ok(bear);
+    assert.equal(found.action.requiresTargets, false);
+    await external.submitDecision(
+      started.sessionId,
+      found.decision.decisionId,
+      found.action.actionId,
+    );
+
+    const choosingMode = await waitForModeDecision(
+      external,
+      started.sessionId,
+    );
+    assert.equal(
+      choosingMode.pendingDecision.source.actionId,
+      found.action.actionId,
+    );
+    assert.deepEqual(
+      choosingMode.pendingDecision.modes.map((mode) => mode.description),
+      [
+        "You gain 4 life.",
+        "Put a +1/+1 counter on target creature.",
+      ],
+      "Forge must filter the destroy-enchantment mode when it has no legal target",
+    );
+    await assert.rejects(
+      external.submitTarget(
+        started.sessionId,
+        choosingMode.pendingDecision.decisionId,
+        "target-does-not-belong-here",
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError && error.code === "MODE_ID_REQUIRED",
+    );
+    await assert.rejects(
+      external.submitMode(
+        started.sessionId,
+        choosingMode.pendingDecision.decisionId,
+        "mode-does-not-exist",
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError && error.code === "MODE_NOT_FOUND",
+    );
+    const stillChoosingMode = await external.get(started.sessionId);
+    assert.equal(
+      stillChoosingMode.pendingDecision?.decisionId,
+      choosingMode.pendingDecision.decisionId,
+    );
+    const counterMode = choosingMode.pendingDecision.modes.find((mode) =>
+      mode.description?.includes("+1/+1 counter"),
+    );
+    assert.ok(counterMode);
+    await external.submitMode(
+      started.sessionId,
+      choosingMode.pendingDecision.decisionId,
+      counterMode.modeId,
+    );
+    await assert.rejects(
+      external.submitMode(
+        started.sessionId,
+        choosingMode.pendingDecision.decisionId,
+        counterMode.modeId,
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError && error.code === "STALE_DECISION",
+    );
+
+    const choosingTarget = (await waitForExternalSnapshot(
+      external,
+      started.sessionId,
+      (snapshot) => snapshot.pendingDecision?.type === "target_selection",
+    )) as ForgeExternalMatchSnapshot & {
+      pendingDecision: ForgePendingTargetDecision;
+    };
+    assert.equal(
+      choosingTarget.pendingDecision.source.actionId,
+      found.action.actionId,
+    );
+    assert.equal(
+      choosingTarget.pendingDecision.source.cardRef,
+      found.action.cardRef,
+    );
+    assert.equal(choosingTarget.pendingDecision.source.cardName, "Light of Hope");
+    const bearTarget = choosingTarget.pendingDecision.targets.find(
+      (target) => target.type === "card" && target.cardRef === bear.cardRef,
+    );
+    assert.ok(bearTarget);
+    await external.submitTarget(
+      started.sessionId,
+      choosingTarget.pendingDecision.decisionId,
+      bearTarget.targetId,
+    );
+
+    const resolved = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) => {
+        const { self, opponent } = observedPlayers(observation);
+        const targetedBear = opponent.battlefield.find(
+          (card) => card.cardRef === bear.cardRef,
+        );
+        return (
+          self.graveyard.some((card) => card.cardRef === found.action.cardRef) &&
+          targetedBear?.power === 3 &&
+          targetedBear.toughness === 3
+        );
+      },
+    );
+    const after = observedPlayers(resolved.observation);
+    const targetedBear = after.opponent.battlefield.find(
+      (card) => card.cardRef === bear.cardRef,
+    );
+    assert.ok(targetedBear);
+    assert.equal(after.self.life, before.self.life, "the gain-life mode was not chosen");
+    assert.ok(
+      Object.values(targetedBear.counters ?? {}).some((count) => count === 1),
+    );
+    assert.equal(resolved.progress.modeDecisionsRequested, 1);
+    assert.equal(resolved.progress.modeDecisionsSubmitted, 1);
+    assert.equal(resolved.progress.modesSelected, 1);
     assert.equal(resolved.progress.targetDecisionsRequested, 1);
     assert.equal(resolved.progress.targetDecisionsSubmitted, 1);
     assert.equal(resolved.progress.targetsSelected, 1);

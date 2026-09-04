@@ -55,6 +55,12 @@ export interface ForgeRequestMap {
         sessionId: string;
         decisionId: string;
         targetId: string;
+      }
+    | {
+        type: "submit_external_decision";
+        sessionId: string;
+        decisionId: string;
+        modeId: string;
       };
   cancel_external_match: {
     type: "cancel_external_match";
@@ -208,9 +214,36 @@ export interface ForgePendingTargetDecision {
   targets: ForgeExternalTarget[];
 }
 
+export interface ForgeExternalMode {
+  modeId: string;
+  label: string;
+  description: string | null;
+}
+
+export interface ForgePendingModeDecision {
+  decisionId: string;
+  type: "mode_selection";
+  playerId: string;
+  context: ForgePendingDecision["context"];
+  source: {
+    actionId: string | null;
+    cardRef: string | null;
+    cardName: string | null;
+    abilityText: string | null;
+  };
+  prompt: string | null;
+  minModes: number;
+  maxModes: number;
+  selectedModeIds: string[];
+  canFinish: boolean;
+  finishModeId: string | null;
+  modes: ForgeExternalMode[];
+}
+
 export type ForgePendingExternalDecision =
   | ForgePendingDecision
-  | ForgePendingTargetDecision;
+  | ForgePendingTargetDecision
+  | ForgePendingModeDecision;
 
 export type ForgeExternalMatchStatus =
   | "starting"
@@ -232,6 +265,9 @@ export interface ForgeExternalMatchProgress {
   targetDecisionsRequested: number;
   targetDecisionsSubmitted: number;
   targetsSelected: number;
+  modeDecisionsRequested: number;
+  modeDecisionsSubmitted: number;
+  modesSelected: number;
 }
 
 export type AgentCardZone =
