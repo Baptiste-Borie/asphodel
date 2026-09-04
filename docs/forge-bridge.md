@@ -705,10 +705,28 @@ different controllers remain engine-authoritative. Once the minimum is met,
 `canFinish` and `finishTargetId` allow Node to stop before the maximum.
 
 The broker adds `targetDecisionsRequested`, `targetDecisionsSubmitted`, and
-`targetsSelected` progress counters. Integration tests prove both target kinds
-from the requested flow: Node chooses `player-2` for a retained Lightning Bolt,
-and separately chooses the public `cardRef` of Grizzly Bears; after Forge
-resolves the Bolt, that exact Bears reference is observed in the graveyard.
+`targetsSelected` progress counters. Integration tests prove each supported
+target shape from the requested flow. Node chooses `player-2` for a retained
+Lightning Bolt and separately chooses the public `cardRef` of Grizzly Bears;
+after Forge resolves the Bolt, that exact Bears reference is observed in the
+graveyard. Dedicated validation fixtures additionally prove:
+
+- `Counterintelligence` recomputes candidates after the first of two creature
+  targets, reports that target in `selectedTargetIds`, omits the duplicate,
+  and returns both exact chosen `cardRef` values to their owner's hand.
+- A second `Counterintelligence` run exposes no finish before its minimum, then
+  exposes and accepts `finishTargetId`; only the one submitted creature moves.
+- `Predict`'s non-targeting `NameCard` root reaches its target-bearing `DBMill`
+  sub-ability. Node targets `player-2`, whose real library and graveyard counts
+  then change by exactly one.
+- `Counterspell` exposes the opponent's real Grizzly Bears stack instance. Its
+  target `stackRef` and source `cardRef` equal the same AgentObservation stack
+  entry; after Node selects it, both cards reach their expected graveyards and
+  the Bears never enters the battlefield.
+
+All target submissions in these fixtures pass through the external target
+decision counters. `PlayerControllerAi.chooseTargetsFor(...)` remains only the
+explicit random-target and divided-allocation fallback.
 
 ### Target capability table
 
@@ -717,9 +735,9 @@ resolves the Bolt, that exact Bears reference is observed in the graveyard.
 | Player targets | PASS | Both real players are exposed for Lightning Bolt and selected by `targetId`. |
 | Public card targets | PASS | Grizzly Bears is selected by `cardRef`/`targetId` and its real zone transition is verified. |
 | Hidden card targets | PASS WITH LIMITATION | Targetable via opaque reference; current Forge visibility is enforced and no historical knowledge is modeled. |
-| Stack spell targets | PASS WITH LIMITATION | Enumerated through `canTargetSpellAbility` with `stackRef`; the transport path is implemented but has no dedicated counterspell fixture test yet. |
-| Multiple targets | PASS WITH LIMITATION | Sequential recomputation and early finish are implemented; no dedicated multi-target card fixture test yet. |
-| Root/sub-ability target chains | PASS WITH LIMITATION | Traversed by Forge `setupTargets`; no dedicated chained-target fixture test yet. |
+| Stack spell targets | PASS | A real Counterspell targets the exact observed Grizzly Bears stack object by matching `stackRef`/`sourceCardRef`, counters it, and both spells reach their expected graveyards. |
+| Multiple targets | PASS | Real Counterintelligence fixtures prove two sequential exact targets, candidate recomputation/duplicate omission, no finish before the minimum, and successful early finish after it. |
+| Root/sub-ability target chains | PASS | Real Predict proves `setupTargets` reaches the target-bearing `DBMill` sub-ability; Node's player target is retained and the exact mill resolves. |
 | Must-target effects | PASS WITH LIMITATION | Forge filtering and final `setupTargets` validation are used; no dedicated fixture test yet. |
 | Random targets | FORGE FALLBACK | `TargetRestrictions.isRandomTarget()` remains with Forge so Node cannot override randomness. |
 | Divided allocations | FORGE FALLBACK | Target plus amount allocation remains with Forge until an allocation decision DTO exists. |
@@ -742,9 +760,10 @@ vendor/forge/forge-gui/res/setlookup
 
 Normal cards are indexed lazily and resolved with
 `StaticData.attemptToLoadCard`; tokens are loaded eagerly because card scripts
-may create them during play. The fixture requires Mountain, Forest, Lightning
-Bolt, Grizzly Bears, Goblin Piker, Krenko, Tin Street Kingpin, and Ayula, Queen
-Among Bears. No rules text or ability is hardcoded. The response exposes
+may create them during play. Fixtures include Mountain, Island, Forest,
+Lightning Bolt, Counterintelligence, Predict, Counterspell, Grizzly Bears,
+Goblin Piker, Krenko, Tin Street Kingpin, Talrand, Sky Summoner, and Ayula,
+Queen Among Bears. No rules text or ability is hardcoded. The response exposes
 Lightning Bolt's parsed `CardRules`, Oracle text, mana cost, and raw
 `SP$ DealDamage` script ability as integration evidence.
 

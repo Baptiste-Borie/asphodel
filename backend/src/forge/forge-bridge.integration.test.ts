@@ -119,6 +119,35 @@ function manifestDeck(name = "Opponent face-down battlefield"): ForgeDeckSpec {
   };
 }
 
+function blueFixtureDeck(
+  name: string,
+  spellName: "Counterintelligence" | "Predict" | "Counterspell",
+): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      { name: "Talrand, Sky Summoner", quantity: 1, section: "commander" },
+      { name: "Island", quantity: 30, section: "mainboard" },
+      { name: spellName, quantity: 30, section: "mainboard" },
+    ],
+  };
+}
+
+function creatureFixtureDeck(name = "Target fixture creatures"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      {
+        name: "Ayula, Queen Among Bears",
+        quantity: 1,
+        section: "commander",
+      },
+      { name: "Forest", quantity: 30, section: "mainboard" },
+      { name: "Grizzly Bears", quantity: 30, section: "mainboard" },
+    ],
+  };
+}
+
 function assertTerminalDeckMatch(
   result: ForgeGameResult,
   controllerClasses = [
@@ -296,6 +325,50 @@ async function driveUntilAction(
   throw new Error(
     `Forge did not expose the requested primary action: ${JSON.stringify(latest)}`,
   );
+}
+
+async function driveUntilObservedAction(
+  external: ForgeExternalMatchClient,
+  sessionId: string,
+  predicate: (
+    observation: AgentObservation,
+    action: Exclude<ForgeExternalAction, { type: "pass" }>,
+  ) => boolean,
+): Promise<{
+  snapshot: ForgeExternalMatchSnapshot & { observation: AgentObservation };
+  decision: ForgePendingDecision;
+  action: Exclude<ForgeExternalAction, { type: "pass" }>;
+}> {
+  for (let index = 0; index < 1_000; index += 1) {
+    const snapshot = await waitForObservedDecision(external, sessionId);
+    const action = snapshot.pendingDecision.actions.find(
+      (
+        candidate,
+      ): candidate is Exclude<ForgeExternalAction, { type: "pass" }> =>
+        candidate.type !== "pass" && predicate(snapshot.observation, candidate),
+    );
+    if (action) {
+      return {
+        snapshot,
+        decision: snapshot.pendingDecision,
+        action,
+      };
+    }
+    const fallback =
+      snapshot.pendingDecision.actions.find(
+        (candidate) => candidate.type === "play_land",
+      ) ??
+      snapshot.pendingDecision.actions.find(
+        (candidate) => candidate.type === "pass",
+      );
+    assert.ok(fallback);
+    await external.submitDecision(
+      sessionId,
+      snapshot.pendingDecision.decisionId,
+      fallback.actionId,
+    );
+  }
+  throw new Error("Forge did not reach the requested observed action state.");
 }
 
 async function autoDriveExternalMatch(
@@ -1383,6 +1456,377 @@ Mainboard
     if (resolved.status !== "completed") {
       await external.cancel(started.sessionId);
     }
+  });
+
+  it("applies two sequential Node targets to Counterintelligence and resolves both", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(
+      blueFixtureDeck("Counterintelligence multi-target", "Counterintelligence"),
+      creatureFixtureDeck(),
+      { seed: 12_345 },
+    );
+    const found = await driveUntilObservedAction(
+      external,
+      started.sessionId,
+      (observation, action) =>
+        action.type === "cast_spell" &&
+        action.cardName === "Counterintelligence" &&
+        observedPlayers(observation).opponent.battlefield.filter(
+          (card) => card.name === "Grizzly Bears",
+        ).length >= 2,
+    );
+    const before = observedPlayers(found.snapshot.observation).opponent;
+    const bearRefs = before.battlefield
+      .filter((card) => card.name === "Grizzly Bears")
+      .slice(0, 2)
+      .map((card) => card.cardRef);
+    assert.equal(bearRefs.length, 2);
+    assert.equal(found.action.requiresTargets, true);
+
+    await external.submitDecision(
+      started.sessionId,
+      found.decision.decisionId,
+      found.action.actionId,
+    );
+    const first = await waitForTargetDecision(external, started.sessionId);
+    assert.equal(first.pendingDecision.source.actionId, found.action.actionId);
+    assert.equal(first.pendingDecision.source.cardRef, found.action.cardRef);
+    assert.equal(first.pendingDecision.source.cardName, "Counterintelligence");
+    assert.equal(first.pendingDecision.minTargets, 1);
+    assert.equal(first.pendingDecision.maxTargets, 2);
+    assert.deepEqual(first.pendingDecision.selectedTargetIds, []);
+    assert.equal(first.pendingDecision.canFinish, false);
+    assert.equal(first.pendingDecision.finishTargetId, null);
+    for (const target of first.pendingDecision.targets.filter(
+      (candidate) => candidate.type === "card",
+    )) {
+      assert.ok(
+        before.battlefield.some((card) => card.cardRef === target.cardRef),
+        `target ${target.cardRef} must use its AgentObservation cardRef`,
+      );
+    }
+    const firstBear = first.pendingDecision.targets.find(
+      (target) => target.type === "card" && target.cardRef === bearRefs[0],
+    );
+    assert.ok(firstBear);
+    await external.submitTarget(
+      started.sessionId,
+      first.pendingDecision.decisionId,
+      firstBear.targetId,
+    );
+
+    const second = (await waitForExternalSnapshot(
+      external,
+      started.sessionId,
+      (snapshot) =>
+        snapshot.pendingDecision?.type === "target_selection" &&
+        snapshot.pendingDecision.decisionId !== first.pendingDecision.decisionId,
+    )) as ForgeExternalMatchSnapshot & {
+      pendingDecision: ForgePendingTargetDecision;
+    };
+    assert.deepEqual(second.pendingDecision.selectedTargetIds, [firstBear.targetId]);
+    assert.equal(second.pendingDecision.canFinish, true);
+    assert.match(second.pendingDecision.finishTargetId ?? "", /^target-\d+$/);
+    assert.ok(
+      !second.pendingDecision.targets.some(
+        (target) => target.type === "card" && target.cardRef === bearRefs[0],
+      ),
+      "Forge must not re-offer the already selected creature",
+    );
+    const secondBear = second.pendingDecision.targets.find(
+      (target) => target.type === "card" && target.cardRef === bearRefs[1],
+    );
+    assert.ok(secondBear);
+    await external.submitTarget(
+      started.sessionId,
+      second.pendingDecision.decisionId,
+      secondBear.targetId,
+    );
+
+    const resolved = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) => {
+        const { self, opponent } = observedPlayers(observation);
+        return (
+          self.graveyard.some((card) => card.cardRef === found.action.cardRef) &&
+          bearRefs.every(
+            (cardRef) =>
+              !opponent.battlefield.some((card) => card.cardRef === cardRef),
+          )
+        );
+      },
+    );
+    const resolvedOpponent = observedPlayers(resolved.observation).opponent;
+    assert.equal(resolvedOpponent.handSize, before.handSize + 2);
+    assert.equal(resolved.progress.targetDecisionsRequested, 2);
+    assert.equal(resolved.progress.targetDecisionsSubmitted, 2);
+    assert.equal(resolved.progress.targetsSelected, 2);
+    if (resolved.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("finishes Counterintelligence after its minimum and resolves only that target", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(
+      blueFixtureDeck("Counterintelligence early finish", "Counterintelligence"),
+      creatureFixtureDeck(),
+      { seed: 12_345 },
+    );
+    const found = await driveUntilObservedAction(
+      external,
+      started.sessionId,
+      (observation, action) =>
+        action.type === "cast_spell" &&
+        action.cardName === "Counterintelligence" &&
+        observedPlayers(observation).opponent.battlefield.filter(
+          (card) => card.name === "Grizzly Bears",
+        ).length >= 2,
+    );
+    const before = observedPlayers(found.snapshot.observation).opponent;
+    const bearRefs = before.battlefield
+      .filter((card) => card.name === "Grizzly Bears")
+      .slice(0, 2)
+      .map((card) => card.cardRef);
+    assert.equal(bearRefs.length, 2);
+
+    await external.submitDecision(
+      started.sessionId,
+      found.decision.decisionId,
+      found.action.actionId,
+    );
+    const first = await waitForTargetDecision(external, started.sessionId);
+    assert.equal(first.pendingDecision.canFinish, false);
+    assert.equal(first.pendingDecision.finishTargetId, null);
+    const selectedBear = first.pendingDecision.targets.find(
+      (target) => target.type === "card" && target.cardRef === bearRefs[0],
+    );
+    assert.ok(selectedBear);
+    await external.submitTarget(
+      started.sessionId,
+      first.pendingDecision.decisionId,
+      selectedBear.targetId,
+    );
+    const finish = (await waitForExternalSnapshot(
+      external,
+      started.sessionId,
+      (snapshot) =>
+        snapshot.pendingDecision?.type === "target_selection" &&
+        snapshot.pendingDecision.decisionId !== first.pendingDecision.decisionId,
+    )) as ForgeExternalMatchSnapshot & {
+      pendingDecision: ForgePendingTargetDecision;
+    };
+    assert.deepEqual(finish.pendingDecision.selectedTargetIds, [
+      selectedBear.targetId,
+    ]);
+    assert.equal(finish.pendingDecision.canFinish, true);
+    assert.ok(finish.pendingDecision.finishTargetId);
+    await external.submitTarget(
+      started.sessionId,
+      finish.pendingDecision.decisionId,
+      finish.pendingDecision.finishTargetId,
+    );
+
+    const resolved = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) => {
+        const { self, opponent } = observedPlayers(observation);
+        return (
+          self.graveyard.some((card) => card.cardRef === found.action.cardRef) &&
+          !opponent.battlefield.some((card) => card.cardRef === bearRefs[0])
+        );
+      },
+    );
+    const resolvedOpponent = observedPlayers(resolved.observation).opponent;
+    assert.equal(resolvedOpponent.handSize, before.handSize + 1);
+    assert.ok(
+      resolvedOpponent.battlefield.some((card) => card.cardRef === bearRefs[1]),
+      "the unselected legal target must remain on the battlefield",
+    );
+    assert.equal(resolved.progress.targetDecisionsRequested, 2);
+    assert.equal(resolved.progress.targetDecisionsSubmitted, 2);
+    assert.equal(resolved.progress.targetsSelected, 1);
+    if (resolved.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("applies Node's target to Predict's genuine DBMill sub-ability", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(
+      blueFixtureDeck("Predict sub-ability target", "Predict"),
+      creatureFixtureDeck(),
+      { seed: 12_345 },
+    );
+    const found = await driveUntilObservedAction(
+      external,
+      started.sessionId,
+      (_observation, action) =>
+        action.type === "cast_spell" && action.cardName === "Predict",
+    );
+    const before = observedPlayers(found.snapshot.observation);
+    assert.equal(found.action.requiresTargets, true);
+    await external.submitDecision(
+      started.sessionId,
+      found.decision.decisionId,
+      found.action.actionId,
+    );
+    const targeting = await waitForTargetDecision(external, started.sessionId);
+    assert.equal(targeting.pendingDecision.source.actionId, found.action.actionId);
+    assert.equal(targeting.pendingDecision.source.cardRef, found.action.cardRef);
+    assert.equal(targeting.pendingDecision.source.cardName, "Predict");
+    assert.match(targeting.pendingDecision.prompt, /player/i);
+    assert.equal(targeting.pendingDecision.minTargets, 1);
+    assert.equal(targeting.pendingDecision.maxTargets, 1);
+    assert.deepEqual(
+      targeting.pendingDecision.targets
+        .filter((target) => target.type === "player")
+        .map((target) => target.playerId)
+        .sort(),
+      ["player-1", "player-2"],
+    );
+    const opponentTarget = targeting.pendingDecision.targets.find(
+      (target) => target.type === "player" && target.playerId === "player-2",
+    );
+    assert.ok(opponentTarget);
+    await external.submitTarget(
+      started.sessionId,
+      targeting.pendingDecision.decisionId,
+      opponentTarget.targetId,
+    );
+
+    const resolved = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) => {
+        const { self, opponent } = observedPlayers(observation);
+        return (
+          self.graveyard.some((card) => card.cardRef === found.action.cardRef) &&
+          opponent.librarySize === before.opponent.librarySize - 1 &&
+          opponent.graveyardSize === before.opponent.graveyardSize + 1
+        );
+      },
+    );
+    const after = observedPlayers(resolved.observation);
+    assert.equal(after.opponent.librarySize, before.opponent.librarySize - 1);
+    assert.equal(after.opponent.graveyardSize, before.opponent.graveyardSize + 1);
+    assert.equal(resolved.progress.targetDecisionsRequested, 1);
+    assert.equal(resolved.progress.targetDecisionsSubmitted, 1);
+    assert.equal(resolved.progress.targetsSelected, 1);
+    if (resolved.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("targets and counters the exact opposing stack spell selected by Node", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(
+      blueFixtureDeck("Counterspell stack target", "Counterspell"),
+      creatureFixtureDeck(),
+      { seed: 12_345 },
+    );
+    const found = await driveUntilObservedAction(
+      external,
+      started.sessionId,
+      (observation, action) =>
+        action.type === "cast_spell" &&
+        action.cardName === "Counterspell" &&
+        observation.stack.some(
+          (item) =>
+            item.controllerId === "player-2" &&
+            item.sourceCardName === "Grizzly Bears",
+        ),
+    );
+    const opposingSpell = found.snapshot.observation.stack.find(
+      (item) =>
+        item.controllerId === "player-2" &&
+        item.sourceCardName === "Grizzly Bears",
+    );
+    assert.ok(opposingSpell);
+    assert.match(opposingSpell.stackRef, /^stack-\d+$/);
+    assert.equal(opposingSpell.hidden, false);
+
+    await external.submitDecision(
+      started.sessionId,
+      found.decision.decisionId,
+      found.action.actionId,
+    );
+    const targeting = await waitForTargetDecision(external, started.sessionId);
+    assert.ok(targeting.observation);
+    assert.equal(targeting.pendingDecision.source.actionId, found.action.actionId);
+    assert.equal(targeting.pendingDecision.source.cardRef, found.action.cardRef);
+    assert.equal(targeting.pendingDecision.source.cardName, "Counterspell");
+    const observedStackSpell = targeting.observation.stack.find(
+      (item) => item.stackRef === opposingSpell.stackRef,
+    );
+    assert.ok(observedStackSpell);
+    const spellTarget = targeting.pendingDecision.targets.find(
+      (target) =>
+        target.type === "spell" && target.stackRef === opposingSpell.stackRef,
+    );
+    assert.ok(spellTarget);
+    assert.equal(spellTarget.type, "spell");
+    assert.equal(spellTarget.stackRef, observedStackSpell.stackRef);
+    assert.equal(spellTarget.cardRef, observedStackSpell.sourceCardRef);
+    assert.equal(spellTarget.name, observedStackSpell.sourceCardName);
+    assert.equal(spellTarget.name, "Grizzly Bears");
+    assert.equal(spellTarget.controllerId, "player-2");
+    assert.equal(spellTarget.zone, "stack");
+    assert.equal(spellTarget.hidden, false);
+    await external.submitTarget(
+      started.sessionId,
+      targeting.pendingDecision.decisionId,
+      spellTarget.targetId,
+    );
+
+    const resolved = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) => {
+        const { self, opponent } = observedPlayers(observation);
+        return (
+          self.graveyard.some((card) => card.cardRef === found.action.cardRef) &&
+          opponent.graveyard.some(
+            (card) => card.cardRef === opposingSpell.sourceCardRef,
+          )
+        );
+      },
+    );
+    const { self, opponent } = observedPlayers(resolved.observation);
+    assert.ok(
+      self.graveyard.some(
+        (card) =>
+          card.cardRef === found.action.cardRef && card.name === "Counterspell",
+      ),
+    );
+    assert.ok(
+      opponent.graveyard.some(
+        (card) =>
+          card.cardRef === opposingSpell.sourceCardRef &&
+          card.name === "Grizzly Bears",
+      ),
+    );
+    assert.ok(
+      !opponent.battlefield.some(
+        (card) => card.cardRef === opposingSpell.sourceCardRef,
+      ),
+      "the countered spell must not resolve to the battlefield",
+    );
+    assert.ok(
+      !resolved.observation.stack.some(
+        (item) =>
+          item.stackRef === opposingSpell.stackRef ||
+          item.sourceCardRef === found.action.cardRef,
+      ),
+    );
+    assert.equal(resolved.progress.targetDecisionsRequested, 1);
+    assert.equal(resolved.progress.targetDecisionsSubmitted, 1);
+    assert.equal(resolved.progress.targetsSelected, 1);
+    if (resolved.status !== "completed") await external.cancel(started.sessionId);
   });
 
   it("submits a retained Forge-derived primary action and plays the same ability object", async () => {
