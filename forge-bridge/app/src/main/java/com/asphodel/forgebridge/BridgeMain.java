@@ -267,23 +267,26 @@ public final class BridgeMain {
         String modeId = getString(request, "modeId");
         String costId = getString(request, "costId");
         String objectId = getString(request, "objectId");
+        String manaOptionId = getString(request, "manaOptionId");
         JsonElement rawValue = request.get("value");
         boolean hasActionId = actionId != null && !actionId.isBlank();
         boolean hasTargetId = targetId != null && !targetId.isBlank();
         boolean hasModeId = modeId != null && !modeId.isBlank();
         boolean hasCostId = costId != null && !costId.isBlank();
         boolean hasObjectId = objectId != null && !objectId.isBlank();
+        boolean hasManaOptionId = manaOptionId != null && !manaOptionId.isBlank();
         boolean hasValue = rawValue != null && !rawValue.isJsonNull();
         int selectorCount = (hasActionId ? 1 : 0)
                 + (hasTargetId ? 1 : 0)
                 + (hasModeId ? 1 : 0)
                 + (hasCostId ? 1 : 0)
                 + (hasObjectId ? 1 : 0)
+                + (hasManaOptionId ? 1 : 0)
                 + (hasValue ? 1 : 0);
         if (selectorCount != 1) {
             throw new IllegalArgumentException(
                     "submit_external_decision requires exactly one selector: actionId, "
-                            + "targetId, modeId, value, costId, or objectId."
+                            + "targetId, modeId, value, costId, objectId, or manaOptionId."
             );
         }
         if (hasValue) {
@@ -316,7 +319,9 @@ public final class BridgeMain {
                 ? modeId
                 : hasCostId
                 ? costId
-                : objectId;
+                : hasObjectId
+                ? objectId
+                : manaOptionId;
         AsphodelDecisionBroker.SubmissionKind submissionKind = hasActionId
                 ? AsphodelDecisionBroker.SubmissionKind.ACTION
                 : hasTargetId
@@ -325,7 +330,9 @@ public final class BridgeMain {
                 ? AsphodelDecisionBroker.SubmissionKind.MODE
                 : hasCostId
                 ? AsphodelDecisionBroker.SubmissionKind.COST
-                : AsphodelDecisionBroker.SubmissionKind.OBJECT;
+                : hasObjectId
+                ? AsphodelDecisionBroker.SubmissionKind.OBJECT
+                : AsphodelDecisionBroker.SubmissionKind.MANA;
         return success(
                 requestId,
                 "submit_external_decision",

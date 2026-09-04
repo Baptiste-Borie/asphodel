@@ -79,6 +79,12 @@ export interface ForgeRequestMap {
         sessionId: string;
         decisionId: string;
         objectId: string;
+      }
+    | {
+        type: "submit_external_decision";
+        sessionId: string;
+        decisionId: string;
+        manaOptionId: string;
       };
   cancel_external_match: {
     type: "cancel_external_match";
@@ -317,13 +323,62 @@ export interface ForgePendingCostObjectDecision {
   options: ForgeExternalCostObject[];
 }
 
+export interface ForgeManaCostObservation {
+  text: string;
+  generic: number;
+  convertedManaCost: number;
+  shards: string[];
+}
+
+export interface ForgeManaPoolObservation {
+  total: number;
+  byColor: Record<string, number>;
+}
+
+export type ForgeManaPaymentOption =
+  | {
+      manaOptionId: string;
+      type: "activate_mana_ability";
+      sourceCardRef: string;
+      sourceCardName: string | null;
+      abilityText: string | null;
+      produces: string[];
+      tapped: boolean;
+      manaRef: null;
+      color: null;
+    }
+  | {
+      manaOptionId: string;
+      type: "spend_floating_mana";
+      manaRef: string;
+      color: "W" | "U" | "B" | "R" | "G" | "C";
+      sourceCardRef: null;
+      sourceCardName: null;
+      abilityText: null;
+      produces: string[];
+      tapped: false;
+    };
+
+export interface ForgePendingManaPaymentDecision {
+  decisionId: string;
+  type: "mana_payment";
+  playerId: string;
+  context: ForgePendingDecision["context"];
+  source: ForgePendingModeDecision["source"];
+  remainingCost: ForgeManaCostObservation;
+  manaPool: ForgeManaPoolObservation;
+  options: ForgeManaPaymentOption[];
+  canFinish: boolean;
+}
+
 export type ForgePendingExternalDecision =
   | ForgePendingDecision
   | ForgePendingTargetDecision
   | ForgePendingModeDecision
   | ForgePendingValueDecision
   | ForgePendingOptionalCostDecision
-  | ForgePendingCostObjectDecision;
+  | ForgePendingCostObjectDecision
+  | ForgePendingManaPaymentDecision;
 
 export type ForgeExternalMatchStatus =
   | "starting"
@@ -354,6 +409,10 @@ export interface ForgeExternalMatchProgress {
   optionalCostsSelected: number;
   costObjectDecisionsRequested: number;
   costObjectsSelected: number;
+  manaPaymentDecisionsRequested: number;
+  manaPaymentDecisionsSubmitted: number;
+  manaOptionsSelected: number;
+  manaPaymentsFallbackToAi: number;
 }
 
 export type AgentCardZone =

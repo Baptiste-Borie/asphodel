@@ -99,6 +99,19 @@ export class ForgeExternalMatchClient {
     });
   }
 
+  submitManaOption(
+    sessionId: string,
+    decisionId: string,
+    manaOptionId: string,
+  ) {
+    return this.bridge.request({
+      type: "submit_external_decision",
+      sessionId,
+      decisionId,
+      manaOptionId,
+    });
+  }
+
   cancel(sessionId: string) {
     return this.bridge.request({ type: "cancel_external_match", sessionId });
   }

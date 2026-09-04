@@ -2,6 +2,10 @@ package com.asphodel.forgebridge;
 
 import forge.game.Game;
 import forge.game.GameObject;
+import forge.card.MagicColor;
+import forge.card.mana.ManaCostShard;
+import forge.game.mana.Mana;
+import forge.game.mana.ManaCostBeingPaid;
 import forge.game.phase.PhaseHandler;
 import forge.game.player.Player;
 import forge.game.spellability.AbilitySub;
@@ -19,6 +23,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 final class AsphodelDecisionBroker {
@@ -28,6 +33,7 @@ final class AsphodelDecisionBroker {
     private final AtomicLong modeIds = new AtomicLong();
     private final AtomicLong costIds = new AtomicLong();
     private final AtomicLong objectIds = new AtomicLong();
+    private final AtomicLong manaOptionIds = new AtomicLong();
     private final Consumer<Boolean> waitingListener;
     private final Set<String> consumedDecisionIds = new LinkedHashSet<>();
     private final Map<SpellAbility, AcceptedAbility> acceptedAbilities =
@@ -55,6 +61,10 @@ final class AsphodelDecisionBroker {
     private long optionalCostsSelected;
     private long costObjectDecisionsRequested;
     private long costObjectsSelected;
+    private long manaPaymentDecisionsRequested;
+    private long manaPaymentDecisionsSubmitted;
+    private long manaOptionsSelected;
+    private long manaPaymentsFallbackToAi;
 
     AsphodelDecisionBroker(Consumer<Boolean> waitingListener) {
         this.waitingListener = waitingListener;
@@ -446,6 +456,66 @@ final class AsphodelDecisionBroker {
         return answer.candidate();
     }
 
+    ForgeManaPaymentChoiceEnumerator.Candidate requestManaPaymentDecision(
+            Game game,
+            Player player,
+            SpellAbility ability,
+            String sourceActionId,
+            ManaCostBeingPaid remainingCost,
+            List<ForgeManaPaymentChoiceEnumerator.Candidate> candidates,
+            ForgeManaPaymentChoiceEnumerator enumerator,
+            AgentObservation observation
+    ) {
+        PendingInternal decision;
+        synchronized (this) {
+            ensureCanRequest();
+            String decisionId = "decision-" + decisionIds.incrementAndGet();
+            Map<String, DecisionChoice> choices = new LinkedHashMap<>();
+            List<ExternalManaPaymentOption> options = new ArrayList<>();
+            for (ForgeManaPaymentChoiceEnumerator.Candidate candidate : candidates) {
+                String manaOptionId = "mana-option-" + manaOptionIds.incrementAndGet();
+                BooleanSupplier revalidator = () -> enumerator.isStillLegal(
+                        player, ability, remainingCost, candidate
+                );
+                choices.put(
+                        manaOptionId,
+                        new ManaChoice(candidate, manaOptionId, revalidator)
+                );
+                options.add(new ExternalManaPaymentOption(
+                        manaOptionId,
+                        candidate.type(),
+                        candidate.sourceCardRef(),
+                        candidate.sourceCardName(),
+                        candidate.abilityText(),
+                        candidate.produces(),
+                        candidate.tapped(),
+                        candidate.mana() == null ? null : "mana-" + manaOptionId.substring(12),
+                        candidate.color()
+                ));
+            }
+            PendingManaPaymentDecision snapshot = new PendingManaPaymentDecision(
+                    decisionId,
+                    "mana_payment",
+                    playerId(player),
+                    context(game, game.getPhaseHandler()),
+                    source(sourceActionId, ability),
+                    manaCost(remainingCost),
+                    manaPool(player),
+                    List.copyOf(options),
+                    remainingCost.isPaid()
+            );
+            decision = new PendingInternal(snapshot, observation, choices);
+            pending = decision;
+            manaPaymentDecisionsRequested++;
+        }
+        ManaChoice answer = (ManaChoice) await(decision);
+        return answer.candidate();
+    }
+
+    synchronized void recordManaFallbackToAi() {
+        manaPaymentsFallbackToAi++;
+    }
+
     void submit(String decisionId, String choiceId, SubmissionKind submissionKind) {
         PendingInternal decision;
         DecisionChoice choice;
@@ -484,6 +554,12 @@ final class AsphodelDecisionBroker {
             }
 
             choice = decision.choices().get(choiceId);
+            if (choice instanceof ManaChoice mana && !mana.revalidator().getAsBoolean()) {
+                throw new ExternalMatchException(
+                        "MANA_OPTION_NO_LONGER_LEGAL",
+                        "The retained Forge mana option is no longer legal."
+                );
+            }
             consumedDecisionIds.add(decisionId);
             pending = null;
             if (choice instanceof PrimaryActionChoice primary) {
@@ -511,6 +587,9 @@ final class AsphodelDecisionBroker {
                 }
             } else if (choice instanceof CostObjectChoice) {
                 costObjectsSelected++;
+            } else if (choice instanceof ManaChoice) {
+                manaPaymentDecisionsSubmitted++;
+                manaOptionsSelected++;
             }
         }
 
@@ -589,7 +668,11 @@ final class AsphodelDecisionBroker {
                 optionalCostDecisionsRequested,
                 optionalCostsSelected,
                 costObjectDecisionsRequested,
-                costObjectsSelected
+                costObjectsSelected,
+                manaPaymentDecisionsRequested,
+                manaPaymentDecisionsSubmitted,
+                manaOptionsSelected,
+                manaPaymentsFallbackToAi
         );
     }
 
@@ -678,6 +761,29 @@ final class AsphodelDecisionBroker {
         return List.of(min, min + 1, max);
     }
 
+    private static ManaCostObservation manaCost(ManaCostBeingPaid cost) {
+        List<String> shards = cost.getUnpaidShards().stream()
+                .map(ManaCostShard::toShortString)
+                .toList();
+        return new ManaCostObservation(
+                cost.toString(),
+                cost.getGenericManaAmount(),
+                cost.getConvertedManaCost(),
+                shards
+        );
+    }
+
+    private static ManaPoolObservation manaPool(Player player) {
+        Map<String, Integer> byColor = new LinkedHashMap<>();
+        int total = 0;
+        for (Mana mana : player.getManaPool()) {
+            String color = MagicColor.toShortString(mana.getColor());
+            byColor.merge(color, 1, Integer::sum);
+            total++;
+        }
+        return new ManaPoolObservation(total, Map.copyOf(byColor));
+    }
+
     private static String playerId(Player player) {
         return player == null ? "" : "player-" + (player.getId() + 1);
     }
@@ -730,6 +836,9 @@ final class AsphodelDecisionBroker {
         if (snapshot instanceof PendingCostObjectDecision) {
             return SubmissionKind.OBJECT;
         }
+        if (snapshot instanceof PendingManaPaymentDecision) {
+            return SubmissionKind.MANA;
+        }
         return SubmissionKind.ACTION;
     }
 
@@ -739,7 +848,8 @@ final class AsphodelDecisionBroker {
         MODE("modeId", "MODE_ID_REQUIRED", "MODE_NOT_FOUND"),
         VALUE("value", "VALUE_REQUIRED", "VALUE_OUT_OF_RANGE"),
         COST("costId", "COST_ID_REQUIRED", "COST_NOT_FOUND"),
-        OBJECT("objectId", "OBJECT_ID_REQUIRED", "OBJECT_NOT_FOUND");
+        OBJECT("objectId", "OBJECT_ID_REQUIRED", "OBJECT_NOT_FOUND"),
+        MANA("manaOptionId", "MANA_OPTION_ID_REQUIRED", "MANA_OPTION_NOT_FOUND");
 
         private final String selectorName;
         private final String requiredCode;
@@ -766,7 +876,7 @@ final class AsphodelDecisionBroker {
 
     sealed interface DecisionSnapshot permits PendingDecision, PendingTargetDecision,
             PendingModeDecision, PendingValueDecision, PendingOptionalCostDecision,
-            PendingCostObjectDecision {
+            PendingCostObjectDecision, PendingManaPaymentDecision {
         String decisionId();
     }
 
@@ -905,6 +1015,46 @@ final class AsphodelDecisionBroker {
     ) implements DecisionSnapshot {
     }
 
+    record ManaCostObservation(
+            String text,
+            int generic,
+            int convertedManaCost,
+            List<String> shards
+    ) {
+    }
+
+    record ManaPoolObservation(
+            int total,
+            Map<String, Integer> byColor
+    ) {
+    }
+
+    record ExternalManaPaymentOption(
+            String manaOptionId,
+            String type,
+            String sourceCardRef,
+            String sourceCardName,
+            String abilityText,
+            List<String> produces,
+            boolean tapped,
+            String manaRef,
+            String color
+    ) {
+    }
+
+    record PendingManaPaymentDecision(
+            String decisionId,
+            String type,
+            String playerId,
+            DecisionContext context,
+            TargetSource source,
+            ManaCostObservation remainingCost,
+            ManaPoolObservation manaPool,
+            List<ExternalManaPaymentOption> options,
+            boolean canFinish
+    ) implements DecisionSnapshot {
+    }
+
     record PendingAgentTurn(
             AgentObservation observation,
             DecisionSnapshot pendingDecision
@@ -931,7 +1081,11 @@ final class AsphodelDecisionBroker {
             long optionalCostDecisionsRequested,
             long optionalCostsSelected,
             long costObjectDecisionsRequested,
-            long costObjectsSelected
+            long costObjectsSelected,
+            long manaPaymentDecisionsRequested,
+            long manaPaymentDecisionsSubmitted,
+            long manaOptionsSelected,
+            long manaPaymentsFallbackToAi
     ) {
     }
 
@@ -939,7 +1093,7 @@ final class AsphodelDecisionBroker {
     }
 
     private sealed interface DecisionChoice permits PrimaryActionChoice, TargetChoice,
-            ModeChoice, ValueChoice, OptionalCostChoice, CostObjectChoice {
+            ModeChoice, ValueChoice, OptionalCostChoice, CostObjectChoice, ManaChoice {
     }
 
     private record PrimaryActionChoice(
@@ -973,6 +1127,13 @@ final class AsphodelDecisionBroker {
     private record CostObjectChoice(
             ForgeCostObjectChoiceEnumerator.Candidate candidate,
             String choiceId
+    ) implements DecisionChoice {
+    }
+
+    private record ManaChoice(
+            ForgeManaPaymentChoiceEnumerator.Candidate candidate,
+            String choiceId,
+            BooleanSupplier revalidator
     ) implements DecisionChoice {
     }
 

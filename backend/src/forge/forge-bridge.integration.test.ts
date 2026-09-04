@@ -21,6 +21,7 @@ import type {
   ForgePendingDecision,
   ForgePendingCostObjectDecision,
   ForgePendingModeDecision,
+  ForgePendingManaPaymentDecision,
   ForgePendingOptionalCostDecision,
   ForgePendingTargetDecision,
   ForgePendingValueDecision,
@@ -208,6 +209,17 @@ function kickerDeck(name = "Optional kicker fixture"): ForgeDeckSpec {
   };
 }
 
+function manaRockDeck(name = "External mana rock fixture"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      { name: "Ashling the Pilgrim", quantity: 1, section: "commander" },
+      { name: "Mountain", quantity: 30, section: "mainboard" },
+      { name: "Sol Ring", quantity: 30, section: "mainboard" },
+    ],
+  };
+}
+
 function sacrificeCostDeck(name = "Sacrifice cost fixture"): ForgeDeckSpec {
   return {
     name,
@@ -341,6 +353,19 @@ async function submitDeterministicSecondary(
     await external.submitOptionalCost(sessionId, decision.decisionId, costId);
     return;
   }
+  if (decision.type === "mana_payment") {
+    const option =
+      decision.options.find(
+        (candidate) => candidate.type === "spend_floating_mana",
+      ) ?? decision.options[0];
+    assert.ok(option);
+    await external.submitManaOption(
+      sessionId,
+      decision.decisionId,
+      option.manaOptionId,
+    );
+    return;
+  }
   const objectId = decision.options[0]?.objectId ?? decision.finishChoiceId;
   assert.ok(objectId);
   await external.submitCostObject(sessionId, decision.decisionId, objectId);
@@ -415,13 +440,73 @@ async function waitForCostObjectDecision(
 ): Promise<ForgeExternalMatchSnapshot & {
   pendingDecision: ForgePendingCostObjectDecision;
 }> {
-  return (await waitForExternalSnapshot(
+  for (;;) {
+    const snapshot = await waitForExternalSnapshot(
+      external,
+      sessionId,
+      (candidate) => candidate.pendingDecision !== undefined,
+    );
+    assert.ok(snapshot.pendingDecision);
+    if (snapshot.pendingDecision.type === "cost_object_selection") {
+      return snapshot as ForgeExternalMatchSnapshot & {
+        pendingDecision: ForgePendingCostObjectDecision;
+      };
+    }
+    if (snapshot.pendingDecision.type !== "mana_payment") {
+      throw new Error(
+        `Unexpected decision before cost object: ${snapshot.pendingDecision.type}`,
+      );
+    }
+    await submitDeterministicSecondary(
+      external,
+      sessionId,
+      snapshot.pendingDecision,
+    );
+  }
+}
+
+async function waitForManaPaymentDecision(
+  external: ForgeExternalMatchClient,
+  sessionId: string,
+): Promise<ForgeExternalMatchSnapshot & {
+  observation: AgentObservation;
+  pendingDecision: ForgePendingManaPaymentDecision;
+}> {
+  const snapshot = await waitForExternalSnapshot(
     external,
     sessionId,
-    (candidate) => candidate.pendingDecision?.type === "cost_object_selection",
-  )) as ForgeExternalMatchSnapshot & {
-    pendingDecision: ForgePendingCostObjectDecision;
+    (candidate) => candidate.pendingDecision?.type === "mana_payment",
+  );
+  assert.ok(snapshot.observation);
+  return snapshot as ForgeExternalMatchSnapshot & {
+    observation: AgentObservation;
+    pendingDecision: ForgePendingManaPaymentDecision;
   };
+}
+
+async function driveSecondaryUntil(
+  external: ForgeExternalMatchClient,
+  sessionId: string,
+  predicate: (snapshot: ForgeExternalMatchSnapshot) => boolean,
+): Promise<ForgeExternalMatchSnapshot> {
+  for (let index = 0; index < 100; index += 1) {
+    const snapshot = await waitForExternalSnapshot(
+      external,
+      sessionId,
+      (candidate) => predicate(candidate) || candidate.pendingDecision !== undefined,
+    );
+    if (predicate(snapshot)) return snapshot;
+    assert.ok(snapshot.pendingDecision);
+    if (snapshot.pendingDecision.type === "priority_action") {
+      throw new Error("Reached priority before the requested secondary result.");
+    }
+    await submitDeterministicSecondary(
+      external,
+      sessionId,
+      snapshot.pendingDecision,
+    );
+  }
+  throw new Error("Secondary decision driver did not reach the requested state.");
 }
 
 async function waitForObservedDecision(
@@ -1366,7 +1451,7 @@ Mainboard
       commander.decision.decisionId,
       commander.action.actionId,
     );
-    await waitForExternalSnapshot(
+    await driveSecondaryUntil(
       external,
       started.sessionId,
       (snapshot) => snapshot.progress.spellsCast === 1,
@@ -1387,7 +1472,7 @@ Mainboard
       activation.decision.decisionId,
       activation.action.actionId,
     );
-    const played = await waitForExternalSnapshot(
+    const played = await driveSecondaryUntil(
       external,
       started.sessionId,
       (snapshot) => snapshot.progress.abilitiesActivated === 1,
@@ -1508,7 +1593,7 @@ Mainboard
       targetSelection.pendingDecision.decisionId,
       opponent.targetId,
     );
-    const cast = await waitForExternalSnapshot(
+    const cast = await driveSecondaryUntil(
       external,
       started.sessionId,
       (snapshot) => snapshot.progress.spellsCast === 1,
@@ -2268,6 +2353,357 @@ Mainboard
     if (resolved.status !== "completed") await external.cancel(started.sessionId);
   });
 
+  it("pays Lightning Bolt with the exact Node-selected Mountain", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(redDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+    const found = await driveUntilObservedAction(
+      external,
+      started.sessionId,
+      (observation, action) =>
+        action.type === "cast_spell" &&
+        action.cardName === "Lightning Bolt" &&
+        observedPlayers(observation).self.battlefield.filter(
+          (card) => card.name === "Mountain" && card.tapped === false,
+        ).length >= 2,
+    );
+    const beforeLife = observedPlayers(found.snapshot.observation).opponent.life;
+    await external.submitDecision(
+      started.sessionId,
+      found.decision.decisionId,
+      found.action.actionId,
+    );
+    const targeting = await waitForTargetDecision(external, started.sessionId);
+    const opponent = targeting.pendingDecision.targets.find(
+      (target) => target.type === "player" && target.playerId === "player-2",
+    );
+    assert.ok(opponent);
+    await external.submitTarget(
+      started.sessionId,
+      targeting.pendingDecision.decisionId,
+      opponent.targetId,
+    );
+
+    const payment = await waitForManaPaymentDecision(
+      external,
+      started.sessionId,
+    );
+    assert.equal(payment.pendingDecision.source.actionId, found.action.actionId);
+    assert.equal(payment.pendingDecision.source.cardRef, found.action.cardRef);
+    assert.equal(payment.pendingDecision.remainingCost.text, "{R}");
+    assert.deepEqual(payment.pendingDecision.remainingCost.shards, ["R"]);
+    assert.equal(payment.pendingDecision.manaPool.total, 0);
+    assert.equal(payment.pendingDecision.canFinish, false);
+    const mountains = payment.pendingDecision.options.filter(
+      (option) => option.type === "activate_mana_ability",
+    );
+    assert.ok(mountains.length >= 2);
+    assert.ok(
+      mountains.every(
+        (option) =>
+          option.sourceCardName === "Mountain" &&
+          option.produces.join(" ") === "R" &&
+          option.tapped === false &&
+          /^card-\d+$/.test(option.sourceCardRef),
+      ),
+    );
+    const unselected = mountains[0]!;
+    const selected = mountains[1]!;
+
+    await assert.rejects(
+      external.submitTarget(
+        started.sessionId,
+        payment.pendingDecision.decisionId,
+        "target-does-not-belong",
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError &&
+        error.code === "MANA_OPTION_ID_REQUIRED",
+    );
+    await assert.rejects(
+      external.submitManaOption(
+        started.sessionId,
+        payment.pendingDecision.decisionId,
+        "mana-option-does-not-exist",
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError &&
+        error.code === "MANA_OPTION_NOT_FOUND",
+    );
+    assert.equal(
+      (await external.get(started.sessionId)).pendingDecision?.decisionId,
+      payment.pendingDecision.decisionId,
+    );
+    await external.submitManaOption(
+      started.sessionId,
+      payment.pendingDecision.decisionId,
+      selected.manaOptionId,
+    );
+    await assert.rejects(
+      external.submitManaOption(
+        started.sessionId,
+        payment.pendingDecision.decisionId,
+        selected.manaOptionId,
+      ),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError && error.code === "STALE_DECISION",
+    );
+
+    const paid = await waitForObservedDecision(external, started.sessionId);
+    const paidBattlefield = observedPlayers(paid.observation).self.battlefield;
+    assert.equal(
+      paidBattlefield.find((card) => card.cardRef === selected.sourceCardRef)
+        ?.tapped,
+      true,
+    );
+    assert.equal(
+      paidBattlefield.find((card) => card.cardRef === unselected.sourceCardRef)
+        ?.tapped,
+      false,
+    );
+    const resolved = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) =>
+        observedPlayers(observation).opponent.life === beforeLife - 3,
+    );
+    assert.equal(resolved.progress.manaPaymentDecisionsRequested, 1);
+    assert.equal(resolved.progress.manaPaymentDecisionsSubmitted, 1);
+    assert.equal(resolved.progress.manaOptionsSelected, 1);
+    assert.equal(resolved.progress.manaPaymentsFallbackToAi, 0);
+    if (resolved.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("iterates a mixed generic and colored payment over distinct Mountains", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(redDeck(), greenDeck(), {
+      seed: 54_321,
+    });
+    const found = await driveUntilObservedAction(
+      external,
+      started.sessionId,
+      (observation, action) =>
+        action.type === "cast_spell" &&
+        action.cardName === "Goblin Piker" &&
+        observedPlayers(observation).self.battlefield.filter(
+          (card) => card.name === "Mountain" && card.tapped === false,
+        ).length >= 2,
+    );
+    await external.submitDecision(
+      started.sessionId,
+      found.decision.decisionId,
+      found.action.actionId,
+    );
+    const first = await waitForManaPaymentDecision(external, started.sessionId);
+    assert.equal(first.pendingDecision.source.actionId, found.action.actionId);
+    assert.equal(first.pendingDecision.remainingCost.text, "{1}{R}");
+    const firstSource = first.pendingDecision.options.find(
+      (option) => option.type === "activate_mana_ability",
+    );
+    assert.ok(firstSource?.sourceCardRef);
+    await external.submitManaOption(
+      started.sessionId,
+      first.pendingDecision.decisionId,
+      firstSource.manaOptionId,
+    );
+
+    const second = await waitForManaPaymentDecision(external, started.sessionId);
+    assert.notEqual(second.pendingDecision.decisionId, first.pendingDecision.decisionId);
+    assert.equal(second.pendingDecision.source.actionId, found.action.actionId);
+    assert.equal(second.pendingDecision.remainingCost.text, "{1}");
+    assert.equal(
+      observedPlayers(second.observation).self.battlefield.find(
+        (card) => card.cardRef === firstSource.sourceCardRef,
+      )?.tapped,
+      true,
+    );
+    assert.ok(
+      !second.pendingDecision.options.some(
+        (option) =>
+          option.type === "activate_mana_ability" &&
+          option.sourceCardRef === firstSource.sourceCardRef,
+      ),
+    );
+    const secondSource = second.pendingDecision.options.find(
+      (option) => option.type === "activate_mana_ability",
+    );
+    assert.ok(secondSource?.sourceCardRef);
+    assert.notEqual(secondSource.sourceCardRef, firstSource.sourceCardRef);
+    await external.submitManaOption(
+      started.sessionId,
+      second.pendingDecision.decisionId,
+      secondSource.manaOptionId,
+    );
+    const resolved = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) =>
+        observedPlayers(observation).self.battlefield.some(
+          (card) => card.cardRef === found.action.cardRef,
+        ),
+    );
+    assert.equal(resolved.progress.manaPaymentDecisionsRequested, 2);
+    assert.equal(resolved.progress.manaOptionsSelected, 2);
+    if (resolved.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("uses Sol Ring's real two-mana ability and exposes its leftover as floating mana", async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(manaRockDeck(), greenDeck(), {
+      seed: 12_345,
+    });
+
+    const ringCast = await driveUntilObservedAction(
+      external,
+      started.sessionId,
+      (observation, action) =>
+        action.type === "cast_spell" &&
+        action.cardName === "Sol Ring" &&
+        observedPlayers(observation).self.battlefield.some(
+          (card) => card.name === "Mountain" && card.tapped === false,
+        ),
+    );
+    await external.submitDecision(
+      started.sessionId,
+      ringCast.decision.decisionId,
+      ringCast.action.actionId,
+    );
+    const ringPayment = await waitForManaPaymentDecision(
+      external,
+      started.sessionId,
+    );
+    const mountainForRing = ringPayment.pendingDecision.options.find(
+      (option) => option.type === "activate_mana_ability",
+    );
+    assert.ok(mountainForRing);
+    await external.submitManaOption(
+      started.sessionId,
+      ringPayment.pendingDecision.decisionId,
+      mountainForRing.manaOptionId,
+    );
+    await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) =>
+        observedPlayers(observation).self.battlefield.some(
+          (card) => card.cardRef === ringCast.action.cardRef,
+        ),
+    );
+
+    const commander = await driveUntilObservedAction(
+      external,
+      started.sessionId,
+      (observation, action) => {
+        const battlefield = observedPlayers(observation).self.battlefield;
+        return (
+          action.type === "cast_spell" &&
+          action.cardName === "Ashling the Pilgrim" &&
+          battlefield.some(
+            (card) =>
+              card.cardRef === ringCast.action.cardRef && card.tapped === false,
+          ) &&
+          battlefield.filter(
+            (card) => card.name === "Mountain" && card.tapped === false,
+          ).length >= 2
+        );
+      },
+    );
+    await external.submitDecision(
+      started.sessionId,
+      commander.decision.decisionId,
+      commander.action.actionId,
+    );
+    const firstCommanderPayment = await waitForManaPaymentDecision(
+      external,
+      started.sessionId,
+    );
+    const ring = firstCommanderPayment.pendingDecision.options.find(
+      (option) =>
+        option.type === "activate_mana_ability" &&
+        option.sourceCardRef === ringCast.action.cardRef,
+    );
+    assert.ok(ring);
+    assert.deepEqual(ring.produces, ["C", "C"]);
+    await external.submitManaOption(
+      started.sessionId,
+      firstCommanderPayment.pendingDecision.decisionId,
+      ring.manaOptionId,
+    );
+    const redCommanderPayment = await waitForManaPaymentDecision(
+      external,
+      started.sessionId,
+    );
+    assert.equal(redCommanderPayment.pendingDecision.remainingCost.text, "{R}");
+    assert.equal(redCommanderPayment.pendingDecision.manaPool.byColor.C, 1);
+    const redSource = redCommanderPayment.pendingDecision.options.find(
+      (option) => option.type === "activate_mana_ability",
+    );
+    assert.ok(redSource);
+    await external.submitManaOption(
+      started.sessionId,
+      redCommanderPayment.pendingDecision.decisionId,
+      redSource.manaOptionId,
+    );
+
+    const activation = await driveUntilObservedAction(
+      external,
+      started.sessionId,
+      (_observation, action) =>
+        action.type === "activate_ability" &&
+        action.cardName === "Ashling the Pilgrim",
+      (_observation, decision) =>
+        decision.actions.find((action) => action.type === "pass")!,
+    );
+    await external.submitDecision(
+      started.sessionId,
+      activation.decision.decisionId,
+      activation.action.actionId,
+    );
+    const floatingPayment = await waitForManaPaymentDecision(
+      external,
+      started.sessionId,
+    );
+    assert.equal(floatingPayment.pendingDecision.source.actionId, activation.action.actionId);
+    assert.equal(floatingPayment.pendingDecision.manaPool.byColor.C, 1);
+    const floating = floatingPayment.pendingDecision.options.find(
+      (option) => option.type === "spend_floating_mana",
+    );
+    assert.ok(floating);
+    assert.equal(floating.color, "C");
+    assert.match(floating.manaRef, /^mana-\d+$/);
+    await external.submitManaOption(
+      started.sessionId,
+      floatingPayment.pendingDecision.decisionId,
+      floating.manaOptionId,
+    );
+    const finalRed = await waitForManaPaymentDecision(external, started.sessionId);
+    assert.equal(finalRed.pendingDecision.remainingCost.text, "{R}");
+    const finalMountain = finalRed.pendingDecision.options.find(
+      (option) => option.type === "activate_mana_ability",
+    );
+    assert.ok(finalMountain);
+    await external.submitManaOption(
+      started.sessionId,
+      finalRed.pendingDecision.decisionId,
+      finalMountain.manaOptionId,
+    );
+    const played = await driveSecondaryUntil(
+      external,
+      started.sessionId,
+      (snapshot) => snapshot.progress.abilitiesActivated === 1,
+    );
+    assert.ok(played.progress.manaPaymentDecisionsRequested >= 5);
+    assert.equal(played.progress.manaPaymentsFallbackToAi, 0);
+    if (played.status !== "completed") await external.cancel(started.sessionId);
+  });
+
   it("casts a real X spell with Node-selected X=2 and rejects invalid values", async () => {
     const client = createClient();
     await client.start();
@@ -2369,6 +2805,22 @@ Mainboard
       (error: unknown) =>
         error instanceof ForgeBridgeError && error.code === "STALE_DECISION",
     );
+    const xPayment = await waitForManaPaymentDecision(
+      external,
+      started.sessionId,
+    );
+    assert.equal(xPayment.pendingDecision.source.actionId, found.action.actionId);
+    assert.equal(xPayment.pendingDecision.remainingCost.text, "{4}");
+    assert.equal(xPayment.pendingDecision.remainingCost.generic, 4);
+    const firstWastes = xPayment.pendingDecision.options.find(
+      (option) => option.type === "activate_mana_ability",
+    );
+    assert.ok(firstWastes);
+    await external.submitManaOption(
+      started.sessionId,
+      xPayment.pendingDecision.decisionId,
+      firstWastes.manaOptionId,
+    );
     const resolved = await driveUntilObservation(
       external,
       started.sessionId,
@@ -2448,6 +2900,22 @@ Mainboard
       started.sessionId,
       targeting.pendingDecision.decisionId,
       opponent.targetId,
+    );
+    const kickedPayment = await waitForManaPaymentDecision(
+      external,
+      started.sessionId,
+    );
+    assert.equal(kickedPayment.pendingDecision.source.actionId, found.action.actionId);
+    assert.equal(kickedPayment.pendingDecision.remainingCost.text, "{4}{R}");
+    assert.equal(kickedPayment.pendingDecision.remainingCost.generic, 4);
+    const firstMountain = kickedPayment.pendingDecision.options.find(
+      (option) => option.type === "activate_mana_ability",
+    );
+    assert.ok(firstMountain);
+    await external.submitManaOption(
+      started.sessionId,
+      kickedPayment.pendingDecision.decisionId,
+      firstMountain.manaOptionId,
     );
     const resolved = await driveUntilObservation(
       external,

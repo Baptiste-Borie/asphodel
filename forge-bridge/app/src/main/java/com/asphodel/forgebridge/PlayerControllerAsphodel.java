@@ -2,10 +2,15 @@ package com.asphodel.forgebridge;
 
 import forge.LobbyPlayer;
 import forge.ai.PlayerControllerAi;
+import forge.card.mana.ManaCost;
 import forge.game.Game;
+import forge.game.cost.CostPartMana;
 import forge.game.cost.CostDecisionMakerBase;
+import forge.game.mana.ManaConversionMatrix;
+import forge.game.mana.ManaCostBeingPaid;
 import forge.game.player.Player;
 import forge.game.player.PlaySpellAbility;
+import forge.game.spellability.AbilityManaPart;
 import forge.game.spellability.AbilitySub;
 import forge.game.spellability.OptionalCostValue;
 import forge.game.spellability.SpellAbility;
@@ -21,8 +26,11 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
     private final ForgeValueDecisionBuilder valueDecisions = new ForgeValueDecisionBuilder();
     private final ForgeOptionalCostChoiceEnumerator optionalCosts =
             new ForgeOptionalCostChoiceEnumerator();
+    private final ForgeManaPaymentChoiceEnumerator manaPayments =
+            new ForgeManaPaymentChoiceEnumerator();
     private final AgentObservationBuilder observations = new AgentObservationBuilder();
     private SpellAbility executingPrimaryAbility;
+    private boolean externalManaPaymentActive;
 
     PlayerControllerAsphodel(
             Game game,
@@ -204,6 +212,140 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
                 actionId,
                 observations
         );
+    }
+
+    @Override
+    public boolean payManaCost(
+            ManaCost toPay,
+            CostPartMana costPartMana,
+            SpellAbility ability,
+            String prompt,
+            ManaConversionMatrix matrix,
+            boolean effect
+    ) {
+        if (externalManaPaymentActive
+                || !isExecutingExternalAction(ability)
+                || !manaPayments.supportsPaymentShape(ability, costPartMana, effect)) {
+            if (!externalManaPaymentActive && isExecutingExternalAction(ability)) {
+                decisions.recordManaFallbackToAi();
+            }
+            return super.payManaCost(toPay, costPartMana, ability, prompt, matrix, effect);
+        }
+
+        externalManaPaymentActive = true;
+        try {
+            // This is Forge's human/native payment setup. It expands announced X,
+            // applies kicker and static cost adjustments, then calls our
+            // applyManaToCost override with the authoritative remaining cost.
+            return PlaySpellAbility.payManaCost(
+                    this,
+                    toPay,
+                    costPartMana,
+                    ability,
+                    getPlayer(),
+                    prompt,
+                    matrix,
+                    effect
+            );
+        } finally {
+            externalManaPaymentActive = false;
+        }
+    }
+
+    @Override
+    public boolean applyManaToCost(
+            ManaCostBeingPaid toPay,
+            SpellAbility ability,
+            String prompt,
+            ManaConversionMatrix matrix,
+            boolean effect
+    ) {
+        if (!externalManaPaymentActive || !manaPayments.supportsAdjustedCost(toPay)) {
+            if (externalManaPaymentActive) {
+                decisions.recordManaFallbackToAi();
+            }
+            return super.applyManaToCost(toPay, ability, prompt, matrix, effect);
+        }
+
+        if (matrix != null) {
+            getPlayer().getManaPool().applyCardMatrix(matrix);
+        }
+        getPlayer().pushPaidForSA(ability);
+        ability.setManaCostBeingPaid(toPay);
+        int externallySelected = 0;
+        try {
+            while (!toPay.isPaid()) {
+                List<ForgeManaPaymentChoiceEnumerator.Candidate> candidates =
+                        manaPayments.enumerate(getPlayer(), ability, toPay);
+                if (candidates.isEmpty()) {
+                    if (externallySelected == 0) {
+                        decisions.recordManaFallbackToAi();
+                        ability.setManaCostBeingPaid(null);
+                        getPlayer().popPaidForSA();
+                        return super.applyManaToCost(toPay, ability, prompt, matrix, effect);
+                    }
+                    return false;
+                }
+
+                ForgeManaPaymentChoiceEnumerator.Candidate selected =
+                        decisions.requestManaPaymentDecision(
+                                getGame(),
+                                getPlayer(),
+                                ability,
+                                sourceActionId(),
+                                toPay,
+                                candidates,
+                                manaPayments,
+                                observations.build(getGame(), getPlayer())
+                        );
+                // The broker revalidates before acknowledging the selector. Do
+                // the same on the game thread immediately before mutation.
+                if (!manaPayments.isStillLegal(getPlayer(), ability, toPay, selected)) {
+                    return false;
+                }
+                if (!applyManaOption(ability, toPay, selected)) {
+                    return false;
+                }
+                externallySelected++;
+            }
+            return true;
+        } finally {
+            if (ability.getManaCostBeingPaid() == toPay) {
+                ability.setManaCostBeingPaid(null);
+                getPlayer().popPaidForSA();
+            }
+        }
+    }
+
+    private boolean applyManaOption(
+            SpellAbility paidFor,
+            ManaCostBeingPaid remainingCost,
+            ForgeManaPaymentChoiceEnumerator.Candidate selected
+    ) {
+        if (selected.mana() != null) {
+            if (!getPlayer().getManaPool().tryPayCostWithMana(
+                    paidFor, remainingCost, selected.mana(), false
+            )) {
+                return false;
+            }
+            paidFor.getPayingMana().add(selected.mana());
+            return true;
+        }
+
+        SpellAbility manaAbility = selected.ability();
+        if (manaAbility == null
+                || !PlaySpellAbility.playSpellAbility(this, getPlayer(), manaAbility)) {
+            return false;
+        }
+        for (AbilityManaPart part : manaAbility.getAllManaParts()) {
+            if (!part.meetsManaRestrictions(paidFor)) {
+                return false;
+            }
+        }
+        getPlayer().getManaPool().payManaFromAbility(
+                paidFor, remainingCost, manaAbility
+        );
+        return true;
     }
 
     private boolean isExecutingExternalAction(SpellAbility ability) {

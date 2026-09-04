@@ -995,11 +995,125 @@ hidden dynamic cost. No partial option set is externalized.
 | Mode/target composition | PASS | Existing Light of Hope remains green; Kicker→target is also proven. |
 | Multi-kicker / repeated optional cost | FORGE FALLBACK | Multiple `OptionalCostValue` entries are not partially exposed. |
 | Dynamic costs | FORGE FALLBACK | Non-fixed and dependent object/value shapes remain AI decisions. |
-| Mana source selection | NOT IMPLEMENTED — V1i | Forge AI still pays/taps mana sources. |
+| Mana source selection | IMPLEMENTED — V1i | See the external mana-payment section below. |
 
 Combat remains outside this work and is reserved for V1j. No arbitrary
 effect confirmations, triggers, replacements, mulligans, DB, frontend, or ML
 work is included.
+
+# External Mana Payment V1i
+
+For a supported Node-selected action, the exact pinned runtime path is
+`CostPartMana.payAsDecided` → `PlayerControllerAsphodel.payManaCost` →
+`PlaySpellAbility.payManaCost` → `PlayerControllerAsphodel.applyManaToCost`.
+The middle Forge method remains authoritative for announced X, optional costs,
+and `CostAdjustment`. Asphodel receives the resulting
+`ManaCostBeingPaid`; it does not reconstruct a card's printed cost.
+
+Each iteration publishes a fresh observation and a `mana_payment` decision:
+
+```ts
+type ForgePendingManaPaymentDecision = {
+  decisionId: string;
+  type: "mana_payment";
+  playerId: string;
+  context: ForgeDecisionContext;
+  source: ForgeDecisionSource;
+  remainingCost: {
+    text: string;
+    generic: number;
+    convertedManaCost: number;
+    shards: string[];
+  };
+  manaPool: { total: number; byColor: Record<string, number> };
+  options: Array<
+    | {
+        manaOptionId: string;
+        type: "activate_mana_ability";
+        sourceCardRef: string;
+        sourceCardName: string | null;
+        abilityText: string | null;
+        produces: string[];
+        tapped: boolean;
+      }
+    | {
+        manaOptionId: string;
+        type: "spend_floating_mana";
+        manaRef: string;
+        color: "W" | "U" | "B" | "R" | "G" | "C";
+      }
+  >;
+  canFinish: boolean;
+};
+```
+
+Opaque option IDs retain the exact `SpellAbility` or `Mana` instance. Before
+acknowledging a selector the shared broker rechecks that exact object against
+the live battlefield/pool, `canPlay(true)`, `isManaAbilityFor`, mana
+restrictions, `allowsPayingWithShard`, and the remaining cost. A failed check
+returns `MANA_OPTION_NO_LONGER_LEGAL` without consuming the pending decision.
+Wrong, unknown, and reused selectors return `MANA_OPTION_ID_REQUIRED`,
+`MANA_OPTION_NOT_FOUND`, and `STALE_DECISION` respectively.
+
+An activation runs through Forge's real
+`PlaySpellAbility.playSpellAbility`; its `{T}` cost therefore taps the card and
+runs normal tap triggers. Forge's `ManaPool.payManaFromAbility` spends the
+actual mana objects it produced. Existing floating mana is spent through
+`ManaPool.tryPayCostWithMana`. There is no direct `setTapped(true)`, source-name
+lookup, hardcoded land production, or `ComputerUtilMana` source ranking in the
+supported path. Sol Ring's displayed two colorless mana come from Forge's
+`totalAmountOfManaGenerated`, including its scripted `Amount$ 2`, rather than
+an Asphodel special case.
+
+The supported source subset is intentionally conservative: deterministic,
+fixed-output mana abilities on the acting player's public battlefield whose
+only activation cost is `CostTap`, plus unrestricted, non-snow mana already in
+the pool. Costs support ordinary generic, W/U/B/R/G, explicit `{C}`, standard
+two-color hybrid, and color/colorless hybrid shards. Multi-choice `Any` and
+`Combo` sources are not partially externalized because their color-selection
+seam would otherwise fall back to AI.
+
+The entire payment stays with Forge AI when detected before any Node mana
+choice: alternate payment costs, mandatory/effect payments, exiled- or
+enchanted-creature mana costs, Waterbend, offering, emerge, convoke, delve,
+improvise, phyrexian, snow, two-or-generic and colored-X shards, restricted or
+conditional/complex mana, variable/choice/special production, spend-trigger or
+can't-counter mana, additional costs other than `{T}`, treasure sacrifice, and
+replacement-heavy sources. If a supported payment has already consumed a Node
+choice, Asphodel never mixes in an AI-selected remainder.
+
+## V1i capability table
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Basic-land mana payment | PASS | Real Mountain abilities pay Lightning Bolt and Goblin Piker. |
+| Exact source choice | PASS | The selected Mountain taps; another offered Mountain remains untapped. |
+| Colored cost | PASS | Forge reports and pays the real `{R}` Bolt shard. |
+| Generic cost | PASS | The second Goblin Piker iteration reports `{1}`. |
+| Mixed generic + colored | PASS | `{1}{R}` becomes `{1}` across two distinct retained abilities. |
+| Multi-mana source | PASS | Sol Ring reports `C, C` from Forge and pays via its real ability. |
+| Floating mana | PASS | Sol Ring's unspent second `Mana` is later offered and consumed by opaque ID. |
+| Multi-color source | FORGE FALLBACK | `Any`/`Combo` requires a separate external color decision; no AI color choice is hidden inside V1i. |
+| Runtime `cardRef` consistency | PASS | Source options and fresh observations use the same Forge card ID. |
+| Fresh observation after activation | PASS | The next payment decision observes the selected source tapped and removes it from legal options. |
+| Invalid option protection | PASS | Wrong and unknown selectors preserve the pending payment. |
+| Stale decision protection | PASS | Reusing an answered mana decision returns `STALE_DECISION`. |
+| Runtime revalidation | PASS | Broker revalidates the retained Forge object before mutation and has a structured non-consuming error. |
+| V1h optional-cost composition | PASS | Accepted Burst Lightning kicker exposes the adjusted `{4}{R}` and resolves for four damage. |
+| V1h X composition | PASS | Walking Ballista X=2 exposes adjusted `{4}` and enters with two counters. |
+| Hybrid | SUPPORTED, NOT FIXTURE-PROVEN | Standard two-color and color/colorless shards use Forge's own pool checks. |
+| Colorless `{C}` | SUPPORTED, PARTIALLY PROVEN | Wastes/Sol Ring produce real C; no dedicated printed `{C}` fixture is asserted. |
+| Snow | FORGE FALLBACK | Snow shards and snow mana are excluded from the external subset. |
+| Phyrexian | FORGE FALLBACK | Life-vs-mana choice remains wholly with Forge AI. |
+| Restricted mana | FORGE FALLBACK | Restrictions, spend effects, and special production are not partially exposed. |
+| Convoke / delve / improvise | FORGE FALLBACK | Detected before `PlaySpellAbility.payManaCost` can request those controller choices. |
+
+Progress now includes `manaPaymentDecisionsRequested`,
+`manaPaymentDecisionsSubmitted`, `manaOptionsSelected`, and
+`manaPaymentsFallbackToAi`. The Node test driver uses a deterministic policy
+(floating mana first, otherwise the first legal option); this is test
+automation, not agent strategy. Combat remains reserved for V1j, and `isAI()`
+is unchanged.
 
 ## Card database initialization
 
@@ -1023,7 +1137,7 @@ Forest, Lightning Bolt, Counterintelligence, Predict, Counterspell, Gruesome
 Realization, Light of Hope, Grizzly Bears, Goblin Piker, Krenko, Tin Street
 Kingpin, Talrand, Sky Summoner, Ayara, First of Locthwain, Isamaru, Hound of
 Konda, Ayula, Queen Among Bears, Walking Ballista, Burst Lightning, Sanitarium
-Skeleton, Village Rites, and Thrill of Possibility. No rules text or ability is hardcoded. The
+Skeleton, Village Rites, Thrill of Possibility, and Sol Ring. No rules text or ability is hardcoded. The
 response exposes Lightning Bolt's parsed `CardRules`, Oracle text, mana cost,
 and raw `SP$ DealDamage` script ability as integration evidence.
 
