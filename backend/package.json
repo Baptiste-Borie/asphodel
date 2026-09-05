@@ -8,8 +8,9 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc --noEmit",
     "test": "tsx --test src/*.test.ts",
+    "agent:evaluate": "tsx src/agent/run-evaluation.ts",
     "agent:baseline": "tsx src/agent/run-baseline.ts",
-    "test:forge-bridge": "tsx --test src/forge/*.integration.test.ts",
+    "test:forge-bridge": "tsx --test --test-concurrency=1 src/forge/*.integration.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:studio": "drizzle-kit studio"
