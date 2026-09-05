@@ -373,6 +373,12 @@ async function submitDeterministicSecondary(
     await external.submitCombatChoice(sessionId, decision.decisionId, option.objectId);
     return;
   }
+  if (decision.type === "yes_no" || decision.type === "object_selection" || decision.type === "ordering_selection") {
+    const option = decision.options[0];
+    assert.ok(option);
+    await external.submitSelection(sessionId, decision.decisionId, option.objectId);
+    return;
+  }
   if (decision.type !== "cost_object_selection") throw new Error("Unhandled decision family");
   const objectId = decision.options[0]?.objectId ?? decision.finishChoiceId;
   assert.ok(objectId);
@@ -711,6 +717,155 @@ afterEach(async () => {
 });
 
 describe("ForgeBridgeClient integration", () => {
+  for (const spell of ["Opt", "Consider"]) {
+    it(`external ${spell === "Opt" ? "scry" : "surveil"} chooses the exact revealed card`, { timeout: 60_000 }, async () => {
+      const client = createClient(); await client.start();
+      const external = new ForgeExternalMatchClient(client);
+      const deck: ForgeDeckSpec = { name: "Library choice", cards: [
+        { name: "Talrand, Sky Summoner", quantity: 1, section: "commander" },
+        { name: "Island", quantity: 30, section: "mainboard" },
+        { name: spell, quantity: 30, section: "mainboard" },
+      ] };
+      const { sessionId } = await external.startSpecs(deck, ashlingDeck(), { seed: 12345 });
+      let chosen: string | undefined;
+      for (let step = 0; step < 400; step++) {
+        const s = await waitForExternalSnapshot(external, sessionId, (s) => s.status === "waiting_for_decision" || s.status === "failed");
+        assert.equal(s.status, "waiting_for_decision", JSON.stringify(s));
+        const d = s.pendingDecision!;
+        const self = s.observation!.players.find((p) => p.role === "self")!;
+        assert.equal(self.role, "self");
+        if (chosen && d.type === "priority_action" && self.role === "self") {
+          assert.ok((spell === "Opt" ? self.hand : self.graveyard).some((c) => c.cardRef === chosen));
+          await external.cancel(sessionId); return;
+        }
+        if (d.type === "object_selection" && (d.selectionKind === "scry_top" || d.selectionKind === "surveil_top")) {
+          const card = d.options.find((o) => !o.finish)!;
+          assert.ok(card.label && !card.label.startsWith("Hidden"));
+          chosen = card.cardRef!;
+          const selection = spell === "Opt" ? card : d.options.find((o) => o.finish)!;
+          await external.submitSelection(sessionId, d.decisionId, selection.objectId);
+        } else if (d.type === "priority_action") {
+          const action = d.actions.find((a) => a.type === "play_land")
+            ?? d.actions.find((a) => a.type === "cast_spell" && a.cardName === spell)
+            ?? d.actions.find((a) => a.type === "pass");
+          assert.ok(action); await external.submitDecision(sessionId, d.decisionId, action.actionId);
+        } else await submitDeterministicSecondary(external, sessionId, d);
+      }
+      assert.fail("Library selection proof not reached");
+    });
+  }
+
+  it("external trigger targets use Node outside accepted primary actions", { timeout: 60_000 }, async () => {
+    const client = createClient(); await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const deck: ForgeDeckSpec = { name: "Trigger targets", cards: [
+      { name: "Zurgo Bellstriker", quantity: 1, section: "commander" },
+      { name: "Mountain", quantity: 30, section: "mainboard" },
+      { name: "Viashino Pyromancer", quantity: 30, section: "mainboard" },
+    ] };
+    const { sessionId } = await external.startSpecs(deck, ashlingDeck(), { seed: 12345 });
+    let targetChosen = false;
+    for (let step = 0; step < 400; step++) {
+      const s = await waitForExternalSnapshot(external, sessionId, (s) => s.status === "waiting_for_decision" || s.status === "failed");
+      assert.equal(s.status, "waiting_for_decision", JSON.stringify(s));
+      const d = s.pendingDecision!;
+      const self = s.observation!.players.find((p) => p.role === "self")!;
+      if (targetChosen && self.life === 38) { await external.cancel(sessionId); return; }
+      if (d.type === "target_selection" && d.source.cardName === "Viashino Pyromancer") {
+        assert.equal(d.source.actionId, null);
+        const target = d.targets.find((t) => t.type === "player" && t.playerId === self.playerId);
+        assert.ok(target);
+        await external.submitTarget(sessionId, d.decisionId, target.targetId);
+        targetChosen = true;
+      } else if (d.type === "priority_action") {
+        const action: ForgeExternalAction | undefined = (!targetChosen ? d.actions.find((a) => a.type === "play_land")
+          ?? d.actions.find((a) => a.type === "cast_spell" && a.cardName === "Viashino Pyromancer") : undefined)
+          ?? d.actions.find((a) => a.type === "pass");
+        assert.ok(action); await external.submitDecision(sessionId, d.decisionId, action.actionId);
+      } else await submitDeterministicSecondary(external, sessionId, d);
+    }
+    assert.fail("Node trigger target did not resolve as 2 damage to self");
+  });
+
+  it("external optional triggers and ordering retain exact abilities", { timeout: 60_000 }, async () => {
+    const client = createClient(); await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const deck: ForgeDeckSpec = { name: "Optional triggers", cards: [
+      { name: "Isamaru, Hound of Konda", quantity: 1, section: "commander" },
+      { name: "Plains", quantity: 30, section: "mainboard" },
+      { name: "Soul's Attendant", quantity: 30, section: "mainboard" },
+      { name: "Memnite", quantity: 30, section: "mainboard" },
+    ] };
+    const { sessionId } = await external.startSpecs(deck, ashlingDeck(), { seed: 12345 });
+    const answers: string[] = [];
+    let orderedRef: string | undefined;
+    let orderedResolvedFirst = false;
+    for (let step = 0; step < 600; step++) {
+      const s = await waitForExternalSnapshot(external, sessionId, (s) => s.status === "waiting_for_decision" || s.status === "failed");
+      assert.equal(s.status, "waiting_for_decision", JSON.stringify(s));
+      const d = s.pendingDecision!;
+      const self = s.observation!.players.find((p) => p.role === "self")!;
+      if (answers.includes("Yes") && answers.includes("No") && orderedResolvedFirst && self.life > 40) {
+        await external.cancel(sessionId); return;
+      }
+      if (d.type === "ordering_selection" && d.selectionKind === "trigger_order") {
+        const option = d.options.filter((o) => !o.finish).at(-1)!;
+        orderedRef = option.cardRef ?? undefined;
+        await external.submitSelection(sessionId, d.decisionId, option.objectId);
+      } else if (d.type === "yes_no" && d.selectionKind === "optional_trigger") {
+        if (orderedRef) { assert.equal(d.source?.cardRef, orderedRef); orderedResolvedFirst = true; orderedRef = undefined; }
+        const label = answers.length === 0 ? "No" : "Yes";
+        const option = d.options.find((o) => o.label === label)!;
+        answers.push(label);
+        await external.submitSelection(sessionId, d.decisionId, option.objectId);
+      } else if (d.type === "priority_action") {
+        const attendants = self.battlefield.filter((c) => c.name === "Soul's Attendant").length;
+        const action = d.actions.find((a) => a.type === "play_land")
+          ?? d.actions.find((a) => a.type === "cast_spell" && (attendants < 2 ? a.cardName === "Soul's Attendant" : a.cardName === "Memnite"))
+          ?? d.actions.find((a) => a.type === "pass");
+        assert.ok(action); await external.submitDecision(sessionId, d.decisionId, action.actionId);
+      } else await submitDeterministicSecondary(external, sessionId, d);
+    }
+    assert.fail("Optional trigger/order proof not reached");
+  });
+
+  it("external legend rule keeps the exact Node-selected permanent", { timeout: 60_000 }, async () => {
+    const client = createClient(); await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const deck: ForgeDeckSpec = { name: "Legend rule", cards: [
+      { name: "Isamaru, Hound of Konda", quantity: 1, section: "commander" },
+      { name: "Plains", quantity: 30, section: "mainboard" },
+      { name: "Isamaru, Hound of Konda", quantity: 30, section: "mainboard" },
+    ] };
+    const { sessionId } = await external.startSpecs(deck, ashlingDeck(), { seed: 12345 });
+    let kept: string | undefined;
+    let removed: string | undefined;
+    for (let step = 0; step < 400; step++) {
+      const s = await waitForExternalSnapshot(external, sessionId, (s) => s.status === "waiting_for_decision" || s.status === "failed");
+      assert.equal(s.status, "waiting_for_decision", JSON.stringify(s));
+      const d = s.pendingDecision!;
+      const self = s.observation!.players.find((p) => p.role === "self")!;
+      if (kept && d.type === "priority_action") {
+        assert.ok(self.battlefield.some((c) => c.cardRef === kept));
+        assert.ok(!self.battlefield.some((c) => c.cardRef === removed));
+        assert.ok([...self.graveyard, ...self.command].some((c) => c.cardRef === removed));
+        await external.cancel(sessionId); return;
+      }
+      if (d.type === "object_selection" && d.selectionKind === "entity" && d.prompt.includes("legendary")) {
+        const option = d.options.filter((o) => !o.finish).at(-1)!;
+        kept = option.cardRef!;
+        removed = d.options.find((o) => !o.finish && o.objectId !== option.objectId)?.cardRef ?? undefined;
+        assert.ok(self.battlefield.some((c) => c.cardRef === kept));
+        await external.submitSelection(sessionId, d.decisionId, option.objectId);
+      } else if (d.type === "priority_action") {
+        const action = d.actions.find((a) => a.type === "play_land")
+          ?? d.actions.find((a) => a.type === "cast_spell") ?? d.actions.find((a) => a.type === "pass");
+        assert.ok(action); await external.submitDecision(sessionId, d.decisionId, action.actionId);
+      } else await submitDeterministicSecondary(external, sessionId, d);
+    }
+    assert.fail("Legend choice not reached");
+  });
+
   for (const flying of [false, true]) {
     it(`external combat blockers: ${flying ? "flying restriction and double strike" : "no blocks, exact block and multiple blockers"}`, { timeout: 90_000 }, async () => {
       const client = createClient();

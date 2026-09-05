@@ -100,6 +100,40 @@ final class AsphodelDecisionBroker {
         return ((CombatChoice) await(decision)).candidate();
     }
 
+    <T> int requestSelection(Game game, Player player, String type, String kind, String prompt,
+            SpellAbility source, List<T> candidates, List<String> labels, List<String> refs,
+            List<String> selected, int min, int max, boolean canFinish, AgentObservation observation) {
+        PendingInternal decision;
+        synchronized (this) {
+            ensureCanRequest();
+            Map<String, DecisionChoice> choices = new LinkedHashMap<>();
+            List<SelectionOption> options = new ArrayList<>();
+            for (int i = 0; i < candidates.size(); i++) {
+                String id = "selection-" + objectIds.incrementAndGet();
+                choices.put(id, new SelectionChoice(i, candidates.get(i)));
+                options.add(new SelectionOption(id, labels.get(i), refs.get(i), false));
+            }
+            if (canFinish) {
+                String id = "selection-" + objectIds.incrementAndGet();
+                choices.put(id, new SelectionChoice(-1, null));
+                options.add(new SelectionOption(id, "Finish selection", null, true));
+            }
+            decision = new PendingInternal(new PendingSelectionDecision(
+                    "decision-" + decisionIds.incrementAndGet(), type, playerId(player),
+                    context(game, game.getPhaseHandler()), kind, prompt,
+                    source == null ? null : source(null, source), List.copyOf(options), List.copyOf(selected), min, max, canFinish),
+                    observation, choices);
+            pending = decision;
+        }
+        return ((SelectionChoice) await(decision)).index();
+    }
+
+    record SelectionOption(String objectId, String label, String cardRef, boolean finish) {}
+    record PendingSelectionDecision(String decisionId, String type, String playerId,
+            DecisionContext context, String selectionKind, String prompt, TargetSource source,
+            List<SelectionOption> options, List<String> selected, int minSelections, int maxSelections, boolean canFinish) implements DecisionSnapshot {}
+    private record SelectionChoice(int index, Object retainedObject) implements DecisionChoice {}
+
     record CombatOption(String objectId, String operation, String cardRef, String relatedRef, String label) {}
     record CombatAssignment(String cardRef, String relatedRef) {}
     record PendingCombatDecision(String decisionId, String type, String playerId,
@@ -863,7 +897,7 @@ final class AsphodelDecisionBroker {
     }
 
     private static SubmissionKind submissionKind(DecisionSnapshot snapshot) {
-        if (snapshot instanceof PendingCombatDecision) {
+        if (snapshot instanceof PendingCombatDecision || snapshot instanceof PendingSelectionDecision) {
             return SubmissionKind.OBJECT;
         }
         if (snapshot instanceof PendingTargetDecision) {
@@ -921,7 +955,7 @@ final class AsphodelDecisionBroker {
 
     sealed interface DecisionSnapshot permits PendingDecision, PendingTargetDecision,
             PendingModeDecision, PendingValueDecision, PendingOptionalCostDecision,
-            PendingCostObjectDecision, PendingManaPaymentDecision, PendingCombatDecision {
+            PendingCostObjectDecision, PendingManaPaymentDecision, PendingCombatDecision, PendingSelectionDecision {
         String decisionId();
     }
 
@@ -1138,7 +1172,7 @@ final class AsphodelDecisionBroker {
     }
 
     private sealed interface DecisionChoice permits PrimaryActionChoice, TargetChoice,
-            ModeChoice, ValueChoice, OptionalCostChoice, CostObjectChoice, ManaChoice, CombatChoice {
+            ModeChoice, ValueChoice, OptionalCostChoice, CostObjectChoice, ManaChoice, CombatChoice, SelectionChoice {
     }
 
     private record PrimaryActionChoice(

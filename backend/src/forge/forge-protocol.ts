@@ -381,6 +381,21 @@ export interface ForgePendingCombatDecision {
   selected: { cardRef: string; relatedRef: string }[];
 }
 
+export interface ForgePendingSelectionDecision {
+  decisionId: string;
+  type: "yes_no" | "object_selection" | "ordering_selection";
+  playerId: string;
+  context: ForgePendingDecision["context"];
+  selectionKind: string;
+  prompt: string;
+  source: ForgePendingModeDecision["source"] | null;
+  options: { objectId: string; label: string; cardRef: string | null; finish: boolean }[];
+  selected: string[];
+  minSelections: number;
+  maxSelections: number;
+  canFinish: boolean;
+}
+
 export type ForgePendingExternalDecision =
   | ForgePendingDecision
   | ForgePendingTargetDecision
@@ -389,7 +404,8 @@ export type ForgePendingExternalDecision =
   | ForgePendingOptionalCostDecision
   | ForgePendingCostObjectDecision
   | ForgePendingManaPaymentDecision
-  | ForgePendingCombatDecision;
+  | ForgePendingCombatDecision
+  | ForgePendingSelectionDecision;
 
 export type ForgeExternalMatchStatus =
   | "starting"

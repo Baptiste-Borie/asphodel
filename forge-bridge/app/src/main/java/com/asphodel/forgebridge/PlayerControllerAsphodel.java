@@ -5,6 +5,14 @@ import forge.ai.PlayerControllerAi;
 import forge.card.mana.ManaCost;
 import forge.game.Game;
 import forge.game.GameEntity;
+import forge.game.card.CardView;
+import forge.game.player.DelayedReveal;
+import forge.game.player.PlayerActionConfirmMode;
+import forge.game.replacement.ReplacementEffect;
+import forge.game.trigger.WrappedAbility;
+import forge.game.zone.ZoneType;
+import forge.util.collect.FCollectionView;
+import org.apache.commons.lang3.tuple.ImmutablePair;
 import forge.game.card.Card;
 import forge.game.card.CardCollection;
 import forge.game.card.CardCollectionView;
@@ -24,7 +32,7 @@ import forge.game.spellability.SpellAbility;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class PlayerControllerAsphodel extends PlayerControllerAi {
+public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
     private final AsphodelDecisionBroker decisions;
     private final ForgeLegalActionEnumerator legalActions = new ForgeLegalActionEnumerator();
     private final ForgeTargetChoiceEnumerator targetChoices = new ForgeTargetChoiceEnumerator();
@@ -44,8 +52,231 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
             LobbyPlayer lobbyPlayer,
             AsphodelDecisionBroker decisions
     ) {
-        super(game, player, lobbyPlayer);
+        super(game, player, lobbyPlayer, decisions);
         this.decisions = decisions;
+    }
+
+    private final ForgeStrategicSelections selections = new ForgeStrategicSelections();
+
+    private <T> List<T> select(String type, String kind, String prompt, SpellAbility source,
+            Iterable<T> options, int min, int max, boolean optional) {
+        return selections.select(decisions, observations, getPlayer(), type, kind, prompt,
+                source, options, min, max, optional);
+    }
+
+    private boolean yesNo(String kind, String prompt, SpellAbility source) {
+        return select("yes_no", kind, prompt, source, List.of(true, false), 1, 1, false).get(0);
+    }
+
+    @Override
+    public boolean confirmAction(SpellAbility sa, PlayerActionConfirmMode mode, String message,
+            List<String> options, Card cardToShow, Map<String, Object> params) {
+        return yesNo("confirm_action", message, sa);
+    }
+
+    @Override
+    public boolean confirmStaticApplication(Card host, PlayerActionConfirmMode mode, String message, String logic) {
+        return yesNo("static_application", message, null);
+    }
+
+    @Override
+    public boolean confirmTrigger(WrappedAbility wrapper) {
+        return wrapper.isMandatory() || yesNo("optional_trigger", "Accept optional trigger", wrapper);
+    }
+
+    @Override
+    public boolean confirmReplacementEffect(ReplacementEffect replacement, SpellAbility sa, GameEntity affected, String question) {
+        return yesNo("optional_replacement", question, sa);
+    }
+
+    @Override
+    public ReplacementEffect chooseSingleReplacementEffect(List<ReplacementEffect> options) {
+        return select("object_selection", "replacement_effect", "Choose replacement effect", null,
+                options, 1, 1, false).get(0);
+    }
+
+    @Override
+    public <T extends GameEntity> T chooseSingleEntityForEffect(FCollectionView<T> options,
+            DelayedReveal reveal, SpellAbility sa, String title, boolean optional, Player related,
+            Map<String, Object> params) {
+        List<T> selected = select("object_selection", "entity", title, sa, options, 1, 1, optional);
+        return selected.isEmpty() ? null : selected.get(0);
+    }
+
+    @Override
+    public <T extends GameEntity> List<T> chooseEntitiesForEffect(FCollectionView<T> options,
+            int min, int max, DelayedReveal reveal, SpellAbility sa, String title, Player related,
+            Map<String, Object> params) {
+        return select("object_selection", "entities", title, sa, options, min, max, false);
+    }
+
+    @Override
+    public CardCollectionView chooseCardsForEffect(CardCollectionView cards, SpellAbility sa,
+            String title, int min, int max, boolean optional, Map<String, Object> params) {
+        return new CardCollection(select("object_selection", "cards_for_effect", title, sa, cards, min, max, optional));
+    }
+
+    @Override
+    public CardCollectionView choosePermanentsToSacrifice(SpellAbility sa, int min, int max, CardCollectionView cards, String title) {
+        return new CardCollection(select("object_selection", "sacrifice_effect", title, sa, cards, min, max, false));
+    }
+
+    @Override
+    public CardCollectionView choosePermanentsToDestroy(SpellAbility sa, int min, int max, CardCollectionView cards, String title) {
+        return new CardCollection(select("object_selection", "destroy_effect", title, sa, cards, min, max, false));
+    }
+
+    @Override
+    public CardCollection chooseCardsToDiscardFrom(Player player, SpellAbility sa, CardCollection cards,
+            int min, int max, CardCollectionView visible) {
+        return new CardCollection(select("object_selection", "discard_effect", "Choose cards to discard", sa, cards, min, max, false));
+    }
+
+    @Override
+    public CardCollectionView chooseCardsToDiscardToMaximumHandSize(int amount) {
+        return new CardCollection(select("object_selection", "cleanup_discard", "Discard to maximum hand size", null,
+                getPlayer().getCardsIn(ZoneType.Hand), amount, amount, false));
+    }
+
+    @Override
+    public Card chooseSingleCardForZoneChange(ZoneType destination, List<ZoneType> origin, SpellAbility sa,
+            CardCollection cards, DelayedReveal reveal, String title, boolean optional, Player decider) {
+        List<Card> chosen = select("object_selection", "zone_change", title, sa, cards, 1, 1, optional);
+        return chosen.isEmpty() ? null : chosen.get(0);
+    }
+
+    @Override
+    public List<Card> chooseCardsForZoneChange(ZoneType destination, List<ZoneType> origin, SpellAbility sa,
+            CardCollection cards, int min, int max, DelayedReveal reveal, String title, Player decider) {
+        return select("object_selection", "zone_change", title, sa, cards, min, max, false);
+    }
+
+    @Override
+    public CardCollectionView orderMoveToZoneList(CardCollectionView cards, ZoneType zone, SpellAbility sa) {
+        return new CardCollection(select("ordering_selection", "zone_order", "Order cards moved to " + zone,
+                sa, cards, cards.size(), cards.size(), false));
+    }
+
+    @Override
+    public List<SpellAbility> orderSimultaneousSa(List<SpellAbility> abilities) {
+        return select("ordering_selection", "trigger_order", "Choose resolution order (first resolves first)",
+                null, abilities, abilities.size(), abilities.size(), false);
+    }
+
+    @Override
+    public void orderAndPlaySimultaneousSa(List<SpellAbility> abilities) {
+        if (abilities.stream().anyMatch(SpellAbility::isCopied)) {
+            decisions.recordStrategicFallback("copied_abilities", "orderAndPlaySimultaneousSa", null,
+                    "Mixed copied ability groups retain the AI preparation path");
+            super.orderAndPlaySimultaneousSa(abilities);
+            return;
+        }
+        List<SpellAbility> ordered = orderSimultaneousSa(abilities);
+        for (int i = ordered.size() - 1; i >= 0; i--) {
+            SpellAbility sa = ordered.get(i);
+            if (sa.isTrigger()) PlaySpellAbility.playSpellAbility(this, getPlayer(), sa);
+            else getGame().getStack().add(sa);
+        }
+    }
+
+    @Override
+    public boolean playTrigger(Card host, WrappedAbility wrapper, boolean mandatory) {
+        return PlaySpellAbility.playSpellAbilityNoStack(this, getPlayer(), wrapper, false);
+    }
+
+    @Override
+    public void playSpellAbilityNoStack(SpellAbility sa, boolean chooseTargets) {
+        PlaySpellAbility.playSpellAbilityNoStack(this, getPlayer(), sa, !chooseTargets);
+    }
+
+    @Override
+    public boolean playSaFromPlayEffect(SpellAbility sa) {
+        return PlaySpellAbility.playSpellAbility(this, getPlayer(), sa);
+    }
+
+    @Override
+    public boolean mulliganKeepHand(Player first, int cardsToReturn) {
+        // Explicit baseline pregame policy, not a Forge AI mulligan decision.
+        return true;
+    }
+
+    private ImmutablePair<CardCollection, CardCollection> arrangeTop(CardCollection cards, String kind) {
+        // Forge has explicitly supplied these cards for the player to look at.
+        CardCollection top = new CardCollection(selections.selectVisible(decisions, observations, getPlayer(),
+                "object_selection", kind + "_top", "Choose cards to keep on top", null,
+                cards, 0, cards.size(), false, true));
+        CardCollection other = new CardCollection(cards);
+        other.removeAll(top);
+        CardCollection orderedTop = new CardCollection(selections.selectVisible(decisions, observations, getPlayer(),
+                "ordering_selection", kind + "_top_order", "Order cards kept on top", null,
+                top, top.size(), top.size(), false, true));
+        CardCollection orderedOther = new CardCollection(selections.selectVisible(decisions, observations, getPlayer(),
+                "ordering_selection", kind + "_other_order", "Order remaining cards", null,
+                other, other.size(), other.size(), false, true));
+        return ImmutablePair.of(orderedTop, orderedOther);
+    }
+
+    @Override
+    public ImmutablePair<CardCollection, CardCollection> arrangeForScry(CardCollection cards) { return arrangeTop(cards, "scry"); }
+
+    @Override
+    public ImmutablePair<CardCollection, CardCollection> arrangeForSurveil(CardCollection cards) { return arrangeTop(cards, "surveil"); }
+
+    @Override
+    public boolean chooseBinary(SpellAbility sa, String prompt, BinaryChoiceType kind, Boolean defaultChoice) {
+        return yesNo("binary_" + kind.name(), prompt, sa);
+    }
+
+    @Override
+    public boolean chooseBinary(SpellAbility sa, String prompt, BinaryChoiceType kind, Map<String, Object> params) {
+        return yesNo("binary_" + kind.name(), prompt, sa);
+    }
+
+    @Override
+    public SpellAbility chooseSingleSpellForEffect(List<SpellAbility> abilities, SpellAbility sa, String title, Map<String, Object> params) {
+        List<SpellAbility> result = select("object_selection", "spell_ability", title, sa, abilities, 1, 1, false);
+        return result.isEmpty() ? null : result.get(0);
+    }
+
+    @Override
+    public List<SpellAbility> chooseSpellAbilitiesForEffect(List<SpellAbility> abilities, SpellAbility sa, String title, int num, Map<String, Object> params) {
+        return select("object_selection", "spell_abilities", title, sa, abilities, num, num, false);
+    }
+
+    @Override
+    public forge.game.staticability.StaticAbility chooseSingleStaticAbility(List<forge.game.staticability.StaticAbility> abilities) {
+        List<forge.game.staticability.StaticAbility> result = select("object_selection", "static_ability", "Choose static ability", null, abilities, 1, 1, false);
+        return result.isEmpty() ? null : result.get(0);
+    }
+
+    @Override
+    public CardCollectionView cheatShuffle(CardCollectionView cards) { return cards; }
+
+    @Override
+    public SpellAbility getAbilityToPlay(Card host, List<SpellAbility> abilities, forge.util.ITriggerEvent event) {
+        List<SpellAbility> chosen = select("object_selection", "ability", "Choose ability", null, abilities, 1, 1, false);
+        return chosen.isEmpty() ? null : chosen.get(0);
+    }
+
+    @Override
+    public List<Card> chooseCardsForSplice(SpellAbility sa, List<Card> cards) {
+        if (cards.isEmpty()) return List.of();
+        return super.chooseCardsForSplice(sa, cards);
+    }
+
+    @Override
+    public List<SpellAbility> chooseSaToActivateFromOpeningHand(List<SpellAbility> abilities) {
+        if (abilities.isEmpty()) return List.of();
+        return super.chooseSaToActivateFromOpeningHand(abilities);
+    }
+
+    @Override
+    public Player chooseStartingPlayer(boolean firstGame) { return getPlayer(); }
+
+    @Override
+    public CardCollectionView tuckCardsViaMulligan(CardCollectionView hand, int count) {
+        return new CardCollection(select("object_selection", "mulligan_bottom", "Choose cards to bottom",
+                null, hand, count, count, false));
     }
 
     @Override
@@ -122,9 +353,6 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
 
     @Override
     public boolean chooseTargetsFor(SpellAbility ability) {
-        if (!isExecutingExternalAction(ability)) {
-            return super.chooseTargetsFor(ability);
-        }
         // Random target selection and divided allocations are separate kinds
         // of choices. Keep Forge authoritative for those until their wire
         // contracts are externalized explicitly.
@@ -176,8 +404,7 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
             int max,
             boolean allowRepeat
     ) {
-        if (!isExecutingExternalAction(ability)
-                || !modeChoices.supports(ability, possible, min, max, allowRepeat)) {
+        if (!modeChoices.supports(ability, possible, min, max, allowRepeat)) {
             return super.chooseModeForAbility(ability, possible, min, max, allowRepeat);
         }
 
@@ -228,6 +455,7 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
             SpellAbility ability,
             List<OptionalCostValue> costs
     ) {
+        if (costs.isEmpty()) return List.of();
         if (!isExecutingExternalAction(ability) || !optionalCosts.supports(costs)) {
             return super.chooseOptionalCosts(ability, costs);
         }
@@ -249,9 +477,6 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
             String prompt
     ) {
         String actionId = sourceActionId();
-        if (actionId == null) {
-            return super.getCostDecisionMaker(player, ability, effect, prompt);
-        }
         return new AsphodelCostDecision(
                 getGame(),
                 player,

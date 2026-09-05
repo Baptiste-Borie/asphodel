@@ -1267,3 +1267,14 @@ Normal attack/block declarations now pause for external choices through the
 existing broker. Forge validates complete declarations and executes combat.
 Damage distribution and combat payment gaps are explicit, recorded fallbacks.
 Earlier milestone readiness tables above describe their historical scope.
+
+
+## Remaining external decisions V1k
+
+See [the controller audit and validated closure scope](external-controller-audit-v1k.md).
+Ordinary triggers now take Forge's shared player execution path; Node chooses
+their supported targets, optional acceptance and resolution order. Generic
+object choices cover the legend rule and common effect selections. Scry and
+surveil are external. Pregame policy is explicitly keep/self-start, with native
+shuffle preserved. Unsupported controller and cost paths are recorded in the
+session's strategic fallback list.
