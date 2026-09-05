@@ -211,3 +211,13 @@ Backend: 16 tests pass; backend and frontend builds pass. `git diff --check`
 passes; vendor/forge remains clean at the pinned SHA. V1k adds no intelligent
 agent, dataset persistence, or frontend gameplay. The recorded D categories
 remain explicit limitations, not supported strategic decisions.
+
+
+## V1l follow-up
+
+The full-game check externalizes `chooseCounterType` through the generic
+candidate selector (single mandatory candidates are deterministic), and routes
+nominal zero-mana ability payments through native player payment setup.
+These close the extra calls exposed by Krenko's native attack trigger.
+See the [final readiness report](external-controller-readiness-v1l.md) for the
+scoped zero-fallback assertion and the two allowed damage fallback calls.

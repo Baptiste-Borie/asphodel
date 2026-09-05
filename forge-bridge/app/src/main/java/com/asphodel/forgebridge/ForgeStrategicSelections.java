@@ -53,6 +53,7 @@ final class ForgeStrategicSelections {
     }
 
     private static String label(Object value, Player observer, boolean revealed) {
+        if (value instanceof forge.game.card.CounterType counter) return counter.getName();
         if (value instanceof Boolean yes) return yes ? "Yes" : "No";
         Card card = value instanceof Card c ? c
                 : value instanceof SpellAbility sa ? sa.getHostCard()

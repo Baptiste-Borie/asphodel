@@ -1,4 +1,8 @@
-# Asphodel Forge Bridge — External Targets V1f
+# Asphodel Forge Bridge — External Controller V1l
+
+Current readiness: [V1j–V1l report and matrix](external-controller-readiness-v1l.md).
+A test-only external controller completes a 100-card Commander game; explicit
+combat damage and specialized-decision fallbacks remain.
 
 ## Scope
 

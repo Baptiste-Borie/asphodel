@@ -223,6 +223,12 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
     public ImmutablePair<CardCollection, CardCollection> arrangeForSurveil(CardCollection cards) { return arrangeTop(cards, "surveil"); }
 
     @Override
+    public forge.game.card.CounterType chooseCounterType(List<forge.game.card.CounterType> options,
+            SpellAbility sa, String prompt, Map<String, Object> params) {
+        return select("object_selection", "counter_type", prompt, sa, options, 1, 1, false).get(0);
+    }
+
+    @Override
     public boolean chooseBinary(SpellAbility sa, String prompt, BinaryChoiceType kind, Boolean defaultChoice) {
         return yesNo("binary_" + kind.name(), prompt, sa);
     }
@@ -497,6 +503,16 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
             ManaConversionMatrix matrix,
             boolean effect
     ) {
+        if (!externalManaPaymentActive && (toPay.isZero() || toPay.isNoCost())) {
+            externalManaPaymentActive = true;
+            try {
+                // Even nominally zero costs use Forge's native adjustment/payment path.
+                return PlaySpellAbility.payManaCost(this, toPay, costPartMana, ability,
+                        getPlayer(), prompt, matrix, effect);
+            } finally {
+                externalManaPaymentActive = false;
+            }
+        }
         if (externalManaPaymentActive
                 || !isExecutingExternalAction(ability)
                 || !manaPayments.supportsPaymentShape(ability, costPartMana, effect)) {

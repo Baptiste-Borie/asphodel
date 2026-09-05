@@ -1,4 +1,9 @@
 import assert from "node:assert/strict";
+import { writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { driveBaseline } from "./testing/external-controller-driver.js";
+import { commanderFixtures } from "./testing/commander-fixtures.js";
 import { afterEach, describe, it } from "node:test";
 import { DeckService } from "../decks/deck-service.js";
 import type { DatabaseConnection } from "../db/client.js";
@@ -717,6 +722,59 @@ afterEach(async () => {
 });
 
 describe("ForgeBridgeClient integration", () => {
+  it("V1l drives a 100-card Commander game with an external baseline and audited fallbacks", { timeout: 120_000 }, async () => {
+    const client = createClient(); await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const decks = commanderFixtures();
+    for (const deck of decks) assert.equal(deck.cards.reduce((sum, c) => sum + c.quantity, 0), 100);
+    const { sessionId } = await external.startSpecs(...decks, { seed: 42 });
+    const run = await driveBaseline(external, sessionId);
+    await writeFile(join(tmpdir(), "asphodel-v1l-debug.json"), JSON.stringify(run, null, 2));
+    const result = run.latest.result;
+    assert.ok(result?.gameOver);
+    assert.equal(result.commanderRulesActive, true);
+    assert.equal(run.latest.pendingDecision, undefined);
+    assert.ok(result.turns >= 10, `Only ${result.turns} turns`);
+    assert.ok(run.latest.progress.spellsCast >= 3);
+    assert.ok(run.trace.some((t) => t.type === "attackers_selection"));
+    assert.ok(run.trace.some((t) => t.type === "blockers_selection"));
+    assert.ok(run.observations.some((o) => o.life.some((life) => life < 40)));
+    assert.ok(run.observations.some((o) => o.battlefield >= 6));
+    assert.ok(run.observations.some((o) => o.graveyard > 0));
+    assert.ok(run.observations.some((o) => o.commanderCasts > 0));
+    assert.ok(run.observations.some((o) => o.goblinTokens > 0));
+    assert.ok(run.observations.every((o) => o.commanders.length === 2 && new Set(o.commanders).size === 2));
+    assert.equal(new Set(run.trace.map((t) => t.decisionId)).size, run.trace.length);
+    const fallbacks = run.latest.forgeAiStrategicFallbacks;
+    const unsupported = fallbacks.filter((f) => f.family !== "combat_damage");
+    assert.deepEqual(unsupported, [], JSON.stringify(fallbacks));
+    assert.ok(fallbacks.every((f) => f.method === "assignCombatDamage" && f.sourceCardRef && f.reason));
+    const report = { seed: 42, turns: result.turns, decisions: run.trace.length,
+      completed: true, supportedStrategicFallbacks: unsupported.length,
+      unsupportedCombatDamageFallbacks: fallbacks.length, progress: run.latest.progress,
+      decisionTypes: [...new Set(run.trace.map((t) => t.type))], result };
+    const artifact = join(tmpdir(), "asphodel-v1l-trace.json");
+    await writeFile(artifact, JSON.stringify({ report, trace: run.trace, fallbacks }, null, 2));
+    console.log(`V1l validation: ${JSON.stringify(report)}; trace=${artifact}`);
+    assert.deepEqual(await client.request({ type: "ping" }), { message: "pong" });
+  });
+
+  it("V1l watchdog reports the paused state and cancellation clears the session", { timeout: 30_000 }, async () => {
+    const client = createClient(); await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const { sessionId } = await external.startSpecs(...commanderFixtures(), { seed: 12345 });
+    try {
+      await assert.rejects(driveBaseline(external, sessionId,
+        { maxDecisions: 1, maxSteps: 5000, timeoutMs: 15_000 }),
+        /decision watchdog exceeded: .*latestObservation.*latestPendingDecision.*recentTrace/);
+    } finally { await external.cancel(sessionId); }
+    const ended = await external.get(sessionId);
+    assert.equal(ended.status, "cancelled");
+    assert.equal(ended.pendingDecision, undefined);
+    assert.equal(ended.observation, undefined);
+    assert.deepEqual(await client.request({ type: "ping" }), { message: "pong" });
+  });
+
   for (const spell of ["Opt", "Consider"]) {
     it(`external ${spell === "Opt" ? "scry" : "surveil"} chooses the exact revealed card`, { timeout: 60_000 }, async () => {
       const client = createClient(); await client.start();
