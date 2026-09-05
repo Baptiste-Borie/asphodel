@@ -6,6 +6,10 @@ export interface ParsedCard {
   quantity: number;
   name: string;
   section: DeckSection;
+  /** Optional printing identity ("(DMU) 225" style export suffix) — present only when the line named one. */
+  setCode?: string;
+  /** A string, never a number: collector numbers are not guaranteed to be purely numeric ("123a", "★12"). */
+  collectorNumber?: string;
 }
 
 export interface ParseIssue {
@@ -28,8 +32,12 @@ const sectionByHeading: Record<string, DeckSection> = {
   mainboard: "mainboard",
 };
 
-// Groupe 1 : la quantité. Groupe 2 : le nom complet de la carte.
-const cardLinePattern = /^(\d+)\s*x\s+(.+)$/i;
+// Groupe 1 : la quantité. Groupe 2 : le reste de la ligne (nom, éventuellement suivi de l'empreinte).
+// Le "x" est optionnel : "1x Sol Ring" et "1 Sol Ring" sont tous deux acceptés.
+const cardLinePattern = /^(\d+)\s*x?\s+(.+)$/i;
+// Empreinte optionnelle façon export ("Nom (DMU) 225") : groupe 1 = nom, groupe 2 = code d'édition,
+// groupe 3 = numéro de collection (chaîne : "225", "123a", "★12"... jamais un entier supposé).
+const printingSuffixPattern = /^(.+)\(([A-Za-z0-9]+)\)\s*(\S+)$/;
 
 export function parseDeckList(text: string): ParsedDeck {
   const cards: ParsedCard[] = [];
@@ -70,7 +78,22 @@ export function parseDeckList(text: string): ParsedDeck {
     }
 
     const quantity = Number(match[1]);
-    const name = match[2]?.trim() ?? "";
+    let name = match[2]?.trim() ?? "";
+    let setCode: string | undefined;
+    let collectorNumber: string | undefined;
+
+    // Only strips a trailing "(SET) NUMBER" when the whole shape matches cleanly and leaves a
+    // non-empty name — an unclosed/incomplete suffix is kept as plain (harmless) name text rather
+    // than rejected, since it is not actually ambiguous with any real quantity/name issue below.
+    const printingMatch = printingSuffixPattern.exec(name);
+    if (printingMatch) {
+      const candidateName = printingMatch[1]!.trim();
+      if (candidateName !== "") {
+        name = candidateName;
+        setCode = printingMatch[2]!.toLowerCase();
+        collectorNumber = printingMatch[3]!;
+      }
+    }
 
     if (!Number.isSafeInteger(quantity) || quantity < 1) {
       issues.push({
@@ -90,7 +113,10 @@ export function parseDeckList(text: string): ParsedDeck {
       return;
     }
 
-    cards.push({ quantity, name, section: currentSection });
+    cards.push({
+      quantity, name, section: currentSection,
+      ...(setCode !== undefined && collectorNumber !== undefined ? { setCode, collectorNumber } : {}),
+    });
   });
 
   if (cards.length === 0 && issues.length === 0) {

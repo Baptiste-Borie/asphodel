@@ -42,9 +42,14 @@ function agentCard() {
 function humanObservation(turn = 1) { return observation("player-1", "player-2", turn, [humanCard()]); }
 function agentObservation(turn = 1) { return observation("player-2", "player-1", turn, [agentCard()]); }
 
+// Two legal actions (pass + a real one) so a human decision actually reaches the browser instead
+// of being safely auto-passed by the backend (see priority-auto-pass.test.ts for that behavior).
 function priorityDecision(playerId: string, id: string): Extract<Decision, { type: "priority_action" }> {
   return { decisionId: id, type: "priority_action", playerId, context: { turn: 1, phase: "main1", activePlayerId: playerId, priorityPlayerId: playerId, stackSize: 0 },
-    actions: [{ actionId: "pass", type: "pass", label: "Pass priority", cardRef: null, cardName: null, sourceZone: null, abilityText: null, manaCost: null, requiresTargets: false }] };
+    actions: [
+      { actionId: "pass", type: "pass", label: "Pass priority", cardRef: null, cardName: null, sourceZone: null, abilityText: null, manaCost: null, requiresTargets: false },
+      { actionId: "cast-1", type: "cast_spell", label: "Cast a spell", cardRef: "card-1", cardName: "Some Spell", sourceZone: "hand", abilityText: null, manaCost: "1", requiresTargets: false },
+    ] };
 }
 
 function fakeBridge(): PlaytestBridge {

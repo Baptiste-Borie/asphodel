@@ -1,8 +1,9 @@
 import "../styles/playtest.css";
+import "../styles/tabletop.css";
 import { apiRequest } from "../api/api-client.js";
 import { endPlaytest, getActivePlaytest, getPlaytestReport, getPlaytestState, startPlaytest, submitPlaytestChoice } from "../api/playtest-api.js";
 import { element } from "../dom.js";
-import { collectVisibleCardNames, renderBoard, type BoardCallbacks } from "./board-renderer.js";
+import { collectVisibleCardNames, opponentPlayer, renderBattlefieldHalf, renderHand, selfPlayer, type BoardCallbacks } from "./board-renderer.js";
 import { createCardPreviewPanel } from "./card-preview.js";
 import { CardPresentationStore } from "./card-presentation-store.js";
 import { renderDecision } from "./decision-renderer.js";
@@ -10,8 +11,8 @@ import type { AgentCardObservation, AgentObservation, DeckInput, PublicGameEvent
 
 const POLL_INTERVAL_MS = 300;
 const TERMINAL_STATUSES = new Set(["completed", "ended_by_human", "failed"]);
-const MAX_VISIBLE_EVENTS = 30;
-const RECENT_EVENT_COUNT = 5;
+const MAX_VISIBLE_ACTIONS = 6;
+const RECENT_ACTION_COUNT = 3;
 
 interface DeckOption {
   id: number;
@@ -74,34 +75,31 @@ function createDeckPicker(labelText: string): { element: HTMLElement; getValue: 
   };
 }
 
-function renderPublicEvents(container: HTMLElement, events: PublicGameEvent[]): void {
+function renderLife(container: HTMLElement, label: string, life: number | undefined): void {
   container.replaceChildren();
-  const heading = document.createElement("h3");
-  heading.className = "events-heading";
-  heading.textContent = "Activity";
-  container.append(heading);
-  const visible = events.slice(-MAX_VISIBLE_EVENTS).reverse();
-  if (!visible.length) {
-    const empty = document.createElement("p");
-    empty.className = "events-empty";
-    empty.textContent = "Nothing has happened yet.";
-    container.append(empty);
-    return;
-  }
-  const list = document.createElement("ul");
-  list.className = "events-list";
+  const name = document.createElement("p");
+  name.className = "table-life-name";
+  name.textContent = label;
+  const value = document.createElement("p");
+  value.className = "table-life-value";
+  value.textContent = `${life ?? "?"}`;
+  container.append(name, value);
+}
+
+/** Compact Hearthstone-style history: last few actions, most recent least faded. Public info only (Asphodel's own accepted actions — the human already sees their own choices directly). */
+function renderActions(container: HTMLElement, events: PublicGameEvent[]): void {
+  container.replaceChildren();
+  const visible = events.slice(-MAX_VISIBLE_ACTIONS);
   visible.forEach((event, index) => {
-    const li = document.createElement("li");
-    li.className = index < RECENT_EVENT_COUNT ? "events-item events-item--recent" : "events-item events-item--faded";
+    const item = document.createElement("p");
+    const isRecent = index >= visible.length - RECENT_ACTION_COUNT;
+    item.className = isRecent ? "table-action-item" : "table-action-item table-action-item--faded";
     const turn = document.createElement("span");
-    turn.className = "events-turn";
+    turn.className = "table-action-turn";
     turn.textContent = `T${event.turn}`;
-    const text = document.createElement("span");
-    text.textContent = event.text;
-    li.append(turn, text);
-    list.append(li);
+    item.append(turn, document.createTextNode(event.text));
+    container.append(item);
   });
-  container.append(list);
 }
 
 /** Wires the whole Play screen (setup, live game, end) into #play-view. Talks only to the backend playtest API — never to Forge directly. */
@@ -120,15 +118,17 @@ export function initPlaytestView(): void {
 
   // The backend only ever exposes `observation` while it is the human's own turn to decide (V2c
   // isolation: it is never Asphodel's). The frontend remembers the last one it legitimately saw so
-  // the board stays visible while Asphodel is thinking, instead of flashing blank every poll.
+  // the table stays visible while Asphodel is thinking, instead of flashing blank every poll.
   let lastObservation: AgentObservation | null = null;
   const cardStore = new CardPresentationStore();
   const previewPanel = createCardPreviewPanel();
 
-  // Persistent game-screen containers, built once per game — never torn down by a poll, so hover/
-  // pinned-preview/scroll position survive polling. Each section only re-renders when its own
-  // underlying data actually changed.
-  let boardContainer: HTMLElement, statusLine: HTMLElement, eventsContainer: HTMLElement, decisionContainer: HTMLElement;
+  // Persistent game-screen elements, built once per game — never torn down by a poll, so the
+  // pinned preview, menu state and any hover survive polling. Each section only re-renders when
+  // its own underlying data actually changed.
+  let asphodelLifeEl: HTMLElement, humanLifeEl: HTMLElement, actionsEl: HTMLElement;
+  let asphodelHalf: HTMLElement, humanHalf: HTMLElement, handContainer: HTMLElement;
+  let decisionDock: HTMLElement, menuPanel: HTMLElement, menuDeckInfo: HTMLElement;
   let lastObservationKey = "";
   let lastPresentationVersion = 0;
   let renderedPresentationVersion = -1;
@@ -149,6 +149,8 @@ export function initPlaytestView(): void {
     lastObservationKey = "";
     lastEventsKey = "";
     lastDecisionKey = "";
+    document.body.classList.remove("tabletop-active");
+    previewPanel.close();
     setupSection.hidden = false;
     gameSection.hidden = true;
     endSection.hidden = true;
@@ -156,12 +158,14 @@ export function initPlaytestView(): void {
   }
 
   function showGameScreen(): void {
+    document.body.classList.add("tabletop-active");
     setupSection.hidden = true;
     gameSection.hidden = false;
     endSection.hidden = true;
   }
 
   function showEndScreen(): void {
+    document.body.classList.remove("tabletop-active");
     setupSection.hidden = true;
     gameSection.hidden = true;
     endSection.hidden = false;
@@ -189,7 +193,7 @@ export function initPlaytestView(): void {
       const result = await getActivePlaytest();
       if ("sessionId" in result) {
         sessionId = result.sessionId;
-        buildGameScreen();
+        buildGameScreen(result.humanDeckName, result.asphodelDeckName);
         showGameScreen();
         pollTimer = setInterval(() => void poll(), POLL_INTERVAL_MS);
         await poll();
@@ -267,7 +271,7 @@ export function initPlaytestView(): void {
     try {
       const started = await startPlaytest(request);
       sessionId = started.sessionId;
-      buildGameScreen();
+      buildGameScreen(null, null);
       showGameScreen();
       pollTimer = setInterval(() => void poll(), POLL_INTERVAL_MS);
       await poll();
@@ -280,49 +284,69 @@ export function initPlaytestView(): void {
     }
   }
 
-  function buildGameScreen(): void {
+  /** The battlefield fills the screen; header/nav/import chrome is hidden via the "tabletop-active" body class (see styles/tabletop.css). */
+  function buildGameScreen(humanDeckName: string | null, asphodelDeckName: string | null): void {
     gameSection.replaceChildren();
-    gameSection.className = "playtest-game";
+    gameSection.className = "table-root";
 
-    const layout = document.createElement("div");
-    layout.className = "playtest-layout";
+    const battlefield = document.createElement("div");
+    battlefield.className = "table-battlefield";
+    asphodelHalf = document.createElement("div");
+    asphodelHalf.className = "table-battlefield-half table-battlefield-half--asphodel";
+    humanHalf = document.createElement("div");
+    humanHalf.className = "table-battlefield-half table-battlefield-half--human";
+    battlefield.append(asphodelHalf, humanHalf);
 
-    const main = document.createElement("div");
-    main.className = "playtest-main";
-    statusLine = document.createElement("p");
-    statusLine.className = "playtest-status-line";
-    boardContainer = document.createElement("div");
-    boardContainer.className = "playtest-board";
-    main.append(statusLine, boardContainer);
+    const rail = document.createElement("div");
+    rail.className = "table-rail-left";
+    asphodelLifeEl = document.createElement("div");
+    asphodelLifeEl.className = "table-life table-life--asphodel";
+    actionsEl = document.createElement("div");
+    actionsEl.className = "table-actions";
+    humanLifeEl = document.createElement("div");
+    humanLifeEl.className = "table-life table-life--human";
+    rail.append(asphodelLifeEl, actionsEl, humanLifeEl);
+    renderLife(asphodelLifeEl, "ASPHODEL", undefined);
+    renderLife(humanLifeEl, "YOU", undefined);
 
-    const sidebar = document.createElement("div");
-    sidebar.className = "playtest-sidebar";
-    previewPanel.element.className = "card-preview-panel";
-    eventsContainer = document.createElement("div");
-    eventsContainer.className = "playtest-events-panel";
-    sidebar.append(previewPanel.element, eventsContainer);
-
-    layout.append(main, sidebar);
-
-    const dock = document.createElement("div");
-    dock.className = "decision-dock";
-    decisionContainer = document.createElement("div");
-    decisionContainer.className = "decision-dock-content";
+    const menuButton = document.createElement("button");
+    menuButton.type = "button";
+    menuButton.className = "table-menu-button";
+    menuButton.textContent = "⋮";
+    menuButton.setAttribute("aria-label", "Menu");
+    menuPanel = document.createElement("div");
+    menuPanel.className = "table-menu-panel";
+    menuPanel.hidden = true;
+    menuDeckInfo = document.createElement("p");
+    menuDeckInfo.className = "table-menu-deck-info";
     const endButton = document.createElement("button");
     endButton.type = "button";
-    endButton.className = "danger-button decision-dock-end";
+    endButton.className = "danger-button table-menu-end-button";
     endButton.textContent = "End Playtest";
-    endButton.addEventListener("click", () => void endGame());
-    dock.append(decisionContainer, endButton);
+    endButton.addEventListener("click", () => { menuPanel.hidden = true; void endGame(); });
+    menuPanel.append(menuDeckInfo, endButton);
+    menuButton.addEventListener("click", (event) => { event.stopPropagation(); menuPanel.hidden = !menuPanel.hidden; });
+    document.addEventListener("click", () => { menuPanel.hidden = true; });
+    menuPanel.addEventListener("click", (event) => event.stopPropagation());
+    if (humanDeckName && asphodelDeckName) setDeckInfo(humanDeckName, asphodelDeckName);
 
-    gameSection.append(layout, dock);
+    decisionDock = document.createElement("div");
+    decisionDock.className = "table-decision-dock";
+
+    handContainer = document.createElement("div");
+    handContainer.className = "table-hand";
+
+    gameSection.append(battlefield, rail, menuButton, menuPanel, previewPanel.element, decisionDock, handContainer);
+  }
+
+  function setDeckInfo(humanDeckName: string, asphodelDeckName: string): void {
+    menuDeckInfo.textContent = `${humanDeckName} vs ${asphodelDeckName}`;
   }
 
   const boardCallbacks: BoardCallbacks = {
     getPresentation: (name) => cardStore.get(name),
-    onCardHover: (card: AgentCardObservation) => previewPanel.showHover(card, card.name ? cardStore.get(card.name) : null),
-    onCardHoverEnd: () => previewPanel.clearHover(),
     onCardActivate: (card: AgentCardObservation) => previewPanel.togglePin(card, card.name ? cardStore.get(card.name) : null),
+    isSelected: (card: AgentCardObservation) => previewPanel.isSelected(card.cardRef),
   };
 
   async function poll(): Promise<void> {
@@ -330,14 +354,14 @@ export function initPlaytestView(): void {
     try {
       const state = await getPlaytestState(sessionId);
       if (state.observation) lastObservation = state.observation;
+      if (state.humanDeckName && state.asphodelDeckName) setDeckInfo(state.humanDeckName, state.asphodelDeckName);
 
       let presentationChanged = false;
       if (lastObservation) presentationChanged = await cardStore.ensure(collectVisibleCardNames(lastObservation));
       if (presentationChanged) lastPresentationVersion++;
 
-      renderStatus(state);
-      renderBoardIfChanged();
-      renderEventsIfChanged(state.publicEvents);
+      renderTableIfChanged();
+      renderActionsIfChanged(state.publicEvents);
       renderDecisionIfChanged(state);
 
       if (TERMINAL_STATUSES.has(state.status)) {
@@ -347,55 +371,65 @@ export function initPlaytestView(): void {
       }
     } catch (error) {
       stopPolling();
-      statusLine.textContent = error instanceof Error ? error.message : "Lost contact with the playtest.";
+      decisionDock.textContent = error instanceof Error ? error.message : "Lost contact with the playtest.";
     }
   }
 
-  function renderStatus(state: WebPlaytestStateDTO): void {
-    if (submitting) { statusLine.textContent = "Submitting choice…"; return; }
-    statusLine.textContent = {
-      starting: "Starting Forge…",
-      running: "Asphodel is thinking…",
-      waiting_for_human: "Waiting for you",
-      completed: "", ended_by_human: "", failed: "",
-    }[state.status];
+  function renderStatusLine(status: WebPlaytestStateDTO["status"]): void {
+    decisionDock.replaceChildren();
+    const text = submitting ? "Submitting choice…" : {
+      starting: "Starting Forge…", running: "Asphodel is thinking…",
+      waiting_for_human: "", completed: "", ended_by_human: "", failed: "",
+    }[status];
+    if (!text) return;
+    const line = document.createElement("p");
+    line.className = "table-status-line";
+    line.textContent = text;
+    decisionDock.append(line);
   }
 
-  function renderBoardIfChanged(): void {
+  function renderTableIfChanged(): void {
     if (!lastObservation) return;
     const key = JSON.stringify(lastObservation);
     if (key === lastObservationKey && lastPresentationVersion === renderedPresentationVersion) return;
     lastObservationKey = key;
     renderedPresentationVersion = lastPresentationVersion;
-    renderBoard(boardContainer, lastObservation, boardCallbacks);
+    const opponent = opponentPlayer(lastObservation);
+    const self = selfPlayer(lastObservation);
+    if (opponent) { renderLife(asphodelLifeEl, "ASPHODEL", opponent.life); renderBattlefieldHalf(asphodelHalf, opponent, boardCallbacks); }
+    if (self) {
+      renderLife(humanLifeEl, "YOU", self.life);
+      renderBattlefieldHalf(humanHalf, self, boardCallbacks);
+      if (self.role === "self") renderHand(handContainer, self.hand, (name) => cardStore.get(name));
+    }
   }
 
-  function renderEventsIfChanged(events: PublicGameEvent[]): void {
+  function renderActionsIfChanged(events: PublicGameEvent[]): void {
     const key = JSON.stringify(events);
     if (key === lastEventsKey) return;
     lastEventsKey = key;
-    renderPublicEvents(eventsContainer, events);
+    renderActions(actionsEl, events);
   }
 
   function renderDecisionIfChanged(state: WebPlaytestStateDTO): void {
-    const key = JSON.stringify(state.pendingDecision);
+    const key = JSON.stringify(state.pendingDecision) + (submitting ? ":submitting" : "");
     if (key === lastDecisionKey) return;
     lastDecisionKey = key;
     if (state.pendingDecision) {
-      renderDecision(decisionContainer, state.pendingDecision, (choice) => void submitChoice(choice));
+      renderDecision(decisionDock, state.pendingDecision, (choice) => void submitChoice(choice));
     } else {
-      decisionContainer.replaceChildren();
+      renderStatusLine(state.status);
     }
   }
 
   async function submitChoice(choice: Parameters<typeof submitPlaytestChoice>[1]): Promise<void> {
     if (!sessionId) return;
     submitting = true;
-    statusLine.textContent = "Submitting choice…";
+    renderStatusLine("running");
     try {
       await submitPlaytestChoice(sessionId, choice);
     } catch (error) {
-      statusLine.textContent = error instanceof Error ? error.message : "That choice was not accepted.";
+      decisionDock.textContent = error instanceof Error ? error.message : "That choice was not accepted.";
     } finally {
       submitting = false;
     }
@@ -410,7 +444,7 @@ export function initPlaytestView(): void {
       await renderEnd(state);
       showEndScreen();
     } catch (error) {
-      statusLine.textContent = error instanceof Error ? error.message : "Could not end the playtest.";
+      decisionDock.textContent = error instanceof Error ? error.message : "Could not end the playtest.";
       pollTimer = setInterval(() => void poll(), POLL_INTERVAL_MS);
     }
   }

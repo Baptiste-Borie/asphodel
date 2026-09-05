@@ -173,8 +173,12 @@ export class DeckService {
 
     const entries = aggregateEntries(parsed.cards);
     const requestedNames = new Map<string, string>();
+    const requestedPrintings = new Map<string, { setCode: string; collectorNumber: string }>();
     for (const entry of entries) {
       requestedNames.set(entry.normalizedName, entry.name);
+      if (entry.setCode && entry.collectorNumber) {
+        requestedPrintings.set(entry.normalizedName, { setCode: entry.setCode, collectorNumber: entry.collectorNumber });
+      }
     }
 
     const normalizedNames = [...requestedNames.keys()];
@@ -202,7 +206,13 @@ export class DeckService {
     for (const [normalizedName, requestedName] of requestedNames) {
       if (resolutionByRequestedName.has(normalizedName)) continue;
 
-      const resolved = await this.cardProvider.findByExactName(requestedName);
+      // Preferred resolution: the exact printing the decklist named (set + collector number).
+      // Never silently drop it — only fall back to a plain name lookup when the printing itself
+      // is unavailable, and only fail the import once neither resolves.
+      const printing = requestedPrintings.get(normalizedName);
+      const resolved =
+        (printing && (await this.cardProvider.findBySetAndCollector(printing.setCode, printing.collectorNumber))) ||
+        (await this.cardProvider.findByExactName(requestedName));
       if (!resolved) {
         notFound.push(requestedName);
         continue;

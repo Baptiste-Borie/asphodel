@@ -29,10 +29,15 @@ function observation(selfId: string, opponentId: string, turn: number, hand: Age
   return { selfPlayerId: selfId, gameRef: "game", game: context, stack: [], players: [self, { ...publicSelf, role: "opponent", playerId: opponentId, name: opponentId, externalController: false, battlefield: [] }] };
 }
 
+// Two legal actions (pass + a real one) so these routing/end tests exercise an actual human/agent
+// decision, not the backend's safe auto-pass short-circuit (see priority-auto-pass.test.ts for that).
 function priorityDecision(playerId: string, turn: number): Extract<Decision, { type: "priority_action" }> {
   return { decisionId: `d-${playerId}-${turn}`, type: "priority_action", playerId,
     context: { turn, phase: "main1", activePlayerId: playerId, priorityPlayerId: playerId, stackSize: 0 },
-    actions: [{ actionId: "pass", type: "pass", label: "Pass priority", cardRef: null, cardName: null, sourceZone: null, abilityText: null, manaCost: null, requiresTargets: false }] };
+    actions: [
+      { actionId: "pass", type: "pass", label: "Pass priority", cardRef: null, cardName: null, sourceZone: null, abilityText: null, manaCost: null, requiresTargets: false },
+      { actionId: "cast-1", type: "cast_spell", label: "Cast a spell", cardRef: "card-1", cardName: "Some Spell", sourceZone: "hand", abilityText: null, manaCost: "1", requiresTargets: false },
+    ] };
 }
 
 function completedSnapshot(winnerId: string): ForgeExternalMatchSnapshot {
@@ -245,4 +250,35 @@ it("TerminalHumanDecisionProvider treats \"end\" the same as \"quit\" and throws
   input.push("end\n");
   await assert.rejects(promise, (error: unknown) => error instanceof HumanEndMatchError);
   provider.close();
+});
+
+it("a sole forced pass never reaches the human provider: the orchestrator auto-submits it and moves on", async () => {
+  const human = new FakeHuman(), agent = new FakeAgent();
+  const soleAndPass: Extract<Decision, { type: "priority_action" }> = {
+    decisionId: "d-sole-pass", type: "priority_action", playerId: "player-1",
+    context: { turn: 1, phase: "main1", activePlayerId: "player-1", priorityPlayerId: "player-1", stackSize: 0 },
+    actions: [{ actionId: "pass", type: "pass", label: "Pass priority", cardRef: null, cardName: null, sourceZone: null, abilityText: null, manaCost: null, requiresTargets: false }],
+  };
+  const submittedDecisionIds: string[] = [];
+  let call = 0;
+  const client: AgentMatchTransport = {
+    startSpecs: async () => ({ sessionId: "s", status: "running" }),
+    get: async () => {
+      call++;
+      if (call === 1) return { sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: observation("player-1", "player-2", 1), pendingDecision: soleAndPass };
+      return completedSnapshot("player-1");
+    },
+    cancel: async () => ({ sessionId: "s", status: "cancelled", cancelled: true }),
+    submitDecision: async (_s, decisionId) => { submittedDecisionIds.push(decisionId); return { accepted: true }; },
+    submitTarget: async () => ({ accepted: true }), submitMode: async () => ({ accepted: true }), submitValue: async () => ({ accepted: true }),
+    submitOptionalCost: async () => ({ accepted: true }), submitManaOption: async () => ({ accepted: true }),
+    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }),
+  };
+  const owners: string[] = [];
+  const run = await runHumanVsAgentMatch(client, human, agent, [{ name: "h", cards: [] }, { name: "a", cards: [] }], "player-1", "player-2",
+    { pollIntervalMs: 0, onDecision: (owner) => owners.push(owner) });
+  assert.equal(human.calls, 0, "the human provider must never be asked about a sole forced pass");
+  assert.deepEqual(submittedDecisionIds, ["d-sole-pass"], "the exact Forge-provided pass choice was still submitted");
+  assert.deepEqual(owners, ["human"]);
+  assert.equal(run.snapshot.status, "completed");
 });

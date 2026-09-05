@@ -29,6 +29,9 @@ interface ScryfallCard {
   color_identity: string[];
   image_uris?: { normal?: string };
   card_faces?: ScryfallFace[];
+  /** Present on every Scryfall card object; only actually used by the printing (set+collector) index. */
+  set?: string;
+  collector_number?: string;
 }
 
 interface ScryfallBulkMetadata {
@@ -37,6 +40,8 @@ interface ScryfallBulkMetadata {
 
 export interface ScryfallCardProviderOptions {
   bulkPath?: string;
+  /** Local path for the printing-level ("Default Cards") bulk file — only ever downloaded/read the first time a set+collector lookup is actually requested. */
+  printingBulkPath?: string;
   fetch?: typeof globalThis.fetch;
   refreshIntervalMs?: number;
   userAgent?: string;
@@ -47,10 +52,19 @@ const defaultBulkPath = resolve(
   backendRoot,
   process.env.SCRYFALL_BULK_PATH ?? "data/scryfall-oracle-cards.jsonl.gz",
 );
+const defaultPrintingBulkPath = resolve(
+  backendRoot,
+  process.env.SCRYFALL_PRINTING_BULK_PATH ?? "data/scryfall-default-cards.jsonl.gz",
+);
 const defaultRefreshIntervalMs = 24 * 60 * 60 * 1_000;
 
 function normalizeCardName(name: string): string {
   return name.trim().normalize("NFKC").toLowerCase();
+}
+
+/** Set codes are case-insensitive; collector numbers are kept exactly as printed ("225", "123a", "★12" are all valid and never coerced to a number). */
+function printingKey(setCode: string, collectorNumber: string): string {
+  return `${setCode.trim().toLowerCase()}/${collectorNumber.trim()}`;
 }
 
 function joinFaceValue(
@@ -108,15 +122,30 @@ async function forEachBulkCard(
   }
 }
 
+/**
+ * Backed by two independent local bulk sources, each fetched/parsed lazily and only once actually
+ * needed:
+ *  - "oracle-cards" (one representative printing per oracle card) powers `findByExactName` — this
+ *    is unchanged from before this printing-aware lookup existed.
+ *  - "default_cards" (every real printing, correctly carrying `set`/`collector_number`) powers
+ *    `findBySetAndCollector`. "oracle-cards" alone cannot answer a printing-specific lookup
+ *    reliably — it only ever exposes the one printing Scryfall picked as representative for that
+ *    oracle card, which is frequently NOT the printing a decklist actually names.
+ * Neither index issues one network request per card: each is one bulk file fetch, cached on disk
+ * like the original oracle-cards file, and parsed into one in-memory Map.
+ */
 export class ScryfallCardProvider implements CardProvider {
   private readonly bulkPath: string;
+  private readonly printingBulkPath: string;
   private readonly fetchImplementation: typeof globalThis.fetch;
   private readonly refreshIntervalMs: number;
   private readonly userAgent: string;
   private indexPromise: Promise<Map<string, ResolvedCard>> | undefined;
+  private printingIndexPromise: Promise<Map<string, ResolvedCard>> | undefined;
 
   constructor(options: ScryfallCardProviderOptions = {}) {
     this.bulkPath = options.bulkPath ?? defaultBulkPath;
+    this.printingBulkPath = options.printingBulkPath ?? defaultPrintingBulkPath;
     this.fetchImplementation = options.fetch ?? globalThis.fetch;
     this.refreshIntervalMs =
       options.refreshIntervalMs ?? defaultRefreshIntervalMs;
@@ -130,8 +159,14 @@ export class ScryfallCardProvider implements CardProvider {
     return index.get(normalizeCardName(name)) ?? null;
   }
 
+  async findBySetAndCollector(setCode: string, collectorNumber: string): Promise<ResolvedCard | null> {
+    this.printingIndexPromise ??= this.loadPrintingIndex();
+    const index = await this.printingIndexPromise;
+    return index.get(printingKey(setCode, collectorNumber)) ?? null;
+  }
+
   private async loadIndex(): Promise<Map<string, ResolvedCard>> {
-    await this.ensureBulkFile();
+    await this.ensureBulkFile(this.bulkPath, "oracle-cards");
 
     const index = new Map<string, ResolvedCard>();
     try {
@@ -149,8 +184,27 @@ export class ScryfallCardProvider implements CardProvider {
     return index;
   }
 
-  private async ensureBulkFile(): Promise<void> {
-    const existingFile = await stat(this.bulkPath).catch(() => null);
+  private async loadPrintingIndex(): Promise<Map<string, ResolvedCard>> {
+    await this.ensureBulkFile(this.printingBulkPath, "default_cards");
+
+    const index = new Map<string, ResolvedCard>();
+    try {
+      await forEachBulkCard(this.printingBulkPath, (card) => {
+        if (card.id && card.set && card.collector_number) {
+          index.set(printingKey(card.set, card.collector_number), resolveCard(card));
+        }
+      });
+    } catch {
+      throw new CardProviderUnavailableError(
+        "Le catalogue bulk Scryfall (impressions) local est illisible.",
+      );
+    }
+
+    return index;
+  }
+
+  private async ensureBulkFile(path: string, bulkType: string): Promise<void> {
+    const existingFile = await stat(path).catch(() => null);
     const isFresh =
       existingFile &&
       Date.now() - existingFile.mtimeMs < this.refreshIntervalMs;
@@ -158,7 +212,7 @@ export class ScryfallCardProvider implements CardProvider {
     if (isFresh) return;
 
     try {
-      await this.downloadBulkFile();
+      await this.downloadBulkFile(path, bulkType);
     } catch (error) {
       if (existingFile) return;
       if (error instanceof CardProviderUnavailableError) throw error;
@@ -168,14 +222,14 @@ export class ScryfallCardProvider implements CardProvider {
     }
   }
 
-  private async downloadBulkFile(): Promise<void> {
+  private async downloadBulkFile(path: string, bulkType: string): Promise<void> {
     const headers = {
       Accept: "application/json;q=0.9,*/*;q=0.8",
       "User-Agent": this.userAgent,
     };
 
     const metadataResponse = await this.fetchImplementation(
-      "https://api.scryfall.com/bulk-data/oracle-cards",
+      `https://api.scryfall.com/bulk-data/${bulkType}`,
       { headers, signal: AbortSignal.timeout(10_000) },
     );
     if (!metadataResponse.ok) {
@@ -201,15 +255,15 @@ export class ScryfallCardProvider implements CardProvider {
       );
     }
 
-    await mkdir(dirname(this.bulkPath), { recursive: true });
-    const temporaryPath = `${this.bulkPath}.${process.pid}.${Date.now()}.tmp`;
+    await mkdir(dirname(path), { recursive: true });
+    const temporaryPath = `${path}.${process.pid}.${Date.now()}.tmp`;
 
     try {
       await pipeline(
         Readable.from(downloadResponse.body),
         createWriteStream(temporaryPath),
       );
-      await rename(temporaryPath, this.bulkPath);
+      await rename(temporaryPath, path);
     } finally {
       await rm(temporaryPath, { force: true });
     }

@@ -3,6 +3,7 @@ import { AgentRunError, gameMetrics, submitExternalChoice } from "../agent/agent
 import { validateChoice, type AgentChoice, type AsphodelAgent } from "../agent/baseline-agent.js";
 import type { AgentObservation, ForgeDeckSpec, ForgeExternalMatchSnapshot, ForgePendingExternalDecision } from "../forge/forge-protocol.js";
 import { HumanEndMatchError, type HumanDecisionProvider } from "./human-decision-provider.js";
+import { autoPassChoice } from "./priority-auto-pass.js";
 
 export type DecisionOwner = "human" | "agent";
 
@@ -85,7 +86,10 @@ export async function runHumanVsAgentMatch(
         const owner: DecisionOwner = d.playerId === humanPlayerId ? "human" : d.playerId === agentPlayerId ? "agent" : (() => {
           throw new Error(`human_vs_agent_unknown_decision_owner: ${d.playerId}`);
         })();
-        const choice = owner === "human" ? await human.choose(observation, d) : agent.choose(observation, d);
+        // A sole forced pass (no other legal priority action) never reaches the human at all —
+        // Forge's own rendered options decide this, never a guess about strategic usefulness.
+        const forcedPass = owner === "human" ? autoPassChoice(d) : null;
+        const choice = forcedPass ?? (owner === "human" ? await human.choose(observation, d) : agent.choose(observation, d));
         validateChoice(d, choice);
         options.signal?.throwIfAborted();
         await submitExternalChoice(client, sessionId, d, choice);

@@ -43,6 +43,9 @@ it("one card's provider failure does not fail the whole batch", async () => {
       if (name === "Boom") throw new Error("simulated provider failure");
       return new FakeCardProvider().findByExactName(name);
     }
+    async findBySetAndCollector(): Promise<ResolvedCard | null> {
+      return null;
+    }
   }
   const service = new CardPresentationService(new FlakyProvider());
   const result = await service.resolveMany(["Mountain", "Boom", "Sol Ring"]);
@@ -57,6 +60,9 @@ it("caches a failed resolution too, so a broken name is not retried on every sub
     async findByExactName(): Promise<ResolvedCard | null> {
       calls++;
       throw new Error("always fails");
+    }
+    async findBySetAndCollector(): Promise<ResolvedCard | null> {
+      return null;
     }
   }
   const service = new CardPresentationService(new FlakyProvider());
