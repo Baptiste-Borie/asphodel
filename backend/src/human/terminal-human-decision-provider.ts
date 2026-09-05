@@ -2,7 +2,7 @@ import { createInterface, type Interface } from "node:readline/promises";
 import type { AgentObservation, ForgePendingExternalDecision as Decision } from "../forge/forge-protocol.js";
 import type { AgentChoice } from "../agent/baseline-agent.js";
 import { HumanEndMatchError, type HumanDecisionProvider } from "./human-decision-provider.js";
-import { describeDecision, renderBoard, renderEventDelta, renderHeader, type DecisionPrompt, type MenuItem } from "./human-cli-render.js";
+import { describeDecision, renderBoard, renderEventDelta, renderHeader, type DecisionPrompt, type MenuItem } from "./human-decision-render.js";
 
 export { HumanEndMatchError };
 
@@ -16,7 +16,7 @@ const HELP_TEXT = [
  * did not supply: every menu item and every numeric bound comes straight from `describeDecision`,
  * which in turn only reads the pending decision's own fields. Invalid input (non-number,
  * out-of-range, empty) is rejected locally and re-prompted — nothing is ever submitted to Forge
- * for an invalid answer. All rendering lives in `human-cli-render.ts`; this class only does I/O.
+ * for an invalid answer. All rendering lives in `human-decision-render.ts`; this class only does I/O.
  */
 export class TerminalHumanDecisionProvider implements HumanDecisionProvider {
   private readonly rl: Interface;

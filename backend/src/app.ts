@@ -9,6 +9,8 @@ import {
 } from "./db/client.js";
 import { parseDeckList } from "./deck-parser.js";
 import { DeckService } from "./decks/deck-service.js";
+import { PlaytestSessionManager } from "./human/playtest-session-manager.js";
+import { registerPlaytestRoutes } from "./human/playtest-routes.js";
 
 interface ParseDeckBody {
   text: string;
@@ -174,6 +176,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
       return reply.code(204).send();
     },
   );
+
+  registerPlaytestRoutes(app, new PlaytestSessionManager());
 
   return app;
 }

@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import type { AgentChoice } from "../agent/baseline-agent.js";
 import type { AgentObservation, ForgeExternalMatchSnapshot, ForgePendingExternalDecision, ForgePublicPlayerTelemetry } from "../forge/forge-protocol.js";
-import { describeDecision, formatPhase } from "./human-cli-render.js";
+import { describeDecision, formatPhase } from "./human-decision-render.js";
 import type { RecordedDecision } from "./decision-recorder.js";
 
 /** backend/playtest-reports/ — see also its .gitignore entry; nothing under it is ever committed. */
@@ -60,7 +60,7 @@ function telemetryLines(label: string, telemetry: ForgePublicPlayerTelemetry | u
   ];
 }
 
-/** Reuses `describeDecision` (human-cli-render.ts) instead of a second decision-rendering system. */
+/** Reuses `describeDecision` (human-decision-render.ts) instead of a second decision-rendering system. */
 function describeRecordedDecision(observation: AgentObservation, decision: ForgePendingExternalDecision, choice: AgentChoice): { chosenLabel: string; legalOptions: string[] } {
   const prompt = describeDecision(observation, decision);
   if (prompt.kind === "value") return { chosenLabel: String(choice.choice), legalOptions: [`Any integer from ${prompt.min} to ${prompt.max}`] };

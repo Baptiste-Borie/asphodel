@@ -3,11 +3,11 @@ import { ForgeBridgeClient } from "../forge/forge-bridge-client.js";
 import { ForgeExternalMatchClient } from "../forge/forge-external-match-client.js";
 import { commanderFixtures } from "../forge/testing/commander-fixtures.js";
 import type { ForgeDeckSpec } from "../forge/forge-protocol.js";
-import { isArchidektDeckUrl } from "../decks/archidekt-deck-source.js";
+import { parseDeckArg, resolveDeckInput } from "../decks/deck-resolver.js";
 import { BaselineAsphodelAgentV2b } from "../agent/improved-agent.js";
 import { runHumanVsAgentMatch } from "./human-vs-agent-runner.js";
 import { TerminalHumanDecisionProvider } from "./terminal-human-decision-provider.js";
-import { describeAgentAction, renderGameEnd } from "./human-cli-render.js";
+import { describeAgentAction, renderGameEnd } from "./human-decision-render.js";
 import { DecisionRecorder } from "./decision-recorder.js";
 import { writePlaytestReport } from "./playtest-report.js";
 
@@ -22,35 +22,12 @@ function totalCards(deck: ForgeDeckSpec): number {
   return deck.cards.reduce((sum, card) => sum + card.quantity, 0);
 }
 
-/** A bare id ("12") loads the local Deck Library; an archidekt.com URL loads a public Archidekt deck. Omitting the flag keeps that seat's fixture. */
-async function resolveDeckArg(value: string | undefined, fallback: ForgeDeckSpec): Promise<ForgeDeckSpec> {
-  if (!value) return fallback;
-  if (isArchidektDeckUrl(value)) {
-    const { ArchidektDeckSource } = await import("../decks/archidekt-deck-source.js");
-    return new ArchidektDeckSource().fetchDeckSpec(value);
-  }
-  const id = Number(value);
-  if (!Number.isSafeInteger(id) || id < 1) {
-    throw new Error(`--human-deck/--ai-deck must be a positive integer Deck Library id or an archidekt.com deck URL, got: ${value}`);
-  }
-  // Loaded lazily: the Deck Library needs a local sqlite database the fixture/Archidekt paths do not.
-  const [{ createDatabase }, { ScryfallCardProvider }, { DeckService }, { ForgeDeckAdapter }] = await Promise.all([
-    import("../db/client.js"), import("../cards/scryfall-provider.js"), import("../decks/deck-service.js"), import("../forge/forge-deck-adapter.js"),
-  ]);
-  const database = await createDatabase();
-  try {
-    const deckService = new DeckService(database.db, new ScryfallCardProvider());
-    return new ForgeDeckAdapter().toForgeDeckSpec(await deckService.getDeck(id));
-  } finally {
-    database.close();
-  }
-}
-
+/** A bare id ("12") loads the local Deck Library; an archidekt.com URL loads a public Archidekt deck. Omitting the flag keeps that seat's fixture. Shared with the web playtest API (deck-resolver.ts). */
 async function loadDecks(): Promise<[ForgeDeckSpec, ForgeDeckSpec]> {
   const [defaultHumanDeck, defaultAgentDeck] = commanderFixtures();
   return [
-    await resolveDeckArg(values["human-deck"], defaultHumanDeck),
-    await resolveDeckArg(values["ai-deck"], defaultAgentDeck),
+    await resolveDeckInput(parseDeckArg(values["human-deck"]), defaultHumanDeck),
+    await resolveDeckInput(parseDeckArg(values["ai-deck"]), defaultAgentDeck),
   ];
 }
 

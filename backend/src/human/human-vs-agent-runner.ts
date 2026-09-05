@@ -22,6 +22,14 @@ export interface HumanVsAgentOptions {
   maxIdlePolls?: number;
   pollIntervalMs?: number;
   signal?: AbortSignal;
+  /**
+   * Polled once per loop iteration (in addition to `signal`) so a deliberate end can be honored
+   * even while it is Asphodel's turn — not only while a human decision is actively pending. A
+   * `HumanDecisionProvider` (e.g. `WebHumanDecisionProvider`) can still reject its own in-flight
+   * `choose()` with `HumanEndMatchError` directly for an immediate end while it IS the human's turn;
+   * this predicate is what catches an end requested at any other moment.
+   */
+  endRequested?: () => boolean;
   /** Read-only hook after an accepted submission; never routing/policy input for either side. */
   onDecision?: (owner: DecisionOwner, observation: AgentObservation, decision: ForgePendingExternalDecision, choice: AgentChoice) => void;
 }
@@ -59,6 +67,7 @@ export async function runHumanVsAgentMatch(
   try {
     while (true) {
       options.signal?.throwIfAborted();
+      if (options.endRequested?.()) throw new HumanEndMatchError();
       if (Date.now() - started >= timeoutMs) throw new Error("human_vs_agent_timeout");
       latest = await client.get(sessionId);
       if (latest.sessionId !== sessionId) throw new Error("human_vs_agent_session_mismatch");
