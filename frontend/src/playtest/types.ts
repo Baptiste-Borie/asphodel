@@ -4,6 +4,16 @@
  * (see deck-library-view.ts) rather than importing backend TypeScript into the browser bundle.
  */
 
+/** Presentation-only metadata (backend cards/card-presentation-service.ts) — never a rules input. */
+export interface CardPresentation {
+  name: string;
+  manaCost: string | null;
+  manaValue: number;
+  typeLine: string;
+  oracleText: string | null;
+  imageUri: string | null;
+}
+
 export type AgentCardZone = "hand" | "battlefield" | "graveyard" | "exile" | "command";
 
 export interface AgentCardObservation {

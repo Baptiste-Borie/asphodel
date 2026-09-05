@@ -1,13 +1,17 @@
+import "../styles/playtest.css";
 import { apiRequest } from "../api/api-client.js";
 import { endPlaytest, getPlaytestReport, getPlaytestState, startPlaytest, submitPlaytestChoice } from "../api/playtest-api.js";
 import { element } from "../dom.js";
-import { renderBoard } from "./board-renderer.js";
-import { createCardSearch, type CardSearchCandidate } from "./card-search.js";
+import { collectVisibleCardNames, renderBoard, type BoardCallbacks } from "./board-renderer.js";
+import { createCardPreviewPanel } from "./card-preview.js";
+import { CardPresentationStore } from "./card-presentation-store.js";
 import { renderDecision } from "./decision-renderer.js";
-import type { AgentChoice, DeckInput, PublicGameEvent, StartPlaytestRequest, WebPlaytestStateDTO } from "./types.js";
+import type { AgentCardObservation, AgentObservation, DeckInput, PublicGameEvent, StartPlaytestRequest, WebPlaytestStateDTO } from "./types.js";
 
 const POLL_INTERVAL_MS = 300;
 const TERMINAL_STATUSES = new Set(["completed", "ended_by_human", "failed"]);
+const MAX_VISIBLE_EVENTS = 30;
+const RECENT_EVENT_COUNT = 5;
 
 interface DeckOption {
   id: number;
@@ -16,13 +20,16 @@ interface DeckOption {
 
 function createDeckPicker(labelText: string): { element: HTMLElement; getValue: () => DeckInput; setOptions: (decks: DeckOption[]) => void } {
   const wrap = document.createElement("div");
-  wrap.className = "playtest-deck-picker";
+  wrap.className = "deck-picker";
+
+  const heading = document.createElement("h3");
+  heading.className = "deck-picker-heading";
+  heading.textContent = labelText;
+  wrap.append(heading);
 
   const label = document.createElement("label");
   label.className = "field-label";
-  label.textContent = labelText;
-  wrap.append(label);
-
+  label.textContent = "Deck";
   const select = document.createElement("select");
   select.className = "text-input";
   const fixtureOption = document.createElement("option");
@@ -30,16 +37,22 @@ function createDeckPicker(labelText: string): { element: HTMLElement; getValue: 
   fixtureOption.textContent = "Fixture (default)";
   select.append(fixtureOption);
   label.append(select);
+  wrap.append(label);
 
+  const details = document.createElement("details");
+  details.className = "deck-picker-advanced";
+  const summary = document.createElement("summary");
+  summary.textContent = "Use an Archidekt URL instead";
   const urlLabel = document.createElement("label");
   urlLabel.className = "field-label field-label--spaced";
-  urlLabel.textContent = "…or an Archidekt deck URL";
+  urlLabel.textContent = "Archidekt deck URL";
   const urlInput = document.createElement("input");
   urlInput.type = "text";
   urlInput.className = "text-input";
   urlInput.placeholder = "https://archidekt.com/decks/123456/my-deck";
   urlLabel.append(urlInput);
-  wrap.append(urlLabel);
+  details.append(summary, urlLabel);
+  wrap.append(details);
 
   return {
     element: wrap,
@@ -64,15 +77,30 @@ function createDeckPicker(labelText: string): { element: HTMLElement; getValue: 
 function renderPublicEvents(container: HTMLElement, events: PublicGameEvent[]): void {
   container.replaceChildren();
   const heading = document.createElement("h3");
-  heading.textContent = "Asphodel";
+  heading.className = "events-heading";
+  heading.textContent = "Activity";
   container.append(heading);
-  const list = document.createElement("ul");
-  list.className = "playtest-events";
-  for (const event of events.slice(-20)) {
-    const li = document.createElement("li");
-    li.textContent = `Turn ${event.turn}: ${event.text}`;
-    list.append(li);
+  const visible = events.slice(-MAX_VISIBLE_EVENTS).reverse();
+  if (!visible.length) {
+    const empty = document.createElement("p");
+    empty.className = "events-empty";
+    empty.textContent = "Nothing has happened yet.";
+    container.append(empty);
+    return;
   }
+  const list = document.createElement("ul");
+  list.className = "events-list";
+  visible.forEach((event, index) => {
+    const li = document.createElement("li");
+    li.className = index < RECENT_EVENT_COUNT ? "events-item events-item--recent" : "events-item events-item--faded";
+    const turn = document.createElement("span");
+    turn.className = "events-turn";
+    turn.textContent = `T${event.turn}`;
+    const text = document.createElement("span");
+    text.textContent = event.text;
+    li.append(turn, text);
+    list.append(li);
+  });
   container.append(list);
 }
 
@@ -88,6 +116,24 @@ export function initPlaytestView(): void {
 
   let sessionId: string | null = null;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let submitting = false;
+
+  // The backend only ever exposes `observation` while it is the human's own turn to decide (V2c
+  // isolation: it is never Asphodel's). The frontend remembers the last one it legitimately saw so
+  // the board stays visible while Asphodel is thinking, instead of flashing blank every poll.
+  let lastObservation: AgentObservation | null = null;
+  const cardStore = new CardPresentationStore();
+  const previewPanel = createCardPreviewPanel();
+
+  // Persistent game-screen containers, built once per game — never torn down by a poll, so hover/
+  // pinned-preview/scroll position survive polling. Each section only re-renders when its own
+  // underlying data actually changed.
+  let boardContainer: HTMLElement, statusLine: HTMLElement, eventsContainer: HTMLElement, decisionContainer: HTMLElement;
+  let lastObservationKey = "";
+  let lastPresentationVersion = 0;
+  let renderedPresentationVersion = -1;
+  let lastEventsKey = "";
+  let lastDecisionKey = "";
 
   function stopPolling(): void {
     if (pollTimer !== null) {
@@ -99,6 +145,10 @@ export function initPlaytestView(): void {
   function showSetup(): void {
     stopPolling();
     sessionId = null;
+    lastObservation = null;
+    lastObservationKey = "";
+    lastEventsKey = "";
+    lastDecisionKey = "";
     setupSection.hidden = false;
     gameSection.hidden = true;
     endSection.hidden = true;
@@ -119,33 +169,44 @@ export function initPlaytestView(): void {
 
   function renderSetup(): void {
     setupSection.replaceChildren();
+    setupSection.className = "playtest-setup";
 
     const heading = document.createElement("h1");
-    heading.textContent = "New playtest";
+    heading.textContent = "New Playtest";
     const description = document.createElement("p");
     description.className = "page-description";
     description.textContent = "Play a real Forge Commander 1v1 against Asphodel (V2b) in your browser.";
+    setupSection.append(heading, description);
 
-    const humanPicker = createDeckPicker("Your deck");
-    const agentPicker = createDeckPicker("Asphodel deck");
+    const columns = document.createElement("div");
+    columns.className = "playtest-setup-columns";
+    const humanPicker = createDeckPicker("YOU");
+    const agentPicker = createDeckPicker("ASPHODEL");
+    columns.append(humanPicker.element, agentPicker.element);
+    setupSection.append(columns);
 
+    const seedRow = document.createElement("div");
+    seedRow.className = "playtest-setup-seed";
     const seedLabel = document.createElement("label");
-    seedLabel.className = "field-label field-label--spaced";
+    seedLabel.className = "field-label";
     seedLabel.textContent = "Seed";
     const seedInput = document.createElement("input");
     seedInput.type = "number";
     seedInput.className = "text-input";
     seedInput.value = "42";
     seedLabel.append(seedInput);
+    seedRow.append(seedLabel);
+    setupSection.append(seedRow);
 
     const feedback = document.createElement("p");
     feedback.className = "page-feedback";
     feedback.hidden = true;
+    setupSection.append(feedback);
 
     const startButton = document.createElement("button");
     startButton.type = "button";
-    startButton.className = "primary-button";
-    startButton.textContent = "Start game";
+    startButton.className = "primary-button playtest-start-button";
+    startButton.textContent = "Start Playtest";
     startButton.addEventListener("click", () => {
       const seed = Number(seedInput.value);
       const request: StartPlaytestRequest = {
@@ -155,22 +216,7 @@ export function initPlaytestView(): void {
       };
       void startGame(request, startButton, feedback);
     });
-
-    const searchPreviewHeading = document.createElement("h2");
-    searchPreviewHeading.className = "eyebrow";
-    searchPreviewHeading.textContent = "Card search (preview — not yet connected to Forge)";
-    const searchPreview = createCardSearch({
-      label: "Search card",
-      getCandidates: (): CardSearchCandidate[] => [
-        { id: "1", name: "Zuran Orb", remaining: 1 },
-        { id: "2", name: "Zulaport Cutthroat", remaining: 1 },
-        { id: "3", name: "Uurg, Spawn of Turg", remaining: 1 },
-        { id: "4", name: "Krenko, Tin Street Kingpin", remaining: 1 },
-      ],
-      onSelect: (candidate) => { feedback.hidden = false; feedback.textContent = `Selected (preview only): ${candidate.name}`; },
-    });
-
-    setupSection.append(heading, description, humanPicker.element, agentPicker.element, seedLabel, feedback, startButton, searchPreviewHeading, searchPreview);
+    setupSection.append(startButton);
 
     void apiRequest<{ decks: DeckOption[] }>("/decks")
       .then((result) => {
@@ -182,13 +228,13 @@ export function initPlaytestView(): void {
 
   async function startGame(request: StartPlaytestRequest, button: HTMLButtonElement, feedback: HTMLParagraphElement): Promise<void> {
     button.disabled = true;
-    button.textContent = "Starting…";
+    button.textContent = "Starting Forge…";
     feedback.hidden = true;
     try {
       const started = await startPlaytest(request);
       sessionId = started.sessionId;
+      buildGameScreen();
       showGameScreen();
-      renderGamePlaceholder();
       pollTimer = setInterval(() => void poll(), POLL_INTERVAL_MS);
       await poll();
     } catch (error) {
@@ -196,23 +242,70 @@ export function initPlaytestView(): void {
       feedback.textContent = error instanceof Error ? error.message : "Could not start the playtest.";
     } finally {
       button.disabled = false;
-      button.textContent = "Start game";
+      button.textContent = "Start Playtest";
     }
   }
 
-  function renderGamePlaceholder(): void {
+  function buildGameScreen(): void {
     gameSection.replaceChildren();
-    const loading = document.createElement("p");
-    loading.className = "page-feedback";
-    loading.textContent = "Starting the Forge bridge…";
-    gameSection.append(loading);
+    gameSection.className = "playtest-game";
+
+    const layout = document.createElement("div");
+    layout.className = "playtest-layout";
+
+    const main = document.createElement("div");
+    main.className = "playtest-main";
+    statusLine = document.createElement("p");
+    statusLine.className = "playtest-status-line";
+    boardContainer = document.createElement("div");
+    boardContainer.className = "playtest-board";
+    main.append(statusLine, boardContainer);
+
+    const sidebar = document.createElement("div");
+    sidebar.className = "playtest-sidebar";
+    previewPanel.element.className = "card-preview-panel";
+    eventsContainer = document.createElement("div");
+    eventsContainer.className = "playtest-events-panel";
+    sidebar.append(previewPanel.element, eventsContainer);
+
+    layout.append(main, sidebar);
+
+    const dock = document.createElement("div");
+    dock.className = "decision-dock";
+    decisionContainer = document.createElement("div");
+    decisionContainer.className = "decision-dock-content";
+    const endButton = document.createElement("button");
+    endButton.type = "button";
+    endButton.className = "danger-button decision-dock-end";
+    endButton.textContent = "End Playtest";
+    endButton.addEventListener("click", () => void endGame());
+    dock.append(decisionContainer, endButton);
+
+    gameSection.append(layout, dock);
   }
+
+  const boardCallbacks: BoardCallbacks = {
+    getPresentation: (name) => cardStore.get(name),
+    onCardHover: (card: AgentCardObservation) => previewPanel.showHover(card, card.name ? cardStore.get(card.name) : null),
+    onCardHoverEnd: () => previewPanel.clearHover(),
+    onCardActivate: (card: AgentCardObservation) => previewPanel.togglePin(card, card.name ? cardStore.get(card.name) : null),
+  };
 
   async function poll(): Promise<void> {
     if (!sessionId) return;
     try {
       const state = await getPlaytestState(sessionId);
-      renderGame(state);
+      if (state.observation) lastObservation = state.observation;
+
+      let presentationChanged = false;
+      if (lastObservation) presentationChanged = await cardStore.ensure(collectVisibleCardNames(lastObservation));
+      if (presentationChanged) lastPresentationVersion++;
+
+      renderStatus(state);
+      renderBoardIfChanged();
+      renderEventsIfChanged(state.publicEvents);
+      renderDecisionIfChanged(state);
+
       if (TERMINAL_STATUSES.has(state.status)) {
         stopPolling();
         await renderEnd(state);
@@ -220,64 +313,59 @@ export function initPlaytestView(): void {
       }
     } catch (error) {
       stopPolling();
-      renderGameError(error instanceof Error ? error.message : "Lost contact with the playtest.");
+      statusLine.textContent = error instanceof Error ? error.message : "Lost contact with the playtest.";
     }
   }
 
-  function renderGame(state: WebPlaytestStateDTO): void {
-    gameSection.replaceChildren();
+  function renderStatus(state: WebPlaytestStateDTO): void {
+    if (submitting) { statusLine.textContent = "Submitting choice…"; return; }
+    statusLine.textContent = {
+      starting: "Starting Forge…",
+      running: "Asphodel is thinking…",
+      waiting_for_human: "Waiting for you",
+      completed: "", ended_by_human: "", failed: "",
+    }[state.status];
+  }
 
-    const deckHeading = document.createElement("p");
-    deckHeading.className = "eyebrow";
-    deckHeading.textContent = `${state.humanDeckName} vs ${state.asphodelDeckName}`;
-    gameSection.append(deckHeading);
+  function renderBoardIfChanged(): void {
+    if (!lastObservation) return;
+    const key = JSON.stringify(lastObservation);
+    if (key === lastObservationKey && lastPresentationVersion === renderedPresentationVersion) return;
+    lastObservationKey = key;
+    renderedPresentationVersion = lastPresentationVersion;
+    renderBoard(boardContainer, lastObservation, boardCallbacks);
+  }
 
-    const boardContainer = document.createElement("div");
-    boardContainer.className = "playtest-board";
-    if (state.observation) renderBoard(boardContainer, state.observation);
-    else {
-      const waiting = document.createElement("p");
-      waiting.className = "page-feedback";
-      waiting.textContent = state.status === "starting" ? "Starting…" : "Asphodel is thinking…";
-      boardContainer.append(waiting);
-    }
-    gameSection.append(boardContainer);
+  function renderEventsIfChanged(events: PublicGameEvent[]): void {
+    const key = JSON.stringify(events);
+    if (key === lastEventsKey) return;
+    lastEventsKey = key;
+    renderPublicEvents(eventsContainer, events);
+  }
 
-    const eventsContainer = document.createElement("div");
-    eventsContainer.className = "playtest-events-panel";
-    renderPublicEvents(eventsContainer, state.publicEvents);
-    gameSection.append(eventsContainer);
-
-    const decisionContainer = document.createElement("div");
-    decisionContainer.className = "playtest-decision-panel";
+  function renderDecisionIfChanged(state: WebPlaytestStateDTO): void {
+    const key = JSON.stringify(state.pendingDecision);
+    if (key === lastDecisionKey) return;
+    lastDecisionKey = key;
     if (state.pendingDecision) {
       renderDecision(decisionContainer, state.pendingDecision, (choice) => void submitChoice(choice));
+    } else {
+      decisionContainer.replaceChildren();
     }
-    gameSection.append(decisionContainer);
-
-    const endButton = document.createElement("button");
-    endButton.type = "button";
-    endButton.className = "danger-button playtest-end-button";
-    endButton.textContent = "End playtest";
-    endButton.addEventListener("click", () => void endGame());
-    gameSection.append(endButton);
   }
 
-  function renderGameError(message: string): void {
-    const error = document.createElement("p");
-    error.className = "page-feedback";
-    error.textContent = message;
-    gameSection.append(error);
-  }
-
-  async function submitChoice(choice: AgentChoice): Promise<void> {
+  async function submitChoice(choice: Parameters<typeof submitPlaytestChoice>[1]): Promise<void> {
     if (!sessionId) return;
+    submitting = true;
+    statusLine.textContent = "Submitting choice…";
     try {
       await submitPlaytestChoice(sessionId, choice);
-      await poll();
     } catch (error) {
-      renderGameError(error instanceof Error ? error.message : "That choice was not accepted.");
+      statusLine.textContent = error instanceof Error ? error.message : "That choice was not accepted.";
+    } finally {
+      submitting = false;
     }
+    await poll();
   }
 
   async function endGame(): Promise<void> {
@@ -288,26 +376,28 @@ export function initPlaytestView(): void {
       await renderEnd(state);
       showEndScreen();
     } catch (error) {
-      renderGameError(error instanceof Error ? error.message : "Could not end the playtest.");
+      statusLine.textContent = error instanceof Error ? error.message : "Could not end the playtest.";
       pollTimer = setInterval(() => void poll(), POLL_INTERVAL_MS);
     }
   }
 
   async function renderEnd(state: WebPlaytestStateDTO): Promise<void> {
     endSection.replaceChildren();
+    endSection.className = "playtest-end";
     const heading = document.createElement("h1");
     heading.textContent = state.endedByHuman ? "PLAYTEST ENDED" : "GAME OVER";
     endSection.append(heading);
 
     if (state.endedByHuman) {
       const turn = document.createElement("p");
-      turn.textContent = `Turn reached: ${state.pendingDecision?.context.turn ?? state.observation?.game.turn ?? "unknown"}`;
+      turn.textContent = `Turn reached: ${state.pendingDecision?.context.turn ?? lastObservation?.game.turn ?? "unknown"}`;
       const decisions = document.createElement("p");
       decisions.textContent = `Asphodel decisions recorded: ${state.asphodelDecisionCount}`;
       endSection.append(turn, decisions);
     } else if (state.result) {
       const winner = state.result.draw ? "Draw" : state.result.winnerId === "player-1" ? "Human" : "Asphodel";
       const winnerLine = document.createElement("p");
+      winnerLine.className = "playtest-end-winner";
       winnerLine.textContent = `Winner: ${winner}`;
       const turns = document.createElement("p");
       turns.textContent = `Turns: ${state.result.turns}`;
@@ -337,7 +427,7 @@ export function initPlaytestView(): void {
     const newGameButton = document.createElement("button");
     newGameButton.type = "button";
     newGameButton.className = "primary-button";
-    newGameButton.textContent = "New playtest";
+    newGameButton.textContent = "New Playtest";
     newGameButton.addEventListener("click", showSetup);
     endSection.append(newGameButton);
   }

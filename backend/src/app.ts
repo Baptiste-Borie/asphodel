@@ -11,6 +11,11 @@ import { parseDeckList } from "./deck-parser.js";
 import { DeckService } from "./decks/deck-service.js";
 import { PlaytestSessionManager } from "./human/playtest-session-manager.js";
 import { registerPlaytestRoutes } from "./human/playtest-routes.js";
+import { CardPresentationService, MAX_CARD_PRESENTATION_NAMES } from "./cards/card-presentation-service.js";
+
+interface CardPresentationBody {
+  names: string[];
+}
 
 interface ParseDeckBody {
   text: string;
@@ -56,6 +61,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   const database = options.database ?? (await createDatabase());
   const cardProvider = options.cardProvider ?? new ScryfallCardProvider();
   const deckService = new DeckService(database.db, cardProvider);
+  const cardPresentationService = new CardPresentationService(cardProvider);
 
   await app.register(cors, {
     origin: /^http:\/\/(?:localhost|127\.0\.0\.1):\d+$/,
@@ -175,6 +181,27 @@ export async function buildApp(options: BuildAppOptions = {}) {
       await deckService.deleteDeck(request.params.id);
       return reply.code(204).send();
     },
+  );
+
+  app.post<{ Body: CardPresentationBody }>(
+    "/cards/presentation",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["names"],
+          properties: {
+            names: {
+              type: "array",
+              maxItems: MAX_CARD_PRESENTATION_NAMES,
+              items: { type: "string", minLength: 1, maxLength: 200 },
+            },
+          },
+        },
+      },
+    },
+    async (request) => ({ cards: await cardPresentationService.resolveMany(request.body.names) }),
   );
 
   registerPlaytestRoutes(app, new PlaytestSessionManager());
