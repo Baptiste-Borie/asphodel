@@ -1,5 +1,5 @@
 import type { ForgeExternalMatchClient } from "../forge/forge-external-match-client.js";
-import type { ForgeDeckSpec, ForgeExternalMatchSnapshot, ForgePendingExternalDecision } from "../forge/forge-protocol.js";
+import type { AgentObservation, ForgeDeckSpec, ForgeExternalMatchSnapshot, ForgePendingExternalDecision } from "../forge/forge-protocol.js";
 import { validateChoice, type AgentChoice, type AsphodelAgent } from "./baseline-agent.js";
 
 export type AgentMatchTransport = Pick<ForgeExternalMatchClient, "startSpecs" | "get" | "cancel" | "submitDecision" | "submitTarget" | "submitMode" | "submitValue" | "submitOptionalCost" | "submitCostObject" | "submitManaOption" | "submitSelection">;
@@ -16,6 +16,8 @@ export interface AgentRunOptions {
   maxIdlePolls?: number;
   pollIntervalMs?: number;
   signal?: AbortSignal;
+  /** Read-only diagnostic hook after an accepted submission; never policy input. */
+  onDecision?: (observation: AgentObservation, decision: ForgePendingExternalDecision, choice: AgentChoice) => void;
 }
 
 export function gameMetrics(snapshot: ForgeExternalMatchSnapshot, trace: AgentTraceEntry[], selfPlayerId: string) {
@@ -97,6 +99,7 @@ export async function runAgentMatch(client: AgentMatchTransport, agent: Asphodel
             else await client.submitSelection(sessionId, d.decisionId, choice.choice);
         }
         trace.push({ turn: d.context.turn, phase: d.context.phase, type: d.type, choice });
+        options.onDecision?.(observation, d, choice);
         seen.add(d.decisionId);
         idle = 0;
       } else if (++idle >= maxIdlePolls) throw new Error("agent_idle_limit");

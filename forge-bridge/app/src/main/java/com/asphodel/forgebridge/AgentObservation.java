@@ -78,7 +78,9 @@ record AgentObservation(
             Map<String, Integer> counters,
             Integer power,
             Integer toughness,
-            String typeLine
+            String typeLine,
+            List<String> combatKeywords,
+            List<String> selfAttackTriggers
     ) {
     }
 

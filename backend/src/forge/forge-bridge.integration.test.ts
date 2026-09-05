@@ -1497,6 +1497,8 @@ Mainboard
       assert.equal(hiddenExile.name, null);
       assert.equal(hiddenExile.hidden, true);
       assert.equal(hiddenExile.typeLine, null);
+      assert.equal(hiddenExile.combatKeywords, null);
+      assert.equal(hiddenExile.selfAttackTriggers, null);
       assert.match(hiddenExile.cardRef, /^card-\d+$/);
     }
     if (exiled.status !== "completed") await external.cancel(started.sessionId);
@@ -1531,6 +1533,8 @@ Mainboard
     assert.equal(faceDown.hidden, true);
     assert.equal(faceDown.power, 2);
     assert.equal(faceDown.toughness, 2);
+    assert.deepEqual(faceDown.combatKeywords, []);
+    assert.deepEqual(faceDown.selfAttackTriggers, []);
     assert.ok(
       opponent.graveyard.some(
         (card) => card.name === "Soul Summons" && !card.hidden,

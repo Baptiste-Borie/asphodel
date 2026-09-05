@@ -372,6 +372,8 @@ export interface ForgePendingManaPaymentDecision {
 }
 
 export interface ForgePendingCombatDecision {
+  /** Actual public combat attackers and defenders, including attackers with no legal block option. */
+  attackers?: { cardRef: string; relatedRef: string }[];
   decisionId: string;
   type: "attackers_selection" | "blockers_selection" | "combat_order_selection";
   playerId: string;
@@ -463,6 +465,10 @@ export interface AgentCardObservation {
   power: number | null;
   toughness: number | null;
   typeLine: string | null;
+  /** Current public keyword allowlist; null for hidden non-battlefield cards, absent on older bridges. */
+  combatKeywords?: string[] | null;
+  /** Static public descriptions of self-attack triggers, with unexpanded placeholders. */
+  selfAttackTriggers?: string[] | null;
 }
 
 export interface AgentCommanderObservation {

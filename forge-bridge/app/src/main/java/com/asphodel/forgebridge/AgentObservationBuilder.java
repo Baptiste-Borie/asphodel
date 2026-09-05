@@ -5,6 +5,8 @@ import forge.game.card.Card;
 import forge.game.card.CardView;
 import forge.game.card.CounterType;
 import forge.game.phase.PhaseHandler;
+import forge.game.keyword.Keyword;
+import forge.game.trigger.TriggerType;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbilityStackInstance;
 import forge.game.zone.ZoneType;
@@ -135,8 +137,27 @@ final class AgentObservationBuilder {
                 battlefield ? counters(card) : null,
                 battlefield && card.isCreature() ? card.getNetPower() : null,
                 battlefield && card.isCreature() ? card.getNetToughness() : null,
-                characteristicsVisible ? card.getType().toString() : null
+                characteristicsVisible ? card.getType().toString() : null,
+                characteristicsVisible ? combatKeywords(card) : null,
+                characteristicsVisible ? selfAttackTriggers(card) : null
         );
+    }
+
+    /** Fixed public keyword allowlist, evaluated on the current (including face-down) state. */
+    private static List<String> combatKeywords(Card card) {
+        return List.of(Keyword.FLYING, Keyword.REACH, Keyword.MENACE, Keyword.VIGILANCE,
+                Keyword.DEATHTOUCH, Keyword.FIRST_STRIKE, Keyword.DOUBLE_STRIKE,
+                Keyword.TRAMPLE, Keyword.INDESTRUCTIBLE, Keyword.LIFELINK, Keyword.DEFENDER)
+                .stream().filter(card::hasKeyword).map(k -> k.name().toLowerCase(Locale.ROOT)).toList();
+    }
+
+    /** Static public script description only: no evaluation or expansion of runtime variables. */
+    private static List<String> selfAttackTriggers(Card card) {
+        return card.getTriggers().stream()
+                .filter(t -> !t.isSuppressed() && t.getMode() == TriggerType.Attacks
+                        && t.hasParam("ValidCard") && t.getParam("ValidCard").contains(".Self")
+                        && t.hasParam("TriggerDescription"))
+                .map(t -> shortText(t.getParam("TriggerDescription"))).toList();
     }
 
     static boolean identityVisible(Card card, Player observer) {

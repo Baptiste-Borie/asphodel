@@ -94,7 +94,9 @@ final class AsphodelDecisionBroker {
             }
             decision = new PendingInternal(new PendingCombatDecision(decisionId, type,
                     playerId(player), context(game, game.getPhaseHandler()), List.copyOf(options),
-                    List.copyOf(selected)), observation, choices);
+                    List.copyOf(selected), game.getCombat() == null ? List.of() : game.getCombat().getAttackers().stream()
+                            .map(card -> new CombatAssignment(AgentObservationBuilder.cardRef(card),
+                                    ForgeCombatDecisions.ref(game.getCombat().getDefenderByAttacker(card)))).toList()), observation, choices);
             pending = decision;
         }
         return ((CombatChoice) await(decision)).candidate();
@@ -138,7 +140,7 @@ final class AsphodelDecisionBroker {
     record CombatAssignment(String cardRef, String relatedRef) {}
     record PendingCombatDecision(String decisionId, String type, String playerId,
             DecisionContext context, List<CombatOption> options,
-            List<CombatAssignment> selected) implements DecisionSnapshot {}
+            List<CombatAssignment> selected, List<CombatAssignment> attackers) implements DecisionSnapshot {}
     private record CombatChoice(ForgeCombatDecisions.Choice candidate) implements DecisionChoice {}
 
 
