@@ -530,7 +530,18 @@ export interface AgentObservation {
   stack: AgentStackItem[];
 }
 
+export interface ForgePublicPlayerTelemetry {
+  attacks?: number;
+  blocks?: number;
+  damageToPlayers?: number;
+  damageToCards?: number;
+  spellsCast?: number;
+  commanderCasts?: number;
+}
+
 export interface ForgeExternalMatchSnapshot {
+  /** Public event counters; absent with older bridge builds. Never an agent input. */
+  publicTelemetry?: Record<string, ForgePublicPlayerTelemetry>;
   sessionId: string;
   status: ForgeExternalMatchStatus;
   progress: ForgeExternalMatchProgress;

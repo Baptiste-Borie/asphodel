@@ -21,6 +21,7 @@ final class ExternalMatchSession {
     private final Deck aiDeck;
     private final AsphodelDecisionBroker decisions;
     private final ExecutorService executor;
+    private final ExternalMatchTelemetry telemetry = new ExternalMatchTelemetry();
     private final AtomicReference<Game> game = new AtomicReference<>();
 
     private volatile Status status = Status.STARTING;
@@ -76,6 +77,7 @@ final class ExternalMatchSession {
         snapshot.put("sessionId", sessionId);
         snapshot.put("status", snapshotStatus.wireName());
         snapshot.put("progress", decisions.progress());
+        snapshot.put("publicTelemetry", telemetry.snapshot());
         snapshot.put("forgeAiStrategicFallbacks", decisions.strategicFallbacks());
 
         if (snapshotStatus == Status.WAITING_FOR_DECISION) {
@@ -201,6 +203,7 @@ final class ExternalMatchSession {
 
     private synchronized void gameCreated(Game createdGame) {
         game.set(createdGame);
+        createdGame.subscribeToEvents(telemetry);
         if (status == Status.CANCELLED && !createdGame.isGameOver()) {
             createdGame.setGameOver(GameEndReason.Draw);
         }
