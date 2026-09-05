@@ -13,6 +13,11 @@ export function getPlaytestState(sessionId: string): Promise<WebPlaytestStateDTO
   return apiRequest(`/playtests/${encodeURIComponent(sessionId)}`);
 }
 
+/** The one active (non-terminal) playtest, if any — used to reconnect after a page reload without starting a second Forge game. */
+export function getActivePlaytest(): Promise<WebPlaytestStateDTO | { active: false }> {
+  return apiRequest("/playtests/active");
+}
+
 export function submitPlaytestChoice(sessionId: string, choice: AgentChoice): Promise<{ accepted: true }> {
   return apiRequest(`/playtests/${encodeURIComponent(sessionId)}/choice`, {
     method: "POST",

@@ -1,6 +1,6 @@
 import "../styles/playtest.css";
 import { apiRequest } from "../api/api-client.js";
-import { endPlaytest, getPlaytestReport, getPlaytestState, startPlaytest, submitPlaytestChoice } from "../api/playtest-api.js";
+import { endPlaytest, getActivePlaytest, getPlaytestReport, getPlaytestState, startPlaytest, submitPlaytestChoice } from "../api/playtest-api.js";
 import { element } from "../dom.js";
 import { collectVisibleCardNames, renderBoard, type BoardCallbacks } from "./board-renderer.js";
 import { createCardPreviewPanel } from "./card-preview.js";
@@ -165,6 +165,40 @@ export function initPlaytestView(): void {
     setupSection.hidden = true;
     gameSection.hidden = true;
     endSection.hidden = false;
+  }
+
+  function renderResuming(): void {
+    setupSection.replaceChildren();
+    setupSection.className = "playtest-setup";
+    const message = document.createElement("p");
+    message.className = "page-feedback";
+    message.textContent = "Resuming playtest…";
+    setupSection.append(message);
+  }
+
+  /**
+   * Reconnects to the one backend playtest still running (e.g. after an F5 reload) instead of
+   * defaulting to the setup screen — the session itself keeps running in PlaytestSessionManager's
+   * background promise regardless of whether a browser is watching it. Never calls startPlaytest:
+   * if nothing is active (including after a full backend restart, which has no session to find),
+   * this falls through to a normal New Playtest screen.
+   */
+  async function resumeActivePlaytestIfAny(): Promise<void> {
+    renderResuming();
+    try {
+      const result = await getActivePlaytest();
+      if ("sessionId" in result) {
+        sessionId = result.sessionId;
+        buildGameScreen();
+        showGameScreen();
+        pollTimer = setInterval(() => void poll(), POLL_INTERVAL_MS);
+        await poll();
+        return;
+      }
+    } catch {
+      /* Fall through to a fresh setup screen — nothing to resume, or the backend is unreachable. */
+    }
+    showSetup();
   }
 
   function renderSetup(): void {
@@ -432,5 +466,5 @@ export function initPlaytestView(): void {
     endSection.append(newGameButton);
   }
 
-  showSetup();
+  void resumeActivePlaytestIfAny();
 }

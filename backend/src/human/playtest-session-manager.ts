@@ -219,6 +219,16 @@ export class PlaytestSessionManager {
     };
   }
 
+  /**
+   * The one active (non-terminal) playtest, if any — lets a browser reconnect after a page
+   * reload without starting a second Forge game: the session itself already keeps running in its
+   * background promise regardless of whether any browser is polling it.
+   */
+  getActiveState(): WebPlaytestStateDTO | null {
+    if (!this.session || TERMINAL_STATUSES.has(this.statusOf(this.session))) return null;
+    return this.getState(this.session.id);
+  }
+
   submitChoice(sessionId: string, choice: AgentChoice): void {
     const session = this.requireSession(sessionId);
     if (session.phase !== "in_progress" || !session.provider.current()) {

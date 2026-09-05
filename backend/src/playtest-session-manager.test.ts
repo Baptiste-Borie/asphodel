@@ -191,3 +191,52 @@ it("security: the web playtest state never exposes Asphodel's hand, including in
     assert.ok(serialized.includes(HUMAN_HAND_CARD), "the human's own hand should still be visible to the human");
   });
 });
+
+it("getActiveState() is null before any playtest starts", async () => {
+  const manager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => scriptedTransport([]).client, createAgent: () => new FakeAgent() });
+  assert.equal(manager.getActiveState(), null);
+});
+
+it("getActiveState() lets a browser reconnect (e.g. after F5) to the one running playtest by its existing sessionId, without starting a second game", async () => {
+  await withTempReports(async reportsRoot => {
+    const { client } = scriptedTransport([
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: humanObservation(1), pendingDecision: priorityDecision("player-1", "d-1") }),
+    ]);
+    let startCalls = 0;
+    const countingClient: AgentMatchTransport = { ...client, startSpecs: (...args) => { startCalls++; return client.startSpecs(...args); } };
+    const manager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => countingClient, createAgent: () => new FakeAgent(), reportsRoot });
+    const started = await manager.start({ humanDeck: { type: "fixture" }, asphodelDeck: { type: "fixture" } });
+
+    let active = manager.getActiveState();
+    for (let i = 0; i < 50 && active?.pendingDecision === null; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      active = manager.getActiveState();
+    }
+    assert.ok(active, "an active session must be reported while the playtest is running");
+    assert.equal(active!.sessionId, started.sessionId, "resuming must return the SAME sessionId, not a new one");
+    assert.equal(active!.status, "waiting_for_human");
+    assert.ok(active!.observation, "the resumed state must still expose the human's own observation");
+    assert.equal(startCalls, 1, "reconnecting must never start a second Forge game");
+
+    // A second real GET (simulating the browser polling again right after reconnecting) must
+    // still refer to the same session, not create another one.
+    const secondLook = manager.getActiveState();
+    assert.equal(secondLook?.sessionId, started.sessionId);
+    assert.equal(startCalls, 1);
+  });
+});
+
+it("getActiveState() is null again once the playtest reaches a terminal status", async () => {
+  await withTempReports(async reportsRoot => {
+    const { client } = scriptedTransport([
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: humanObservation(1), pendingDecision: priorityDecision("player-1", "d-1") }),
+    ]);
+    const manager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => client, createAgent: () => new FakeAgent(), reportsRoot });
+    const started = await manager.start({ humanDeck: { type: "fixture" }, asphodelDeck: { type: "fixture" } });
+    for (let i = 0; i < 50 && manager.getActiveState()?.pendingDecision === null; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    await manager.end(started.sessionId);
+    assert.equal(manager.getActiveState(), null, "a terminal (ended-by-human) playtest is no longer \"active\"");
+  });
+});

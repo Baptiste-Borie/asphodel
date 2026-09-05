@@ -98,6 +98,10 @@ export function registerPlaytestRoutes(app: FastifyInstance, manager: PlaytestSe
     },
   );
 
+  // Registered before the parametric :sessionId route below; Fastify's router matches the
+  // static "active" segment first regardless, but this keeps the two from ever looking ambiguous.
+  app.get("/playtests/active", async () => manager.getActiveState() ?? { active: false });
+
   app.get<{ Params: SessionParams }>(
     "/playtests/:sessionId",
     { schema: { params: sessionParamsSchema } },

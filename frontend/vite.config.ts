@@ -6,6 +6,7 @@ export default defineConfig({
       "/health": "http://localhost:3000",
       "/decks": "http://localhost:3000",
       "/playtests": "http://localhost:3000",
+      "/cards": "http://localhost:3000",
     },
   },
 });
