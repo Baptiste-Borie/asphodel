@@ -54,6 +54,10 @@ export class ForgeExternalMatchClient {
     });
   }
 
+  submitCombatChoice(sessionId: string, decisionId: string, objectId: string) {
+    return this.bridge.request({ type: "submit_external_decision", sessionId, decisionId, objectId });
+  }
+
   submitTarget(sessionId: string, decisionId: string, targetId: string) {
     return this.bridge.request({
       type: "submit_external_decision",

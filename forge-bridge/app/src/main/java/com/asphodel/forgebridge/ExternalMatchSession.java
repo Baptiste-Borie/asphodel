@@ -76,6 +76,7 @@ final class ExternalMatchSession {
         snapshot.put("sessionId", sessionId);
         snapshot.put("status", snapshotStatus.wireName());
         snapshot.put("progress", decisions.progress());
+        snapshot.put("forgeAiStrategicFallbacks", decisions.strategicFallbacks());
 
         if (snapshotStatus == Status.WAITING_FOR_DECISION) {
             snapshot.put("observation", pending.observation());

@@ -366,6 +366,14 @@ async function submitDeterministicSecondary(
     );
     return;
   }
+  if (decision.type === "attackers_selection" || decision.type === "blockers_selection" || decision.type === "combat_order_selection") {
+    const option = decision.options.find((option) => option.operation === "finish")
+      ?? decision.options.find((option) => option.operation === "add" || option.operation === "order");
+    assert.ok(option);
+    await external.submitCombatChoice(sessionId, decision.decisionId, option.objectId);
+    return;
+  }
+  if (decision.type !== "cost_object_selection") throw new Error("Unhandled decision family");
   const objectId = decision.options[0]?.objectId ?? decision.finishChoiceId;
   assert.ok(objectId);
   await external.submitCostObject(sessionId, decision.decisionId, objectId);
@@ -703,6 +711,159 @@ afterEach(async () => {
 });
 
 describe("ForgeBridgeClient integration", () => {
+  for (const flying of [false, true]) {
+    it(`external combat blockers: ${flying ? "flying restriction and double strike" : "no blocks, exact block and multiple blockers"}`, { timeout: 90_000 }, async () => {
+      const client = createClient();
+      await client.start();
+      const external = new ForgeExternalMatchClient(client);
+      const own: ForgeDeckSpec = { name: "Block choices", cards: [
+        { name: "Ghalta, Primal Hunger", quantity: 1, section: "commander" },
+        { name: "Forest", quantity: 30, section: "mainboard" },
+        { name: "Memnite", quantity: 30, section: "mainboard" },
+        ...(flying ? [{ name: "Ornithopter", quantity: 30, section: "mainboard" as const }] : []),
+      ] };
+      const opponent: ForgeDeckSpec = { name: "Native combat opponent", cards: [
+        { name: flying ? "Avacyn, Angel of Hope" : "Ghalta, Primal Hunger", quantity: 1, section: "commander" },
+        { name: flying ? "Plains" : "Forest", quantity: 30, section: "mainboard" },
+        { name: flying ? "Skyhunter Skirmisher" : "Grizzly Bears", quantity: 30, section: "mainboard" },
+      ] };
+      const { sessionId } = await external.startSpecs(own, opponent, { seed: 12345 });
+      let declarations = 0;
+      let proof: { turn: number; refs: string[]; life: number } | undefined;
+      const completed: number[] = [];
+      for (let step = 0; step < 1200 && completed.length < (flying ? 1 : 3); step++) {
+        const s = await waitForExternalSnapshot(external, sessionId,
+          (s) => s.status === "waiting_for_decision" || s.status === "failed" || s.status === "completed");
+        assert.equal(s.status, "waiting_for_decision", JSON.stringify(s));
+        const d = s.pendingDecision!;
+        const self = s.observation!.players.find((p) => p.role === "self")!;
+        if (proof && (d.context.turn > proof.turn || d.context.phase === "main2")) {
+          if (proof.refs.length === 0) assert.ok(self.life < proof.life);
+          else {
+            for (const ref of proof.refs) assert.ok(self.graveyard.some((c) => c.cardRef === ref), JSON.stringify({proof, self}));
+          }
+          completed.push(proof.refs.length);
+          proof = undefined;
+          if (completed.length === (flying ? 1 : 3)) break;
+        }
+        if (d.type === "priority_action") {
+          const action = d.actions.find((a) => a.type === "play_land")
+            ?? d.actions.find((a) => a.type === "cast_spell" && ["Memnite", "Ornithopter"].includes(a.cardName ?? "")
+              && self.battlefield.filter((c) => c.name === a.cardName).length < (flying ? 1 : 2))
+            ?? d.actions.find((a) => a.type === "pass");
+          assert.ok(action);
+          await external.submitDecision(sessionId, d.decisionId, action.actionId);
+        } else if (d.type === "blockers_selection") {
+          const amount = flying ? 1 : declarations;
+          const adds = d.options.filter((o) => o.operation === "add");
+          if (flying) {
+            assert.ok(self.battlefield.some((c) => c.name === "Memnite"));
+            assert.ok(adds.every((o) => self.battlefield.find((c) => c.cardRef === o.cardRef)?.name === "Ornithopter"));
+          }
+          const selected = adds.find((o) => d.selected.length === 0 || o.relatedRef === d.selected[0]?.relatedRef);
+          if (d.selected.length < amount && selected) {
+            await external.submitCombatChoice(sessionId, d.decisionId, selected.objectId);
+          } else {
+            const finish = d.options.find((o) => o.operation === "finish");
+            assert.ok(finish);
+            if (d.selected.length === amount) {
+              proof = { turn: d.context.turn, refs: d.selected.map((a) => a.cardRef), life: self.life };
+              declarations++;
+            }
+            await external.submitCombatChoice(sessionId, d.decisionId, finish.objectId);
+          }
+        } else await submitDeterministicSecondary(external, sessionId, d);
+      }
+      assert.deepEqual(completed, flying ? [1] : [0, 1, 2]);
+      const last = await external.get(sessionId);
+      assert.ok(last.forgeAiStrategicFallbacks.every((f) => f.family === "combat_damage"));
+      if (flying) {
+        // The external blocker survives the first strike step and assigns in the normal step only.
+        assert.equal(last.forgeAiStrategicFallbacks.filter((f) => f.method === "assignCombatDamage").length, 1);
+      }
+      await external.cancel(sessionId);
+    });
+  }
+
+  it("external combat chooses none, exact and multiple attackers with native life proof", { timeout: 90_000 }, async () => {
+    const client = createClient();
+    const external = new ForgeExternalMatchClient(client);
+    await client.start();
+    const deck: ForgeDeckSpec = { name: "Combat attackers", cards: [
+      { name: "Isamaru, Hound of Konda", quantity: 1, section: "commander" },
+      { name: "Plains", quantity: 30, section: "mainboard" },
+      { name: "Savannah Lions", quantity: 30, section: "mainboard" },
+    ] };
+    const opponent: ForgeDeckSpec = { name: "Combat observer", cards: [
+      { name: "Ghalta, Primal Hunger", quantity: 1, section: "commander" },
+      { name: "Forest", quantity: 99, section: "mainboard" },
+    ] };
+    const { sessionId } = await external.startSpecs(deck, opponent, { seed: 12345 });
+    let declarations = 0;
+    let pendingProof: { turn: number; life: number; refs: string[]; power: number } | undefined;
+    const proofs: number[] = [];
+    for (let step = 0; step < 800 && proofs.length < 3; step++) {
+      const snapshot = await waitForExternalSnapshot(external, sessionId,
+        (s) => s.status === "waiting_for_decision" || s.status === "failed" || s.status === "completed");
+      assert.equal(snapshot.status, "waiting_for_decision", JSON.stringify(snapshot));
+      const d = snapshot.pendingDecision!;
+      const observation = snapshot.observation!;
+      const self = observation.players.find((p) => p.role === "self")!;
+      const enemy = observation.players.find((p) => p.role === "opponent")!;
+      assert.equal(d.context.turn, observation.game.turn);
+      assert.equal(d.context.phase, observation.game.phase);
+      if (pendingProof && (d.context.turn > pendingProof.turn || d.context.phase === "main2")) {
+        assert.equal(enemy.life, pendingProof.life - pendingProof.power);
+        for (const ref of pendingProof.refs) assert.equal(self.battlefield.find((c) => c.cardRef === ref)?.tapped, true);
+        proofs.push(pendingProof.refs.length);
+        pendingProof = undefined;
+        if (proofs.length === 3) break;
+      }
+      if (d.type === "priority_action") {
+        const choice = d.actions.find((a) => a.type === "play_land")
+          ?? d.actions.find((a) => a.type === "cast_spell")
+          ?? d.actions.find((a) => a.type === "pass");
+        assert.ok(choice);
+        await external.submitDecision(sessionId, d.decisionId, choice.actionId);
+      } else if (d.type === "attackers_selection") {
+        const count = Math.min(declarations, 2);
+        const adds = d.options.filter((o) => o.operation === "add");
+        const finish = d.options.find((o) => o.operation === "finish");
+        if (d.selected.length < count && adds.length > 0) {
+          const selected = adds.at(-1)!;
+          assert.ok(self.battlefield.some((c) => c.cardRef === selected.cardRef));
+          assert.equal(selected.relatedRef, enemy.playerId);
+          await assert.rejects(external.submitCombatChoice(sessionId, d.decisionId, "combat-not-in-this-decision"),
+            (e: unknown) => e instanceof ForgeBridgeError && e.code === "OBJECT_NOT_FOUND");
+          assert.deepEqual((await external.get(sessionId)).pendingDecision, d);
+          await external.submitCombatChoice(sessionId, d.decisionId, selected.objectId);
+          await assert.rejects(external.submitCombatChoice(sessionId, d.decisionId, selected.objectId),
+            (e: unknown) => e instanceof ForgeBridgeError && e.code === "STALE_DECISION");
+          const next = await waitForExternalSnapshot(external, sessionId,
+            (s) => s.pendingDecision?.decisionId !== d.decisionId && s.pendingDecision?.type === "attackers_selection");
+          assert.equal(next.pendingDecision?.type, "attackers_selection");
+          if (next.pendingDecision?.type === "attackers_selection") {
+            assert.ok(next.pendingDecision.selected.some((a) => a.cardRef === selected.cardRef && a.relatedRef === selected.relatedRef));
+          }
+        } else {
+          assert.ok(finish);
+          if (d.selected.length === count) {
+            pendingProof = { turn: d.context.turn, life: enemy.life,
+              refs: d.selected.map((a) => a.cardRef),
+              power: d.selected.reduce((total, a) => total + (self.battlefield.find((c) => c.cardRef === a.cardRef)?.power ?? 0), 0) };
+            declarations++;
+          }
+          await external.submitCombatChoice(sessionId, d.decisionId, finish.objectId);
+        }
+      } else {
+        await submitDeterministicSecondary(external, sessionId, d);
+      }
+    }
+    assert.deepEqual(proofs, [0, 1, 2]);
+    assert.deepEqual((await external.get(sessionId)).forgeAiStrategicFallbacks, []);
+    await external.cancel(sessionId);
+  });
+
   it("boots the real JVM and reports the pinned engine", async () => {
     const client = createClient();
     await client.start();

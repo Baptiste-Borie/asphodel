@@ -371,6 +371,16 @@ export interface ForgePendingManaPaymentDecision {
   canFinish: boolean;
 }
 
+export interface ForgePendingCombatDecision {
+  decisionId: string;
+  type: "attackers_selection" | "blockers_selection" | "combat_order_selection";
+  playerId: string;
+  context: ForgePendingDecision["context"];
+  options: { objectId: string; operation: "add" | "remove" | "finish" | "order";
+    cardRef: string | null; relatedRef: string | null; label: string }[];
+  selected: { cardRef: string; relatedRef: string }[];
+}
+
 export type ForgePendingExternalDecision =
   | ForgePendingDecision
   | ForgePendingTargetDecision
@@ -378,7 +388,8 @@ export type ForgePendingExternalDecision =
   | ForgePendingValueDecision
   | ForgePendingOptionalCostDecision
   | ForgePendingCostObjectDecision
-  | ForgePendingManaPaymentDecision;
+  | ForgePendingManaPaymentDecision
+  | ForgePendingCombatDecision;
 
 export type ForgeExternalMatchStatus =
   | "starting"
@@ -509,6 +520,7 @@ export interface ForgeExternalMatchSnapshot {
   progress: ForgeExternalMatchProgress;
   observation?: AgentObservation;
   pendingDecision?: ForgePendingExternalDecision;
+  forgeAiStrategicFallbacks: { family: string; method: string; sourceCardRef: string | null; reason: string }[];
   result?: ForgeGameResult;
   error?: { code: string; message: string };
 }

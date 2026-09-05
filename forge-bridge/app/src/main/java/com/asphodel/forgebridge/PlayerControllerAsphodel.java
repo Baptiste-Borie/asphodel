@@ -4,6 +4,12 @@ import forge.LobbyPlayer;
 import forge.ai.PlayerControllerAi;
 import forge.card.mana.ManaCost;
 import forge.game.Game;
+import forge.game.GameEntity;
+import forge.game.card.Card;
+import forge.game.card.CardCollection;
+import forge.game.card.CardCollectionView;
+import forge.game.combat.Combat;
+import java.util.Map;
 import forge.game.cost.CostPartMana;
 import forge.game.cost.CostDecisionMakerBase;
 import forge.game.mana.ManaConversionMatrix;
@@ -40,6 +46,49 @@ public final class PlayerControllerAsphodel extends PlayerControllerAi {
     ) {
         super(game, player, lobbyPlayer);
         this.decisions = decisions;
+    }
+
+    @Override
+    public void declareAttackers(Player attacker, Combat combat) {
+        ForgeCombatDecisions choices = new ForgeCombatDecisions(decisions, observations);
+        String unsupported = choices.unsupported(attacker, combat, true);
+        if (unsupported != null) {
+            decisions.recordStrategicFallback("attackers_selection", "declareAttackers", null, unsupported);
+            super.declareAttackers(attacker, combat);
+            return;
+        }
+        choices.declare(attacker, combat, true);
+    }
+
+    @Override
+    public void declareBlockers(Player defender, Combat combat) {
+        ForgeCombatDecisions choices = new ForgeCombatDecisions(decisions, observations);
+        String unsupported = choices.unsupported(defender, combat, false);
+        if (unsupported != null) {
+            decisions.recordStrategicFallback("blockers_selection", "declareBlockers", null, unsupported);
+            super.declareBlockers(defender, combat);
+            return;
+        }
+        choices.declare(defender, combat, false);
+    }
+
+    @Override
+    public CardCollection orderBlockers(Card attacker, CardCollection blockers) {
+        return new ForgeCombatDecisions(decisions, observations).order(getPlayer(), attacker, blockers);
+    }
+
+    @Override
+    public CardCollection orderAttackers(Card blocker, CardCollection attackers) {
+        return new ForgeCombatDecisions(decisions, observations).order(getPlayer(), blocker, attackers);
+    }
+
+    @Override
+    public Map<Card, Integer> assignCombatDamage(Card attacker, CardCollectionView blockers,
+            CardCollectionView remaining, int damage, GameEntity defender, boolean overrideOrder) {
+        decisions.recordStrategicFallback("combat_damage", "assignCombatDamage",
+                AgentObservationBuilder.cardRef(attacker),
+                "Pinned engine consumes assignments without a reusable rules validator; Forge AI assignment retained.");
+        return super.assignCombatDamage(attacker, blockers, remaining, damage, defender, overrideOrder);
     }
 
     @Override

@@ -1258,3 +1258,12 @@ Review and pin a new full commit SHA, update the gitlink,
 `EXPECTED_FORGE_REVISION`, Maven properties, test expectations, and this report,
 then rerun all bridge and product checks. Never track a moving Forge branch in a
 release. See `forge-bridge/NOTICE.md` and `vendor/forge/LICENSE` for attribution.
+
+
+## External Combat V1j
+
+See [the pinned API research, protocol, tests and limitations](external-controller-v1j.md).
+Normal attack/block declarations now pause for external choices through the
+existing broker. Forge validates complete declarations and executes combat.
+Damage distribution and combat payment gaps are explicit, recorded fallbacks.
+Earlier milestone readiness tables above describe their historical scope.

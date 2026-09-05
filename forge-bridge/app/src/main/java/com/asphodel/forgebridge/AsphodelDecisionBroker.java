@@ -65,6 +65,48 @@ final class AsphodelDecisionBroker {
     private long manaPaymentDecisionsSubmitted;
     private long manaOptionsSelected;
     private long manaPaymentsFallbackToAi;
+    private final List<StrategicFallback> strategicFallbacks = new ArrayList<>();
+
+    synchronized void recordStrategicFallback(String family, String method, String sourceCardRef, String reason) {
+        strategicFallbacks.add(new StrategicFallback(family, method, sourceCardRef, reason));
+    }
+
+    synchronized List<StrategicFallback> strategicFallbacks() {
+        return List.copyOf(strategicFallbacks);
+    }
+
+    record StrategicFallback(String family, String method, String sourceCardRef, String reason) {}
+
+    ForgeCombatDecisions.Choice requestCombatDecision(Game game, Player player, String type,
+            List<ForgeCombatDecisions.Choice> candidates, List<CombatAssignment> selected,
+            AgentObservation observation) {
+        PendingInternal decision;
+        synchronized (this) {
+            ensureCanRequest();
+            String decisionId = "decision-" + decisionIds.incrementAndGet();
+            Map<String, DecisionChoice> choices = new LinkedHashMap<>();
+            List<CombatOption> options = new ArrayList<>();
+            for (ForgeCombatDecisions.Choice candidate : candidates) {
+                String id = "combat-" + objectIds.incrementAndGet();
+                choices.put(id, new CombatChoice(candidate));
+                options.add(new CombatOption(id, candidate.operation(), candidate.cardRef(),
+                        candidate.relatedRef(), candidate.label()));
+            }
+            decision = new PendingInternal(new PendingCombatDecision(decisionId, type,
+                    playerId(player), context(game, game.getPhaseHandler()), List.copyOf(options),
+                    List.copyOf(selected)), observation, choices);
+            pending = decision;
+        }
+        return ((CombatChoice) await(decision)).candidate();
+    }
+
+    record CombatOption(String objectId, String operation, String cardRef, String relatedRef, String label) {}
+    record CombatAssignment(String cardRef, String relatedRef) {}
+    record PendingCombatDecision(String decisionId, String type, String playerId,
+            DecisionContext context, List<CombatOption> options,
+            List<CombatAssignment> selected) implements DecisionSnapshot {}
+    private record CombatChoice(ForgeCombatDecisions.Choice candidate) implements DecisionChoice {}
+
 
     AsphodelDecisionBroker(Consumer<Boolean> waitingListener) {
         this.waitingListener = waitingListener;
@@ -821,6 +863,9 @@ final class AsphodelDecisionBroker {
     }
 
     private static SubmissionKind submissionKind(DecisionSnapshot snapshot) {
+        if (snapshot instanceof PendingCombatDecision) {
+            return SubmissionKind.OBJECT;
+        }
         if (snapshot instanceof PendingTargetDecision) {
             return SubmissionKind.TARGET;
         }
@@ -876,7 +921,7 @@ final class AsphodelDecisionBroker {
 
     sealed interface DecisionSnapshot permits PendingDecision, PendingTargetDecision,
             PendingModeDecision, PendingValueDecision, PendingOptionalCostDecision,
-            PendingCostObjectDecision, PendingManaPaymentDecision {
+            PendingCostObjectDecision, PendingManaPaymentDecision, PendingCombatDecision {
         String decisionId();
     }
 
@@ -1093,7 +1138,7 @@ final class AsphodelDecisionBroker {
     }
 
     private sealed interface DecisionChoice permits PrimaryActionChoice, TargetChoice,
-            ModeChoice, ValueChoice, OptionalCostChoice, CostObjectChoice, ManaChoice {
+            ModeChoice, ValueChoice, OptionalCostChoice, CostObjectChoice, ManaChoice, CombatChoice {
     }
 
     private record PrimaryActionChoice(
