@@ -15,3 +15,17 @@ import type { AgentChoice } from "../agent/baseline-agent.js";
 export interface HumanDecisionProvider {
   choose(observation: AgentObservation, decision: ForgePendingExternalDecision): Promise<AgentChoice>;
 }
+
+/**
+ * Thrown by any `HumanDecisionProvider` to signal that the human deliberately ended the
+ * playtest ("end"/"quit") — this is expected control flow, never a failure. `runHumanVsAgentMatch`
+ * catches this specifically and returns normally with `endedByHuman: true` (a clean, cancelled
+ * Forge session and every already-recorded Asphodel decision preserved), instead of throwing
+ * `AgentRunError` the way a real error would. Defined here, not in the terminal implementation,
+ * so any future `HumanDecisionProvider` (e.g. a frontend) can raise the same signal.
+ */
+export class HumanEndMatchError extends Error {
+  constructor() {
+    super("human_ended_match");
+  }
+}

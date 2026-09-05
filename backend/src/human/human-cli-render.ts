@@ -73,7 +73,7 @@ export function renderHeader(observation: AgentObservation): string[] {
   ];
 }
 
-function formatPhase(phase: string): string {
+export function formatPhase(phase: string): string {
   return phase.split("_").map(word => word[0]!.toUpperCase() + word.slice(1)).join(" ");
 }
 

@@ -4,7 +4,7 @@ import type { AgentMatchTransport } from "./agent/agent-runner.js";
 import { AgentRunError } from "./agent/agent-runner.js";
 import { validateChoice, type AgentChoice, type AsphodelAgent } from "./agent/baseline-agent.js";
 import { runHumanVsAgentMatch } from "./human/human-vs-agent-runner.js";
-import type { HumanDecisionProvider } from "./human/human-decision-provider.js";
+import { HumanEndMatchError, type HumanDecisionProvider } from "./human/human-decision-provider.js";
 import { TerminalHumanDecisionProvider } from "./human/terminal-human-decision-provider.js";
 import { Readable, Writable } from "node:stream";
 import type {
@@ -180,4 +180,69 @@ it("TerminalHumanDecisionProvider retries locally on invalid input and never ret
   validateChoice(priorityDecision("player-1", 1), choice);
   assert.equal(choice.choice, "pass");
   assert.match(out, /Invalid choice/);
+});
+
+class EndingHuman implements HumanDecisionProvider {
+  calls = 0;
+  async choose(): Promise<AgentChoice> {
+    this.calls++;
+    throw new HumanEndMatchError();
+  }
+}
+
+it("a human-requested end is not an error: returns endedByHuman with the last snapshot, cancels once, keeps already-recorded Asphodel decisions", async () => {
+  const agent = new FakeAgent();
+  const human = new EndingHuman();
+  let cancelled = 0, call = 0;
+  const agentDecisions: string[] = [];
+  const client: AgentMatchTransport = {
+    startSpecs: async () => ({ sessionId: "s", status: "running" }),
+    get: async () => {
+      call++;
+      if (call === 1) return { sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: observation("player-2", "player-1", 1), pendingDecision: priorityDecision("player-2", 1) };
+      // The second decision belongs to the human, who immediately ends the playtest.
+      return { sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: observation("player-1", "player-2", 2), pendingDecision: priorityDecision("player-1", 2) };
+    },
+    cancel: async () => { cancelled++; return { sessionId: "s", status: "cancelled", cancelled: true }; },
+    submitDecision: async () => ({ accepted: true }), submitTarget: async () => ({ accepted: true }), submitMode: async () => ({ accepted: true }),
+    submitValue: async () => ({ accepted: true }), submitOptionalCost: async () => ({ accepted: true }), submitManaOption: async () => ({ accepted: true }),
+    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }),
+  };
+  const run = await runHumanVsAgentMatch(client, human, agent, [{ name: "h", cards: [] }, { name: "a", cards: [] }], "player-1", "player-2",
+    { pollIntervalMs: 0, onDecision: (owner) => { if (owner === "agent") agentDecisions.push("recorded"); } });
+  assert.equal(run.endedByHuman, true);
+  assert.equal(cancelled, 1);
+  assert.equal(agentDecisions.length, 1, "the Asphodel decision observed before the human ended must still have fired onDecision");
+  assert.equal(run.snapshot.pendingDecision?.playerId, "player-1", "the last polled (human) snapshot must be preserved");
+  assert.equal(agent.calls, 1);
+  assert.equal(human.calls, 1);
+  assert.equal(run.snapshot.status, "waiting_for_decision", "the game was never told it completed naturally");
+});
+
+it("a human-requested end never submits the ending prompt's decision to Forge and does not throw AgentRunError", async () => {
+  const agent = new FakeAgent();
+  const human = new EndingHuman();
+  let submitted = 0;
+  const client: AgentMatchTransport = {
+    startSpecs: async () => ({ sessionId: "s", status: "running" }),
+    get: async () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: observation("player-1", "player-2", 1), pendingDecision: priorityDecision("player-1", 1) }),
+    cancel: async () => ({ sessionId: "s", status: "cancelled", cancelled: true }),
+    submitDecision: async () => { submitted++; return { accepted: true }; }, submitTarget: async () => ({ accepted: true }), submitMode: async () => ({ accepted: true }),
+    submitValue: async () => ({ accepted: true }), submitOptionalCost: async () => ({ accepted: true }), submitManaOption: async () => ({ accepted: true }),
+    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }),
+  };
+  const run = await runHumanVsAgentMatch(client, human, agent, [{ name: "h", cards: [] }, { name: "a", cards: [] }], "player-1", "player-2", { pollIntervalMs: 0 });
+  assert.equal(run.endedByHuman, true);
+  assert.equal(submitted, 0, "an ended decision must never reach Forge");
+});
+
+it("TerminalHumanDecisionProvider treats \"end\" the same as \"quit\" and throws HumanEndMatchError before any choice is returned", async () => {
+  const input = new Readable({ read() {} });
+  const output = new Writable({ write(_chunk, _enc, callback) { callback(); } });
+  const provider = new TerminalHumanDecisionProvider(input, output);
+  const promise = provider.choose(observation("player-1", "player-2", 1), priorityDecision("player-1", 1));
+  await new Promise(resolve => setImmediate(resolve));
+  input.push("end\n");
+  await assert.rejects(promise, (error: unknown) => error instanceof HumanEndMatchError);
+  provider.close();
 });

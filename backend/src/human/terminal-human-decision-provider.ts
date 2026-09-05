@@ -1,19 +1,14 @@
 import { createInterface, type Interface } from "node:readline/promises";
 import type { AgentObservation, ForgePendingExternalDecision as Decision } from "../forge/forge-protocol.js";
 import type { AgentChoice } from "../agent/baseline-agent.js";
-import type { HumanDecisionProvider } from "./human-decision-provider.js";
+import { HumanEndMatchError, type HumanDecisionProvider } from "./human-decision-provider.js";
 import { describeDecision, renderBoard, renderEventDelta, renderHeader, type DecisionPrompt, type MenuItem } from "./human-cli-render.js";
 
-/** Thrown when the human types "quit". The CLI catches this to cancel the session cleanly. */
-export class HumanQuitError extends Error {
-  constructor() {
-    super("human_quit");
-  }
-}
+export { HumanEndMatchError };
 
 const HELP_TEXT = [
   "Type the number of your choice and press Enter.",
-  "Other commands: h/help (this text), state/board (reprint the board), quit (end the session).",
+  "Other commands: h/help (this text), state/board (reprint the board), end / quit — end the playtest and generate a report.",
 ];
 
 /**
@@ -66,7 +61,7 @@ export class TerminalHumanDecisionProvider implements HumanDecisionProvider {
       prompt.items.forEach((item: MenuItem, i: number) => this.write(`  ${i + 1}. ${item.label}`));
       const answer = (await this.rl.question("> ", { signal: this.signal })).trim();
       const command = this.handleCommand(answer);
-      if (command === "quit") throw new HumanQuitError();
+      if (command === "end") throw new HumanEndMatchError();
       if (command === "help") { this.write(HELP_TEXT.join("\n")); continue; }
       if (command === "board") { this.print(renderHeader(observation)); this.print(renderBoard(observation)); continue; }
       const index = Number(answer);
@@ -84,7 +79,7 @@ export class TerminalHumanDecisionProvider implements HumanDecisionProvider {
       this.write(`${prompt.title} (${prompt.min}-${prompt.max})`);
       const answer = (await this.rl.question("> ", { signal: this.signal })).trim();
       const command = this.handleCommand(answer);
-      if (command === "quit") throw new HumanQuitError();
+      if (command === "end") throw new HumanEndMatchError();
       if (command === "help") { this.write(HELP_TEXT.join("\n")); continue; }
       if (command === "board") continue;
       const value = Number(answer);
@@ -96,9 +91,9 @@ export class TerminalHumanDecisionProvider implements HumanDecisionProvider {
     }
   }
 
-  private handleCommand(answer: string): "quit" | "help" | "board" | null {
+  private handleCommand(answer: string): "end" | "help" | "board" | null {
     const normalized = answer.toLowerCase();
-    if (normalized === "quit") return "quit";
+    if (normalized === "end" || normalized === "quit") return "end";
     if (normalized === "h" || normalized === "help") return "help";
     if (normalized === "state" || normalized === "board") return "board";
     return null;

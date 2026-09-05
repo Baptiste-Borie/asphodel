@@ -2,9 +2,18 @@ import type { AgentMatchTransport, AgentTraceEntry } from "../agent/agent-runner
 import { AgentRunError, gameMetrics, submitExternalChoice } from "../agent/agent-runner.js";
 import { validateChoice, type AgentChoice, type AsphodelAgent } from "../agent/baseline-agent.js";
 import type { AgentObservation, ForgeDeckSpec, ForgeExternalMatchSnapshot, ForgePendingExternalDecision } from "../forge/forge-protocol.js";
-import type { HumanDecisionProvider } from "./human-decision-provider.js";
+import { HumanEndMatchError, type HumanDecisionProvider } from "./human-decision-provider.js";
 
 export type DecisionOwner = "human" | "agent";
+
+export interface HumanVsAgentResult {
+  sessionId: string;
+  snapshot: ForgeExternalMatchSnapshot;
+  trace: AgentTraceEntry[];
+  metrics: ReturnType<typeof gameMetrics>;
+  /** true when the human typed "end"/"quit"; false for a natural Forge terminal result. Never both. */
+  endedByHuman: boolean;
+}
 
 export interface HumanVsAgentOptions {
   seed?: number;
@@ -33,7 +42,7 @@ export async function runHumanVsAgentMatch(
   humanPlayerId: string,
   agentPlayerId: string,
   options: HumanVsAgentOptions = {},
-) {
+): Promise<HumanVsAgentResult> {
   const timeoutMs = options.timeoutMs ?? 3_600_000;
   const maxDecisions = options.maxDecisions ?? 20_000;
   const maxIdlePolls = options.maxIdlePolls ?? 5_000;
@@ -55,7 +64,7 @@ export async function runHumanVsAgentMatch(
       if (latest.sessionId !== sessionId) throw new Error("human_vs_agent_session_mismatch");
       if (latest.status === "completed") {
         if (!latest.result?.gameOver) throw new Error("human_vs_agent_missing_terminal_result");
-        return { sessionId, snapshot: latest, trace, metrics: gameMetrics(latest, trace, agentPlayerId) };
+        return { sessionId, snapshot: latest, trace, metrics: gameMetrics(latest, trace, agentPlayerId), endedByHuman: false };
       }
       if (latest.status === "failed" || latest.status === "cancelled") throw new Error(`human_vs_agent_match_${latest.status}: ${latest.error?.message ?? ""}`);
       const d = latest.pendingDecision, observation = latest.observation;
@@ -79,6 +88,13 @@ export async function runHumanVsAgentMatch(
       await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
     }
   } catch (cause) {
+    if (cause instanceof HumanEndMatchError && latest) {
+      // A deliberate "end"/"quit" is not a failure: cancel Forge cleanly (best-effort — a
+      // secondary cancellation problem must not turn an intentional end into an error) and
+      // return normally with the last snapshot and every already-recorded decision intact.
+      try { await client.cancel(sessionId); } catch { /* best-effort cancel on a deliberate end */ }
+      return { sessionId, snapshot: latest, trace, metrics: gameMetrics(latest, trace, agentPlayerId), endedByHuman: true };
+    }
     let cancellationError: unknown;
     try { await client.cancel(sessionId); } catch (error) { cancellationError = error; }
     throw new AgentRunError(cause instanceof Error ? cause.message : "human_vs_agent_run_failed", sessionId,

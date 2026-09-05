@@ -25,6 +25,9 @@ backend/data/scryfall-*.json.*.tmp
 backend/data/scryfall-*.jsonl.gz
 backend/data/scryfall-*.jsonl.gz.*.tmp
 
+# Local playtest reports (decision corpora with a real observation history) — never committed
+backend/playtest-reports/
+
 # Logs
 logs/
 *.log
