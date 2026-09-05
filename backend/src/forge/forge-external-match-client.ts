@@ -4,10 +4,13 @@ import { ForgeDeckAdapter } from "./forge-deck-adapter.js";
 import type {
   ForgeDeckSpec,
   ForgeExternalMatchSnapshot,
+  ForgeMatchSeatController,
 } from "./forge-protocol.js";
 
 export interface ForgeExternalMatchStartOptions {
   seed?: number;
+  /** Defaults to ["external", "forge_ai"] — the historical single-external-seat match. */
+  seats?: [ForgeMatchSeatController, ForgeMatchSeatController];
 }
 
 export class ForgeExternalMatchClient {
@@ -37,6 +40,7 @@ export class ForgeExternalMatchClient {
       type: "start_external_match",
       format: "commander",
       ...(options.seed === undefined ? {} : { seed: options.seed }),
+      ...(options.seats === undefined ? {} : { seats: options.seats }),
       decks: [playerDeck, aiDeck],
     });
   }

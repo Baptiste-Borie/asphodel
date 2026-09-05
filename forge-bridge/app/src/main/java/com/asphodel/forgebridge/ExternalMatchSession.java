@@ -1,11 +1,12 @@
 package com.asphodel.forgebridge;
 
-import forge.ai.LobbyPlayerAi;
+import forge.LobbyPlayer;
 import forge.deck.Deck;
 import forge.game.Game;
 import forge.game.GameEndReason;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -19,6 +20,8 @@ final class ExternalMatchSession {
     private final long seed;
     private final Deck playerDeck;
     private final Deck aiDeck;
+    /** One entry per seat, in player order: "external" (Asphodel/human via the shared broker) or "forge_ai". */
+    private final List<String> seats;
     private final AsphodelDecisionBroker decisions;
     private final ExecutorService executor;
     private final ExternalMatchTelemetry telemetry = new ExternalMatchTelemetry();
@@ -35,13 +38,19 @@ final class ExternalMatchSession {
             String format,
             long seed,
             Deck playerDeck,
-            Deck aiDeck
+            Deck aiDeck,
+            List<String> seats
     ) {
         this.sessionId = sessionId;
         this.format = format;
         this.seed = seed;
         this.playerDeck = playerDeck;
         this.aiDeck = aiDeck;
+        this.seats = List.copyOf(seats);
+        // One decision broker for the whole session: Forge's single-threaded game loop only ever
+        // asks one controller for one decision at a time, so a shared broker cannot receive two
+        // competing pending decisions even when both seats are external. Each request/response is
+        // still tagged with the actual owning Player, so there is no cross-seat routing ambiguity.
         this.decisions = new AsphodelDecisionBroker(this::decisionWaitingChanged);
         this.executor = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "asphodel-external-match-" + sessionId);
@@ -157,18 +166,16 @@ final class ExternalMatchSession {
 
     private void runGame() {
         try {
-            LobbyPlayerAsphodel externalPlayer = new LobbyPlayerAsphodel(
-                    "Asphodel External Player",
-                    decisions
-            );
-            LobbyPlayerAi aiPlayer = ForgeGameRunner.createAiLobbyPlayer("Forge AI 2");
+            // Generic label: an "external" seat may be Asphodel (V2a/V2b) or a human (V2c) — never assume which.
+            LobbyPlayer seatOne = createSeatPlayer(seats.get(0), "External Player 1");
+            LobbyPlayer seatTwo = createSeatPlayer(seats.get(1), "External Player 2");
             Map<String, Object> gameResult = new ForgeGameRunner().runExternal(
                     format,
                     seed,
                     playerDeck,
                     aiDeck,
-                    externalPlayer,
-                    aiPlayer,
+                    seatOne,
+                    seatTwo,
                     this::gameCreated
             );
             synchronized (this) {
@@ -199,6 +206,15 @@ final class ExternalMatchSession {
             workerTerminated = true;
             executor.shutdownNow();
         }
+    }
+
+    /** Builds the lobby player for one seat. Both "external" seats share this session's one broker. */
+    private LobbyPlayer createSeatPlayer(String seat, String externalName) {
+        return switch (seat) {
+            case "external" -> new LobbyPlayerAsphodel(externalName, decisions);
+            case "forge_ai" -> ForgeGameRunner.createAiLobbyPlayer("Forge AI");
+            default -> throw new IllegalArgumentException("Unknown seat controller: " + seat);
+        };
     }
 
     private synchronized void gameCreated(Game createdGame) {

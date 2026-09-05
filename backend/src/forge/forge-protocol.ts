@@ -12,6 +12,14 @@ export interface ForgeDeckSpec {
   cards: ForgeDeckCardSpec[];
 }
 
+/**
+ * Per-seat match controller, in player order. "external" is driven by whatever calls the
+ * submit_external_decision RPCs (a human provider or an agent); "forge_ai" is Forge's own AI.
+ * Omitting `seats` on start_external_match keeps the historical single-external-seat shape
+ * (`["external", "forge_ai"]`).
+ */
+export type ForgeMatchSeatController = "external" | "forge_ai";
+
 export interface ForgeRequestMap {
   ping: { type: "ping" };
   engine_info: { type: "engine_info" };
@@ -38,6 +46,7 @@ export interface ForgeRequestMap {
     format: "commander";
     seed?: number;
     decks: [ForgeDeckSpec, ForgeDeckSpec];
+    seats?: [ForgeMatchSeatController, ForgeMatchSeatController];
   };
   get_external_match: {
     type: "get_external_match";

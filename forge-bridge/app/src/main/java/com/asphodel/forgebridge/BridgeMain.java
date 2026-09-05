@@ -231,6 +231,16 @@ public final class BridgeMain {
             );
         }
 
+        List<String> seats = parseSeats(request.get("seats"));
+        if (seats == null) {
+            return error(
+                    requestId,
+                    "INVALID_PAYLOAD",
+                    "start_external_match seats must be exactly two of \"external\" or \"forge_ai\".",
+                    null
+            );
+        }
+
         EXTERNAL_MATCHES.ensureCanStart();
         ForgeDeckFactory factory = new ForgeDeckFactory();
         Deck playerDeck = factory.build(parseDeckSpec(decksElement.getAsJsonArray().get(0)));
@@ -239,9 +249,32 @@ public final class BridgeMain {
                 format,
                 getLong(request, "seed", 12345L),
                 playerDeck,
-                aiDeck
+                aiDeck,
+                seats
         );
         return success(requestId, "start_external_match", started);
+    }
+
+    /** Defaults to the historical single-external-seat shape when the field is absent. */
+    private static List<String> parseSeats(JsonElement seatsElement) {
+        if (seatsElement == null || seatsElement.isJsonNull()) {
+            return ExternalMatchManager.DEFAULT_SEATS;
+        }
+        if (!seatsElement.isJsonArray() || seatsElement.getAsJsonArray().size() != 2) {
+            return null;
+        }
+        List<String> seats = new ArrayList<>();
+        for (JsonElement seat : seatsElement.getAsJsonArray()) {
+            if (!seat.isJsonPrimitive() || !seat.getAsJsonPrimitive().isString()) {
+                return null;
+            }
+            String value = seat.getAsString();
+            if (!value.equals("external") && !value.equals("forge_ai")) {
+                return null;
+            }
+            seats.add(value);
+        }
+        return seats;
     }
 
     private static Map<String, Object> handleGetExternalMatch(

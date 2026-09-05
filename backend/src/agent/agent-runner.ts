@@ -20,6 +20,21 @@ export interface AgentRunOptions {
   onDecision?: (observation: AgentObservation, decision: ForgePendingExternalDecision, choice: AgentChoice) => void;
 }
 
+/** Submits an already-validated choice for the exact pending decision it answers. Shared by every external caller (agent runner, human-vs-agent orchestrator) so the selector-family routing lives in one place. */
+export async function submitExternalChoice(client: AgentMatchTransport, sessionId: string, d: ForgePendingExternalDecision, choice: AgentChoice): Promise<void> {
+  switch (choice.kind) {
+    case "action": await client.submitDecision(sessionId, d.decisionId, choice.choice); break;
+    case "target": await client.submitTarget(sessionId, d.decisionId, choice.choice); break;
+    case "mode": await client.submitMode(sessionId, d.decisionId, choice.choice); break;
+    case "value": await client.submitValue(sessionId, d.decisionId, choice.choice); break;
+    case "optional_cost": await client.submitOptionalCost(sessionId, d.decisionId, choice.choice); break;
+    case "mana": await client.submitManaOption(sessionId, d.decisionId, choice.choice); break;
+    case "object":
+      if (d.type === "cost_object_selection") await client.submitCostObject(sessionId, d.decisionId, choice.choice);
+      else await client.submitSelection(sessionId, d.decisionId, choice.choice);
+  }
+}
+
 export function gameMetrics(snapshot: ForgeExternalMatchSnapshot, trace: AgentTraceEntry[], selfPlayerId: string) {
   const counts: Record<string, number> = {};
   for (const entry of trace) counts[entry.type] = (counts[entry.type] ?? 0) + 1;
@@ -87,17 +102,7 @@ export async function runAgentMatch(client: AgentMatchTransport, agent: Asphodel
         const choice = agent.choose(observation, d);
         validateChoice(d, choice);
         options.signal?.throwIfAborted();
-        switch (choice.kind) {
-          case "action": await client.submitDecision(sessionId, d.decisionId, choice.choice); break;
-          case "target": await client.submitTarget(sessionId, d.decisionId, choice.choice); break;
-          case "mode": await client.submitMode(sessionId, d.decisionId, choice.choice); break;
-          case "value": await client.submitValue(sessionId, d.decisionId, choice.choice); break;
-          case "optional_cost": await client.submitOptionalCost(sessionId, d.decisionId, choice.choice); break;
-          case "mana": await client.submitManaOption(sessionId, d.decisionId, choice.choice); break;
-          case "object":
-            if (d.type === "cost_object_selection") await client.submitCostObject(sessionId, d.decisionId, choice.choice);
-            else await client.submitSelection(sessionId, d.decisionId, choice.choice);
-        }
+        await submitExternalChoice(client, sessionId, d, choice);
         trace.push({ turn: d.context.turn, phase: d.context.phase, type: d.type, choice });
         options.onDecision?.(observation, d, choice);
         seen.add(d.decisionId);

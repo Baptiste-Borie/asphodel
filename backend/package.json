@@ -10,6 +10,7 @@
     "test": "tsx --test src/*.test.ts",
     "agent:evaluate": "tsx src/agent/run-evaluation.ts",
     "agent:baseline": "tsx src/agent/run-baseline.ts",
+    "game:human-vs-asphodel": "tsx src/human/run-human-vs-asphodel.ts",
     "test:forge-bridge": "tsx --test --test-concurrency=1 src/forge/*.integration.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",

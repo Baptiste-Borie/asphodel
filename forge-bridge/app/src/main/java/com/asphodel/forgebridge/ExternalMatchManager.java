@@ -2,10 +2,14 @@ package com.asphodel.forgebridge;
 
 import forge.deck.Deck;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
 final class ExternalMatchManager {
+    /** Backward-compatible default: seat 0 external (Asphodel/human), seat 1 native Forge AI. */
+    static final List<String> DEFAULT_SEATS = List.of("external", "forge_ai");
+
     private final AtomicLong sessionIds = new AtomicLong();
     private ExternalMatchSession session;
     private boolean synchronousMatchRunning;
@@ -14,7 +18,8 @@ final class ExternalMatchManager {
             String format,
             long seed,
             Deck playerDeck,
-            Deck aiDeck
+            Deck aiDeck,
+            List<String> seats
     ) {
         ensureMatchSlotAvailable();
         ExternalMatchSession created = new ExternalMatchSession(
@@ -22,7 +27,8 @@ final class ExternalMatchManager {
                 format,
                 seed,
                 playerDeck,
-                aiDeck
+                aiDeck,
+                seats
         );
         session = created;
         try {
