@@ -257,6 +257,43 @@ function discardCostDeck(name = "Discard cost fixture"): ForgeDeckSpec {
   };
 }
 
+// V2e.6.1: a WB commander (Elenda, Saint of Dusk, {2}{W}{B}) fixture reproducing the real playtest
+// regression as closely as practical — the deck's ONLY lands are Swamp, Rogue's Passage, and
+// Command Tower (no Plains at all), so Command Tower is the ONLY source of white mana. Before this
+// milestone, Command Tower's combo mana was entirely invisible to the external protocol, so a
+// {1}{W} spell (Lifecreed Duo/Suture Priest, both real cards from the reported deck) could never
+// actually be paid for despite being offered as legal — the exact root cause of the >4,000-decision
+// loop (see docs/commander-color-mana-and-loop-guard-v2e6-1.md).
+function commandTowerDeck(name = "Command Tower fixture (Elenda, WB)"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      { name: "Elenda, Saint of Dusk", quantity: 1, section: "commander" },
+      { name: "Swamp", quantity: 15, section: "mainboard" },
+      { name: "Rogue's Passage", quantity: 5, section: "mainboard" },
+      { name: "Command Tower", quantity: 10, section: "mainboard" },
+      { name: "Lifecreed Duo", quantity: 10, section: "mainboard" },
+      { name: "Suture Priest", quantity: 10, section: "mainboard" },
+      { name: "Vito, Thorn of the Dusk Rose", quantity: 10, section: "mainboard" },
+    ],
+  };
+}
+
+// A deliberately harmless opponent (no spells to draw at all) — this test's default driver never
+// declares blocks (see `submitDeterministicSecondary`'s combat branch, which only ever "finishes"),
+// so a real aggressive opponent would simply race the external player down before Command Tower is
+// even drawn. Nothing here is the thing under test; it exists purely so the external side survives
+// long enough to naturally draw its own deck.
+function harmlessOpponentDeck(name = "Harmless filler opponent"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      { name: "Krenko, Tin Street Kingpin", quantity: 1, section: "commander" },
+      { name: "Mountain", quantity: 60, section: "mainboard" },
+    ],
+  };
+}
+
 function assertTerminalDeckMatch(
   result: ForgeGameResult,
   controllerClasses = [
@@ -3080,6 +3117,118 @@ Mainboard
     assert.ok(played.progress.manaPaymentDecisionsRequested >= 5);
     assert.equal(played.progress.manaPaymentsFallbackToAi, 0);
     if (played.status !== "completed") await external.cancel(started.sessionId);
+  });
+
+  it("V2e.6.1 §15: Command Tower externalizes as one exact option per legal commander-identity color, and choosing the required color actually taps it and produces that mana through Forge", { timeout: 120_000 }, async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(commandTowerDeck(), harmlessOpponentDeck(), {
+      seed: 8_675_309,
+    });
+    const relevantLands = new Set(["Swamp", "Rogue's Passage", "Command Tower"]);
+    const found = await driveUntilObservedAction(
+      external,
+      started.sessionId,
+      (observation, action) =>
+        action.type === "cast_spell" &&
+        action.manaCost === "{1}{W}" &&
+        observedPlayers(observation).self.battlefield.filter(
+          (card) => relevantLands.has(card.name ?? "") && card.tapped === false,
+        ).length >= 2 &&
+        observedPlayers(observation).self.battlefield.some(
+          (card) => card.name === "Command Tower" && card.tapped === false,
+        ),
+    );
+    await external.submitDecision(
+      started.sessionId,
+      found.decision.decisionId,
+      found.action.actionId,
+    );
+
+    const payment = await waitForManaPaymentDecision(external, started.sessionId);
+    assert.equal(payment.pendingDecision.source.actionId, found.action.actionId);
+    assert.equal(payment.pendingDecision.remainingCost.text, "{1}{W}");
+
+    // Never the vague Forge-internal "Combo ColorIdentity" shape, and never a color outside the
+    // real WB commander identity (V2e.6.1 §§3-4).
+    const commandTowerOptions = payment.pendingDecision.options.filter(
+      (option) => option.type === "activate_mana_ability" && option.sourceCardName === "Command Tower",
+    );
+    assert.ok(commandTowerOptions.length >= 1, "Command Tower must appear in mana_payment at all");
+    assert.ok(
+      commandTowerOptions.every((option) => option.produces.length === 1 && ["W", "B"].includes(option.produces[0]!)),
+      "every Command Tower option must be exactly one commander-identity color, never Combo/ColorIdentity",
+    );
+    assert.ok(
+      !commandTowerOptions.some((option) => option.produces.some((color) => !["W", "B"].includes(color))),
+      "never a color outside the WB commander identity (e.g. U/R/G)",
+    );
+    const commandTowerW = commandTowerOptions.find((option) => option.produces.join("") === "W");
+    assert.ok(commandTowerW, "Command Tower must expose an exact W option while {1}{W} still needs W");
+    assert.equal(commandTowerW.color, "W");
+    const sameSourceRef = commandTowerOptions.every((option) => option.sourceCardRef === commandTowerW.sourceCardRef);
+    assert.ok(sameSourceRef, "every option for the one physical Command Tower shares its exact sourceCardRef");
+
+    // §7 regression: the existing simple fixed-mana sources sharing this exact battlefield must be
+    // entirely unaffected by Command Tower's new combo-color support.
+    const rogue = payment.pendingDecision.options.find(
+      (option) => option.type === "activate_mana_ability" && option.sourceCardName === "Rogue's Passage",
+    );
+    if (rogue) {
+      assert.deepEqual(rogue.produces, ["C"]);
+      assert.equal(rogue.color, null);
+    }
+    const swamp = payment.pendingDecision.options.find(
+      (option) => option.type === "activate_mana_ability" && option.sourceCardName === "Swamp",
+    );
+    if (swamp) {
+      assert.deepEqual(swamp.produces, ["B"]);
+      assert.equal(swamp.color, null);
+    }
+
+    await external.submitManaOption(
+      started.sessionId,
+      payment.pendingDecision.decisionId,
+      commandTowerW.manaOptionId,
+    );
+
+    // The ACTUAL Forge mutation, not a Node-side simulation: Command Tower really taps, and the
+    // remaining cost genuinely drops the W pip (V2e.6.1 §5).
+    const afterCommandTower = await waitForManaPaymentDecision(external, started.sessionId);
+    assert.notEqual(afterCommandTower.pendingDecision.decisionId, payment.pendingDecision.decisionId);
+    assert.equal(afterCommandTower.pendingDecision.remainingCost.text, "{1}");
+    const towerCard = observedPlayers(afterCommandTower.observation).self.battlefield.find(
+      (card) => card.cardRef === commandTowerW.sourceCardRef,
+    );
+    assert.equal(towerCard?.tapped, true, "Command Tower must actually tap through Forge");
+    assert.ok(
+      !afterCommandTower.pendingDecision.options.some(
+        (option) => option.type === "activate_mana_ability" && option.sourceCardRef === commandTowerW.sourceCardRef,
+      ),
+      "the now-tapped Command Tower must not be offered a second time",
+    );
+
+    const genericSource = afterCommandTower.pendingDecision.options.find(
+      (option) => option.type === "activate_mana_ability",
+    );
+    assert.ok(genericSource, "a real source must remain to pay the last generic {1}");
+    await external.submitManaOption(
+      started.sessionId,
+      afterCommandTower.pendingDecision.decisionId,
+      genericSource.manaOptionId,
+    );
+
+    const resolved = await driveUntilObservation(
+      external,
+      started.sessionId,
+      (observation) =>
+        observedPlayers(observation).self.battlefield.some(
+          (card) => card.cardRef === found.action.cardRef,
+        ),
+    );
+    assert.equal(resolved.progress.manaPaymentsFallbackToAi, 0, "no fallback to Forge's own AI was ever needed");
+    if (resolved.status !== "completed") await external.cancel(started.sessionId);
   });
 
   it("casts a real X spell with Node-selected X=2 and rejects invalid values", async () => {

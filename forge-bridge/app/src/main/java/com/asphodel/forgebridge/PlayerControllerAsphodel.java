@@ -623,8 +623,39 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
         }
 
         SpellAbility manaAbility = selected.ability();
-        if (manaAbility == null
-                || !PlaySpellAbility.playSpellAbility(this, getPlayer(), manaAbility)) {
+        if (manaAbility == null) {
+            return false;
+        }
+        String forcedColor = selected.forcedColor();
+        if (forcedColor == null) {
+            return activateAndPayFromAbility(paidFor, remainingCost, manaAbility);
+        }
+
+        // V2e.6.1 §5: push the exact externally-chosen color (e.g. Command Tower "-> W") through
+        // Forge's own AbilityManaPart express-choice mechanism, scoped tightly to this single
+        // activation. Forge itself (ManaEffect.resolve) reads this before resolving combo mana and
+        // resolves deterministically to this one color — Forge remains responsible for tapping,
+        // producing, and paying. Always cleared afterward so nothing leaks into a later activation,
+        // even on failure.
+        List<AbilityManaPart> parts = manaAbility.getAllManaParts();
+        for (AbilityManaPart part : parts) {
+            part.setExpressChoice(forcedColor);
+        }
+        try {
+            return activateAndPayFromAbility(paidFor, remainingCost, manaAbility);
+        } finally {
+            for (AbilityManaPart part : parts) {
+                part.clearExpressChoice();
+            }
+        }
+    }
+
+    private boolean activateAndPayFromAbility(
+            SpellAbility paidFor,
+            ManaCostBeingPaid remainingCost,
+            SpellAbility manaAbility
+    ) {
+        if (!PlaySpellAbility.playSpellAbility(this, getPlayer(), manaAbility)) {
             return false;
         }
         for (AbilityManaPart part : manaAbility.getAllManaParts()) {

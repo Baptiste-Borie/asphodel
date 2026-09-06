@@ -41,7 +41,12 @@ function agentCard() {
   return { cardRef: "agent-card", name: AGENT_HAND_CARD, zone: "hand" as const, ownerId: "player-2", controllerId: "player-2", faceDown: false, hidden: false, tapped: null, summoningSick: null, counters: null, power: null, toughness: null, typeLine: "Creature" };
 }
 function humanObservation(turn = 1) { return observation("player-1", "player-2", turn, [humanCard()]); }
-function agentObservation(turn = 1) { return observation("player-2", "player-1", turn, [agentCard()]); }
+/** `variant` appends a distinguishing filler hand card so consecutive same-turn observations are
+ * never byte-for-byte identical — see its one caller for why this matters since V2e.6.1. */
+function agentObservation(turn = 1, variant = 0) {
+  const hand = variant === 0 ? [agentCard()] : [agentCard(), { cardRef: `agent-filler-${variant}`, name: "Filler", zone: "hand" as const, ownerId: "player-2", controllerId: "player-2", faceDown: false, hidden: false, tapped: null, summoningSick: null, counters: null, power: null, toughness: null, typeLine: "Land" }];
+  return observation("player-2", "player-1", turn, hand);
+}
 
 // Two legal actions (pass + a real one) so a human decision actually reaches the browser instead
 // of being safely auto-passed by the backend (see priority-auto-pass.test.ts for that behavior).
@@ -307,9 +312,13 @@ it("captures a public frame after an accepted Asphodel action, in order, human-s
       // (priorityDecision's context is hardcoded to turn 1, so every observation here stays on
       // turn 1 too — the runner's own coherence check requires decision.context.turn to match
       // observation.game.turn exactly.)
-      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: agentObservation(1), pendingDecision: priorityDecision("player-2", "d-2") }),
-      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: agentObservation(1), pendingDecision: priorityDecision("player-2", "d-3") }),
-      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: agentObservation(1), pendingDecision: priorityDecision("player-2", "d-4") }),
+      // Each step's hand carries a distinct extra filler card: real Forge state genuinely advances
+      // after every accepted action, and the V2e.6.1 agent loop guard (correctly) treats a
+      // byte-for-byte-identical semantic state recurring with the same cast still offered as a
+      // rolled-back cast, not a fresh successful one — so this fixture must not pretend otherwise.
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: agentObservation(1, 1), pendingDecision: priorityDecision("player-2", "d-2") }),
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: agentObservation(1, 2), pendingDecision: priorityDecision("player-2", "d-3") }),
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: agentObservation(1, 3), pendingDecision: priorityDecision("player-2", "d-4") }),
       // Back to the human — already exposed directly via the existing live observation/pendingDecision
       // fields, so no additional frame is expected for this last transition.
       () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: humanObservation(1), pendingDecision: priorityDecision("player-1", "d-5") }),

@@ -2,6 +2,7 @@ import type { AgentMatchTransport, AgentTraceEntry } from "../agent/agent-runner
 import { AgentRunError, gameMetrics, submitExternalChoice } from "../agent/agent-runner.js";
 import { validateChoice, type AgentChoice, type AsphodelAgent } from "../agent/baseline-agent.js";
 import type { AgentObservation, ForgeDeckSpec, ForgeExternalMatchSnapshot, ForgePendingExternalDecision } from "../forge/forge-protocol.js";
+import { AgentCastLoopGuard } from "./agent-loop-guard.js";
 import { HumanEndMatchError, type HumanDecisionProvider } from "./human-decision-provider.js";
 import { autoPassChoice } from "./priority-auto-pass.js";
 
@@ -63,6 +64,9 @@ export async function runHumanVsAgentMatch(
   const started = Date.now();
   const trace: AgentTraceEntry[] = [];
   const seen = new Set<string>();
+  // V2e.6.1 §§8-13: infrastructure guard, scoped to this one match, protecting only Asphodel's own
+  // priority_action decisions against a failed-cast no-progress loop. Never applied to the human.
+  const agentCastLoopGuard = new AgentCastLoopGuard();
   let latest: ForgeExternalMatchSnapshot | undefined;
   let idle = 0;
   try {
@@ -89,7 +93,10 @@ export async function runHumanVsAgentMatch(
         // A sole forced pass (no other legal priority action) never reaches the human at all —
         // Forge's own rendered options decide this, never a guess about strategic usefulness.
         const forcedPass = owner === "human" ? autoPassChoice(d) : null;
-        const choice = forcedPass ?? (owner === "human" ? await human.choose(observation, d) : agent.choose(observation, d));
+        const choice = forcedPass ?? (owner === "human" ? await human.choose(observation, d)
+          : d.type === "priority_action"
+            ? agentCastLoopGuard.wrapPriorityDecision(observation, d, (filtered) => agent.choose(observation, filtered))
+            : agent.choose(observation, d));
         validateChoice(d, choice);
         options.signal?.throwIfAborted();
         await submitExternalChoice(client, sessionId, d, choice);

@@ -354,7 +354,14 @@ export type ForgeManaPaymentOption =
       produces: string[];
       tapped: boolean;
       manaRef: null;
-      color: null;
+      /**
+       * `null` for an ordinary fixed-mana ability. Non-null for a narrow "Combo ColorIdentity"
+       * candidate (V2e.6.1 — e.g. Command Tower): the exact commander-identity color this specific
+       * option was externalized as (Command Tower on a WB commander offers two DISTINCT options,
+       * one with `color: "W"` and one with `color: "B"`, never a vague combined value). `produces`
+       * already carries this same single color as its one entry.
+       */
+      color: string | null;
     }
   | {
       manaOptionId: string;

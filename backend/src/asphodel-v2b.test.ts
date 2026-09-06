@@ -119,6 +119,21 @@ it("preserves flexible mana and avoids excess production while using floating ma
   d.options.push({ manaOptionId: "float", type: "spend_floating_mana", manaRef: "m", color: "R", sourceCardRef: null, sourceCardName: null, abilityText: null, produces: [], tapped: false });
   assert.equal(choose(observation(), d).choice, "float");
 });
+it("V2e.6.1 §14 regression: with Command Tower externalized as an exact-color option, V2b picks the required color over a generic-only dead end (the real seed-500 playtest failure)", () => {
+  // Mirrors the exact reported board: hand needs {1}{W}, battlefield only has Swamp (B), Rogue's
+  // Passage (C), and Command Tower — now correctly exposed as one option per legal commander-
+  // identity color (V2e.6.1 §3) instead of being invisible to this external protocol.
+  const option = (id: string, produces: string[], color: string | null = null) =>
+    ({ manaOptionId: id, type: "activate_mana_ability" as const, sourceCardRef: id, sourceCardName: id, abilityText: null, produces, tapped: false, manaRef: null, color });
+  const d: Extract<Decision, { type: "mana_payment" }> = { ...base, type: "mana_payment", source, remainingCost: { text: "{1}{W}", generic: 1, convertedManaCost: 2, shards: ["W"] }, manaPool: { total: 0, byColor: {} }, canFinish: false,
+    options: [
+      option("swamp", ["B"]),
+      option("rogues-passage", ["C"]),
+      option("command-tower-b", ["B"], "B"),
+      option("command-tower-w", ["W"], "W"),
+    ] };
+  assert.equal(choose(observation(), d).choice, "command-tower-w", "must pay the exact still-needed W while it is available, never a generic-only source that dead-ends the cast");
+});
 it("scaling X uses native legal bounds and unknown X remains conservative", () => {
   const d: Extract<Decision, { type: "value_selection" }> = { ...base, type: "value_selection", source: { ...source, abilityText: "Draw X cards." }, prompt: null, valueKind: "x", minValue: 0, maxValue: 4, suggestedValues: [] };
   assert.equal(choose(observation(), d).choice, 4);

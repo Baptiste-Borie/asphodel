@@ -282,3 +282,64 @@ it("a sole forced pass never reaches the human provider: the orchestrator auto-s
   assert.deepEqual(owners, ["human"]);
   assert.equal(run.snapshot.status, "completed");
 });
+
+/** V2e.6.1 §17: reproduces the real failed-cast-loop shape end-to-end through the actual
+ * `runHumanVsAgentMatch` wiring (not just the guard class in isolation) with a mocked transport
+ * that keeps re-offering the same rolled-back cast from the same semantic priority state. */
+it("V2e.6.1 §17: the agent loop guard (wired into runHumanVsAgentMatch) excludes a repeatedly-rolled-back cast instead of looping forever, and forgets the failure once the turn actually advances", async () => {
+  const cardX = { cardRef: "card-x", name: "Spell X", zone: "hand" as const, ownerId: "player-2", controllerId: "player-2", faceDown: false, hidden: false, tapped: null, summoningSick: null, counters: null, power: null, toughness: null, typeLine: "Creature" };
+  const cardY = { cardRef: "card-y", name: "Spell Y", zone: "hand" as const, ownerId: "player-2", controllerId: "player-2", faceDown: false, hidden: false, tapped: null, summoningSick: null, counters: null, power: null, toughness: null, typeLine: "Creature" };
+  function agentDecision(turn: number, suffix: string, options: { x?: boolean; y?: boolean } = {}): Extract<Decision, { type: "priority_action" }> {
+    const { x = true, y = true } = options;
+    return {
+      decisionId: `d-agent-${turn}-${suffix}`, type: "priority_action", playerId: "player-2",
+      context: { turn, phase: "main1", activePlayerId: "player-2", priorityPlayerId: "player-2", stackSize: 0 },
+      actions: [
+        { actionId: "pass", type: "pass", label: "Pass priority", cardRef: null, cardName: null, sourceZone: null, abilityText: null, manaCost: null, requiresTargets: false },
+        ...(x ? [{ actionId: `cast-x-${suffix}`, type: "cast_spell" as const, label: "Cast X", cardRef: "card-x", cardName: "Spell X", sourceZone: "hand" as const, abilityText: null, manaCost: "{1}", requiresTargets: false }] : []),
+        ...(y ? [{ actionId: `cast-y-${suffix}`, type: "cast_spell" as const, label: "Cast Y", cardRef: "card-y", cardName: "Spell Y", sourceZone: "hand" as const, abilityText: null, manaCost: "{1}", requiresTargets: false }] : []),
+      ],
+    };
+  }
+  class GreedyAgent implements AsphodelAgent {
+    seenCardRefs: (string | null)[][] = [];
+    choose(_o: AgentObservation, d: Decision): AgentChoice {
+      const pd = d as Extract<Decision, { type: "priority_action" }>;
+      this.seenCardRefs.push(pd.actions.map(a => a.type === "cast_spell" ? a.cardRef : a.type));
+      const nonPass = pd.actions.find(a => a.type !== "pass");
+      const chosen = nonPass ?? pd.actions.find(a => a.type === "pass")!;
+      return { decisionId: d.decisionId, kind: "action", choice: chosen.actionId, reason: "greedy_first_non_pass" };
+    }
+  }
+  const agent = new GreedyAgent();
+  const human = new FakeHuman();
+  let call = 0;
+  const client: AgentMatchTransport = {
+    startSpecs: async () => ({ sessionId: "s", status: "running" }),
+    get: async () => {
+      call++;
+      const turn5 = observation("player-2", "player-1", 5, [cardX, cardY]);
+      switch (call) {
+        // The exact same priority state (turn 5) is offered three times in a row — as if Forge
+        // rolled back an unsupported mana payment each time and returned to identical priority.
+        case 1: return { sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: turn5, pendingDecision: agentDecision(5, "1") };
+        case 2: return { sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: turn5, pendingDecision: agentDecision(5, "2") };
+        case 3: return { sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: turn5, pendingDecision: agentDecision(5, "3") };
+        // Real game progress: a new turn, both cards genuinely legal again.
+        case 4: return { sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: observation("player-2", "player-1", 6, [cardX, cardY]), pendingDecision: agentDecision(6, "4") };
+        default: return completedSnapshot("player-2");
+      }
+    },
+    cancel: async () => ({ sessionId: "s", status: "cancelled", cancelled: true }),
+    submitDecision: async () => ({ accepted: true }), submitTarget: async () => ({ accepted: true }), submitMode: async () => ({ accepted: true }),
+    submitValue: async () => ({ accepted: true }), submitOptionalCost: async () => ({ accepted: true }), submitManaOption: async () => ({ accepted: true }),
+    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }),
+  };
+  const run = await runHumanVsAgentMatch(client, human, agent, [{ name: "h", cards: [] }, { name: "a", cards: [] }], "player-1", "player-2", { pollIntervalMs: 0 });
+  assert.equal(agent.seenCardRefs.length, 4, "the policy is invoked exactly once per Asphodel decision — never thousands of times");
+  assert.deepEqual(agent.seenCardRefs[0], ["pass", "card-x", "card-y"], "nothing has failed yet on the first offering");
+  assert.deepEqual(agent.seenCardRefs[1], ["pass", "card-y"], "X (rolled back once already) must be excluded from the second identical offering");
+  assert.deepEqual(agent.seenCardRefs[2], ["pass"], "Y also rolled back: only Pass remains for the third identical offering");
+  assert.deepEqual(agent.seenCardRefs[3], ["pass", "card-x", "card-y"], "turn 6 is a real state change: both casts are reconsidered, never permanently suppressed");
+  assert.equal(run.snapshot.status, "completed");
+});
