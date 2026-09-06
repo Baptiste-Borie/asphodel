@@ -3,14 +3,16 @@ import "../styles/tabletop.css";
 import { apiRequest } from "../api/api-client.js";
 import { endPlaytest, getActivePlaytest, getPlaytestReport, getPlaytestState, startPlaytest, submitPlaytestChoice } from "../api/playtest-api.js";
 import { element } from "../dom.js";
-import { collectVisibleCardNames, commandZoneCards, opponentPlayer, renderBattlefieldHalf, renderCommanderDock, renderHand, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
+import { collectVisibleCardNames, commandZoneCards, opponentPlayer, renderBattlefieldHalf, renderCommanderDock, renderHand, renderLandZone, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
 import { createCardPreviewPanel } from "./card-preview.js";
 import { CardPresentationStore } from "./card-presentation-store.js";
 import { renderDecision } from "./decision-renderer.js";
 import { FramePlaybackQueue } from "./frame-playback.js";
 import { createHandActionMenu } from "./hand-action-menu.js";
 import { decideCardAction, mapActionsToCards, mapPriorityActionsToHand, type CardActionMap } from "./hand-action-mapping.js";
-import type { AgentCardObservation, AgentObservation, AgentSelfPlayerObservation, DeckInput, PublicGameEvent, StartPlaytestRequest, WebPendingDecisionDTO, WebPlaytestStateDTO } from "./types.js";
+import { groupManaPaymentOptions, type ManaPaymentGroups } from "./mana-payment-mapping.js";
+import { createManaPaymentOverlay } from "./mana-payment-overlay.js";
+import type { AgentCardObservation, AgentChoice, AgentObservation, AgentSelfPlayerObservation, DeckInput, MenuItem, PublicGameEvent, StartPlaytestRequest, WebPendingDecisionDTO, WebPlaytestStateDTO } from "./types.js";
 
 const POLL_INTERVAL_MS = 300;
 const TERMINAL_STATUSES = new Set(["completed", "ended_by_human", "failed"]);
@@ -126,6 +128,7 @@ export function initPlaytestView(): void {
   const cardStore = new CardPresentationStore();
   const previewPanel = createCardPreviewPanel();
   const handActionMenu = createHandActionMenu();
+  const manaOverlay = createManaPaymentOverlay();
 
   // Public turn-of-Asphodel frames (V2e.3) are queued and replayed in order with a short delay —
   // the human decision is only ever revealed once this queue is genuinely idle (see revealLiveState).
@@ -139,6 +142,7 @@ export function initPlaytestView(): void {
   let asphodelLifeEl: HTMLElement, humanLifeEl: HTMLElement, actionsEl: HTMLElement;
   let asphodelCommanderDock: HTMLElement, humanCommanderDock: HTMLElement;
   let asphodelBattlefieldCards: HTMLElement, humanBattlefieldCards: HTMLElement, handContainer: HTMLElement;
+  let asphodelLandZone: HTMLElement, humanLandZone: HTMLElement;
   let decisionDock: HTMLElement, menuPanel: HTMLElement, menuDeckInfo: HTMLElement;
   let lastObservationKey = "";
   let lastPresentationVersion = 0;
@@ -163,6 +167,7 @@ export function initPlaytestView(): void {
     document.body.classList.remove("tabletop-active");
     previewPanel.close();
     handActionMenu.close();
+    manaOverlay.close();
     setupSection.hidden = false;
     gameSection.hidden = true;
     endSection.hidden = true;
@@ -310,7 +315,9 @@ export function initPlaytestView(): void {
     asphodelCommanderDock.className = "table-commander-dock";
     asphodelBattlefieldCards = document.createElement("div");
     asphodelBattlefieldCards.className = "table-battlefield-cards";
-    asphodelHalf.append(asphodelCommanderDock, asphodelBattlefieldCards);
+    asphodelLandZone = document.createElement("div");
+    asphodelLandZone.className = "table-land-zone";
+    asphodelHalf.append(asphodelCommanderDock, asphodelBattlefieldCards, asphodelLandZone);
 
     const humanHalf = document.createElement("div");
     humanHalf.className = "table-battlefield-half table-battlefield-half--human";
@@ -318,7 +325,9 @@ export function initPlaytestView(): void {
     humanCommanderDock.className = "table-commander-dock";
     humanBattlefieldCards = document.createElement("div");
     humanBattlefieldCards.className = "table-battlefield-cards";
-    humanHalf.append(humanCommanderDock, humanBattlefieldCards);
+    humanLandZone = document.createElement("div");
+    humanLandZone.className = "table-land-zone";
+    humanHalf.append(humanCommanderDock, humanBattlefieldCards, humanLandZone);
 
     battlefield.append(asphodelHalf, humanHalf);
 
@@ -361,7 +370,7 @@ export function initPlaytestView(): void {
     handContainer = document.createElement("div");
     handContainer.className = "table-hand";
 
-    gameSection.append(battlefield, rail, menuButton, menuPanel, previewPanel.element, decisionDock, handContainer, handActionMenu.element);
+    gameSection.append(battlefield, rail, menuButton, menuPanel, previewPanel.element, decisionDock, handContainer, handActionMenu.element, manaOverlay.element);
   }
 
   function setDeckInfo(humanDeckName: string, asphodelDeckName: string): void {
@@ -409,11 +418,13 @@ export function initPlaytestView(): void {
       renderLife(asphodelLifeEl, "ASPHODEL", opponent.life);
       renderCommanderDock(asphodelCommanderDock, opponent, boardCallbacksForThisRender, expand);
       renderBattlefieldHalf(asphodelBattlefieldCards, opponent, boardCallbacksForThisRender, expand);
+      renderLandZone(asphodelLandZone, opponent, boardCallbacksForThisRender, expand);
     }
     if (self) {
       renderLife(humanLifeEl, "YOU", self.life);
       renderCommanderDock(humanCommanderDock, self, boardCallbacksForThisRender, expand);
       renderBattlefieldHalf(humanBattlefieldCards, self, boardCallbacksForThisRender, expand);
+      renderLandZone(humanLandZone, self, boardCallbacksForThisRender, expand);
       if (self.role === "self") renderHand(handContainer, self.hand, (name) => cardStore.get(name), handActions);
     }
   }
@@ -433,6 +444,10 @@ export function initPlaytestView(): void {
   function computeActiveMapping(state: WebPlaytestStateDTO): { mapping: CardActionMap; forHand: boolean } | null {
     const pending = state.pendingDecision;
     if (!pending || pending.rendered.kind !== "menu") return null;
+    // mana_payment (V2e.5.1) has its own dedicated overlay (see computeManaPaymentGroups /
+    // renderDecisionIfChanged below) — it must never ALSO expand/highlight lands on the normal
+    // board, which would be redundant with (and confusing next to) the overlay's own cards.
+    if (pending.type === "mana_payment") return null;
     const self = state.observation ? selfPlayer(state.observation) : undefined;
     if (pending.type === "priority_action") {
       if (!self || self.role !== "self") return null;
@@ -473,6 +488,42 @@ export function initPlaytestView(): void {
   function filterDockDecision(pending: WebPendingDecisionDTO, mapping: CardActionMap | null): WebPendingDecisionDTO {
     if (!mapping || pending.rendered.kind !== "menu") return pending;
     return { ...pending, rendered: { ...pending.rendered, items: mapping.unmapped } };
+  }
+
+  /**
+   * V2e.5.1: groups the current `mana_payment` decision's items into lands/other-sources/floating
+   * (`mana-payment-mapping.ts`), using the human's own currently-visible battlefield/command cards
+   * for display — a mana source is always the paying player's own permanent. Returns `null` when
+   * there is nothing to show (not a mana_payment decision, or no observation yet).
+   */
+  function computeManaPaymentGroups(state: WebPlaytestStateDTO): { costText: string; groups: ManaPaymentGroups } | null {
+    const pending = state.pendingDecision;
+    if (!pending || pending.type !== "mana_payment" || pending.rendered.kind !== "menu") return null;
+    const self = state.observation ? selfPlayer(state.observation) : undefined;
+    if (!self) return null;
+    const cardsByRef = new Map<string, AgentCardObservation>();
+    for (const card of [...self.battlefield, ...commandZoneCards(self)]) cardsByRef.set(card.cardRef, card);
+    const groups = groupManaPaymentOptions(pending.rendered.items, cardsByRef);
+    const costText = pending.rendered.title.replace(/^Pay mana:\s*/, "");
+    return { costText, groups };
+  }
+
+  /** Clicking a mana source card: one legal option submits it directly; several (a multi-color source) open the same contextual menu component used everywhere else, anchored to the clicked card. Never invents/taps anything locally — always waits for Forge's own next state. */
+  function handleManaSourceActivate(_cardRef: string, options: MenuItem[], anchor: HTMLElement): void {
+    const decision = decideCardAction(options);
+    if (decision.kind === "submit") {
+      handActionMenu.close();
+      void submitChoice(decision.choice);
+    } else {
+      handActionMenu.openFor(anchor, decision.items, (choice) => {
+        handActionMenu.close();
+        void submitChoice(choice);
+      });
+    }
+  }
+
+  function handleFloatingManaActivate(choice: AgentChoice): void {
+    void submitChoice(choice);
   }
 
   function pushPlayedEvent(event: PublicGameEvent): void {
@@ -567,6 +618,21 @@ export function initPlaytestView(): void {
     if (key === lastDecisionKey) return;
     lastDecisionKey = key;
     handActionMenu.close();
+
+    // mana_payment (V2e.5.1): a dedicated visual overlay entirely replaces the generic decision
+    // buttons — never the old "[Mountain produces R]"-style dock list.
+    if (state.pendingDecision?.type === "mana_payment") {
+      decisionDock.replaceChildren();
+      const manaData = computeManaPaymentGroups(state);
+      if (manaData) {
+        manaOverlay.render(manaData.costText, manaData.groups, (name) => cardStore.get(name), handleManaSourceActivate, handleFloatingManaActivate);
+      } else {
+        manaOverlay.close();
+      }
+      return;
+    }
+    manaOverlay.close();
+
     if (state.pendingDecision) {
       renderDecision(decisionDock, filterDockDecision(state.pendingDecision, mapping), (choice) => void submitChoice(choice));
     } else {

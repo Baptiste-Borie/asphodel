@@ -1,6 +1,7 @@
 import { computeBattlefieldScale } from "./battlefield-scale.js";
 import { groupCards, type CardGroup } from "./card-grouping.js";
 import { createTableCard } from "./card-view.js";
+import { partitionBattlefield } from "./land-zone.js";
 import type { AgentCardObservation, AgentObservation, AgentPlayerObservation, CardPresentation } from "./types.js";
 
 export interface BoardCallbacks {
@@ -114,22 +115,40 @@ function renderCardRow(container: HTMLElement, groups: CardGroup[], callbacks: B
 }
 
 /**
- * One player's battlefield permanents only — commanders live in `renderCommanderDock` instead,
- * never merged into this row. Identical permanents/tokens sharing the same visible state (name,
- * tapped, summoning sickness, power/toughness, counters, token-status) are shown as one stacked
- * card with a "×N" count (`card-grouping.ts`) — Forge identities are never merged, only the
- * display. Card size/overlap adapt to how many VISUAL groups are on the table
- * (`computeBattlefieldScale`): a handful stay full-size, a crowded board packs tighter before ever
- * shrinking the cards themselves. `expand` (V2e.5): while a decision needs individual objects
- * (attackers/blockers/targets/cost-object selection), every real card is shown ungrouped so it can
- * be clicked as its own exact Forge choice — never "one fake stacked object".
+ * One player's battlefield permanents — LANDS EXCLUDED (V2e.5.1: lands get their own dedicated
+ * `renderLandZone` area instead, per player-observation typeLine partition — never derived from a
+ * decklist, never a rules input, purely a presentation split; Forge's own zone state is
+ * unaffected). Commanders live in `renderCommanderDock` instead, never merged into this row either.
+ * Identical permanents/tokens sharing the same visible state (name, tapped, summoning sickness,
+ * power/toughness, counters, token-status) are shown as one stacked card with a "×N" count
+ * (`card-grouping.ts`) — Forge identities are never merged, only the display. Card size/overlap
+ * adapt to how many VISUAL groups are on the table (`computeBattlefieldScale`): a handful stay
+ * full-size, a crowded board packs tighter before ever shrinking the cards themselves. `expand`
+ * (V2e.5): while a decision needs individual objects (attackers/blockers/targets/cost-object
+ * selection), every real card is shown ungrouped so it can be clicked as its own exact Forge choice
+ * — never "one fake stacked object".
  */
 export function renderBattlefieldHalf(container: HTMLElement, player: AgentPlayerObservation, callbacks: BoardCallbacks, expand = false): void {
-  const groups = rowsFor(player.battlefield, expand);
+  const { nonLands } = partitionBattlefield(player.battlefield);
+  const groups = rowsFor(nonLands, expand);
   const scale = computeBattlefieldScale(groups.length);
   container.style.setProperty("--bf-card-width", `${scale.cardWidthPx}px`);
   container.style.setProperty("--bf-card-overlap", `${scale.overlapPx}px`);
   renderCardRow(container, groups, callbacks);
+}
+
+/**
+ * A player's lands, in their own dedicated area (V2e.5.1) — never mixed into the normal
+ * creature/artifact row. Grouped the same way (`card-grouping.ts`) so e.g. `Forest ×4` shows as
+ * one stacked card; the hover-to-fan spread interaction (see styles/tabletop.css
+ * `.table-land-zone`) is pure CSS, no click required to glance at the mana base. `expand` (V2e.5):
+ * same meaning as `renderBattlefieldHalf` — a land is just as selectable as any other permanent
+ * when a decision needs individual objects (e.g. sacrifice a land).
+ */
+export function renderLandZone(container: HTMLElement, player: AgentPlayerObservation, callbacks: BoardCallbacks, expand = false): void {
+  const { lands } = partitionBattlefield(player.battlefield);
+  const groups = rowsFor(lands, expand);
+  renderCardRow(container, groups, callbacks, "table-card--land");
 }
 
 /**

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import { describeDecision } from "./human-decision-render.js";
-import type { AgentObservation, AgentSelfPlayerObservation, ForgePendingCombatDecision, ForgePendingExternalDecision as Decision } from "../forge/forge-protocol.js";
+import type { AgentObservation, AgentSelfPlayerObservation, ForgePendingCombatDecision, ForgePendingExternalDecision as Decision, ForgePendingManaPaymentDecision } from "../forge/forge-protocol.js";
 
 function observation(): AgentObservation {
   const self: AgentSelfPlayerObservation = {
@@ -91,7 +91,7 @@ it("cost_object_selection (V2e.5, e.g. sacrifice) carries each option's cardRef"
   assert.equal(prompt.items[0]?.cardRef, "bear-cub-1");
 });
 
-it("decision families with no per-item card (mode/value/mana) still leave MenuItem.cardRef unset", () => {
+it("decision families with no per-item card (mode/value) still leave MenuItem.cardRef unset", () => {
   const modeDecision: Extract<Decision, { type: "mode_selection" }> = {
     decisionId: "d-3", type: "mode_selection", playerId: "player-1",
     context: { turn: 1, phase: "main1", activePlayerId: "player-1", priorityPlayerId: "player-1", stackSize: 0 },
@@ -103,4 +103,58 @@ it("decision families with no per-item card (mode/value/mana) still leave MenuIt
   assert.equal(prompt.kind, "menu");
   if (prompt.kind !== "menu") return;
   for (const item of prompt.items) assert.equal(item.cardRef, undefined);
+});
+
+function manaPaymentDecision(options: ForgePendingManaPaymentDecision["options"]): ForgePendingManaPaymentDecision {
+  return {
+    decisionId: "d-6", type: "mana_payment", playerId: "player-1",
+    context: { turn: 1, phase: "main1", activePlayerId: "player-1", priorityPlayerId: "player-1", stackSize: 1 },
+    source: { actionId: null, cardRef: "spell-1", cardName: "Krenko, Tin Street Kingpin", abilityText: null },
+    remainingCost: { text: "{2}{R}{R}", generic: 2, convertedManaCost: 4, shards: ["R", "R"] },
+    manaPool: { total: 0, byColor: {} },
+    options,
+    canFinish: false,
+  };
+}
+
+it("mana_payment (V2e.5.1): a land/permanent source option carries its exact sourceCardRef", () => {
+  const prompt = describeDecision(observation(), manaPaymentDecision([
+    { manaOptionId: "opt-1", type: "activate_mana_ability", sourceCardRef: "mtn-1", sourceCardName: "Mountain", abilityText: null, produces: ["R"], tapped: false, manaRef: null, color: null },
+  ]));
+  assert.equal(prompt.kind, "menu");
+  if (prompt.kind !== "menu") return;
+  assert.equal(prompt.items[0]?.cardRef, "mtn-1");
+});
+
+it("mana_payment (V2e.5.1): floating mana has no physical source, so cardRef is null", () => {
+  const prompt = describeDecision(observation(), manaPaymentDecision([
+    { manaOptionId: "opt-float", type: "spend_floating_mana", manaRef: "floating-1", color: "R", sourceCardRef: null, sourceCardName: null, abilityText: null, produces: ["R"], tapped: false },
+  ]));
+  assert.equal(prompt.kind, "menu");
+  if (prompt.kind !== "menu") return;
+  assert.equal(prompt.items[0]?.cardRef, null);
+});
+
+it("mana_payment (V2e.5.1): two same-named Mountains are two distinct mana sources, never conflated by name", () => {
+  const prompt = describeDecision(observation(), manaPaymentDecision([
+    { manaOptionId: "opt-1", type: "activate_mana_ability", sourceCardRef: "mtn-1", sourceCardName: "Mountain", abilityText: null, produces: ["R"], tapped: false, manaRef: null, color: null },
+    { manaOptionId: "opt-2", type: "activate_mana_ability", sourceCardRef: "mtn-2", sourceCardName: "Mountain", abilityText: null, produces: ["R"], tapped: false, manaRef: null, color: null },
+  ]));
+  assert.equal(prompt.kind, "menu");
+  if (prompt.kind !== "menu") return;
+  const refs = prompt.items.map(i => i.cardRef);
+  assert.deepEqual(refs, ["mtn-1", "mtn-2"]);
+  assert.equal(new Set(refs).size, 2, "same-named sources must keep distinct cardRefs");
+});
+
+it("mana_payment (V2e.5.1): a multi-color source (e.g. Command Tower) preserves every exact option under the same cardRef", () => {
+  const prompt = describeDecision(observation(), manaPaymentDecision([
+    { manaOptionId: "opt-w", type: "activate_mana_ability", sourceCardRef: "tower-1", sourceCardName: "Command Tower", abilityText: null, produces: ["W"], tapped: false, manaRef: null, color: null },
+    { manaOptionId: "opt-u", type: "activate_mana_ability", sourceCardRef: "tower-1", sourceCardName: "Command Tower", abilityText: null, produces: ["U"], tapped: false, manaRef: null, color: null },
+  ]));
+  assert.equal(prompt.kind, "menu");
+  if (prompt.kind !== "menu") return;
+  const sameSource = prompt.items.filter(i => i.cardRef === "tower-1");
+  assert.equal(sameSource.length, 2, "both color options for the same source must both be preserved, not collapsed into one");
+  assert.deepEqual(sameSource.map(i => i.choice.choice), ["opt-w", "opt-u"]);
 });

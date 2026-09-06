@@ -15,14 +15,15 @@ export interface MenuItem {
   choice: AgentChoice;
   /**
    * The Forge cardRef this specific action refers to, taken verbatim from Forge's own decision
-   * data (`ForgeExternalAction.cardRef`, a target's/option's `cardRef`, …) — populated for
-   * `priority_action` (V2e.4) and, since V2e.5, for every other card-object decision family
-   * (`target_selection`, `cost_object_selection`, `attackers_selection`, `blockers_selection`,
-   * `combat_order_selection`, `yes_no`/`object_selection`/`ordering_selection`) so the tabletop can
-   * make a battlefield card itself submit the choice, not just a dock button. `null` for an action
-   * with no associated card (e.g. "Pass priority", "Finish"); `undefined` only for decision
-   * families that never had a per-item card at all (`mode_selection`, `value_selection`,
-   * `optional_cost_selection`, `mana_payment`). Never a name — a stable id, so two physically
+   * data (`ForgeExternalAction.cardRef`, a target's/option's `cardRef`, a mana option's
+   * `sourceCardRef`, …) — populated for `priority_action` (V2e.4), every other card-object decision
+   * family (V2e.5: `target_selection`, `cost_object_selection`, `attackers_selection`,
+   * `blockers_selection`, `combat_order_selection`, `yes_no`/`object_selection`/`ordering_selection`),
+   * and `mana_payment` (V2e.5.1) so the tabletop can make a battlefield card itself submit the
+   * choice, not just a dock button. `null` for an action with no associated card ("Pass priority",
+   * "Finish", floating mana); `undefined` only for decision families that never had a per-item card
+   * at all (`mode_selection`, `value_selection`, `optional_cost_selection`). Never a name — a stable
+   * id, so two physically
    * distinct cards sharing a name (two Mountains) are never conflated.
    */
   cardRef?: string | null;
@@ -152,7 +153,10 @@ export function describeDecision(observation: AgentObservation, d: ForgePendingE
     case "mana_payment": {
       const items = d.options.map((o): MenuItem => {
         const source = o.type === "spend_floating_mana" ? `Floating ${o.color} mana` : `${o.sourceCardName ?? o.sourceCardRef} (produces ${o.produces.join("/")})`;
-        return { label: source, choice: { decisionId: d.decisionId, kind: "mana", choice: o.manaOptionId, reason } };
+        // V2e.5.1: sourceCardRef (never the name) identifies the exact underlying permanent — two
+        // same-named lands (two Mountains) always keep distinct cardRefs here, so the tabletop can
+        // render each as its own clickable card. Floating mana has no physical source: `null`.
+        return { label: source, choice: { decisionId: d.decisionId, kind: "mana", choice: o.manaOptionId, reason }, cardRef: o.sourceCardRef };
       });
       return { kind: "menu", title: `Pay mana: ${d.remainingCost.text || "(paid)"}`, items };
     }
