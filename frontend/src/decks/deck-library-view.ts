@@ -54,6 +54,19 @@ export function initDeckLibraryView() {
   const importFeedback = element<HTMLElement>("#import-feedback");
   const saveDeckButton = element<HTMLButtonElement>("#save-deck");
 
+  const modeLabel = document.createElement('label'); modeLabel.className = 'field-label'; modeLabel.textContent = 'Importer depuis';
+  const mode = document.createElement('select'); mode.className = 'text-input'; mode.setAttribute('aria-label', 'Mode d’import');
+  for (const [value,text] of [['text','Liste de cartes'],['url','URL Archidekt publique']]) { const o=document.createElement('option'); o.value=value!; o.textContent=text!; mode.append(o); }
+  modeLabel.append(mode); deckForm.querySelector('.modal-content')!.prepend(modeLabel);
+  const urlLabel=document.createElement('label'); urlLabel.className='field-label field-label--spaced'; urlLabel.textContent='URL Archidekt'; urlLabel.hidden=true;
+  const urlInput=document.createElement('input'); urlInput.type='url'; urlInput.className='text-input'; urlInput.placeholder='https://archidekt.com/decks/…'; urlInput.setAttribute('aria-label','URL Archidekt'); urlLabel.append(urlInput); modeLabel.after(urlLabel);
+  function updateMode() {
+    const isUrl=mode.value==='url'; urlLabel.hidden=!isUrl; urlInput.required=isUrl;
+    deckNameInput.required=!isUrl; deckInput.required=!isUrl;
+    for(const node of [deckNameInput,deckInput,document.querySelector('label[for="deck-name"]'),document.querySelector('label[for="deck-input"]'),document.querySelector('#deck-input-help')]) if(node instanceof HTMLElement) node.hidden=isUrl;
+  }
+  mode.addEventListener('change',updateMode);
+
   let currentDeck: DeckDetail | null = null;
 
   function showLibrary(): void {
@@ -359,7 +372,8 @@ export function initDeckLibraryView() {
 
     const name = deckNameInput.value.trim();
     const decklist = deckInput.value.trim();
-    if (!name || !decklist) return;
+    const isUrl = mode.value === "url";
+    if (isUrl ? !urlInput.value.trim() : (!name || !decklist)) return;
 
     importFeedback.className = "import-feedback import-feedback--loading";
     importFeedback.textContent = "Résolution des cartes avec Scryfall et enregistrement…";
@@ -368,16 +382,19 @@ export function initDeckLibraryView() {
     saveDeckButton.textContent = "Import en cours…";
 
     try {
-      const deck = await apiRequest<DeckDetail>("/decks", {
+      const deck = await apiRequest<DeckDetail>(isUrl ? "/decks/import/archidekt" : "/decks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, decklist }),
+        body: JSON.stringify(isUrl ? { url: urlInput.value.trim() } : { name, decklist }),
       });
 
       deckForm.reset();
+      updateMode();
+      document.dispatchEvent(new Event("decks-changed"));
       deckModal.close();
       await loadDecks();
       await openDeck(deck.id);
+      detailView.tabIndex = -1; detailView.focus();
     } catch (error) {
       renderImportError(error instanceof ApiError ? error : new ApiError({ message: "Le backend est inaccessible." }));
     } finally {

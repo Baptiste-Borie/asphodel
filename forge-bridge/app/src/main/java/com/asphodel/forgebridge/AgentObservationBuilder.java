@@ -32,7 +32,7 @@ final class AgentObservationBuilder {
                 "forge-game-" + game.getId(),
                 new AgentObservation.GameContext(
                         phase.getTurn(),
-                        phase.getPhase().name().toLowerCase(Locale.ROOT),
+                        phase.getPhase() == null ? "pregame" : phase.getPhase().name().toLowerCase(Locale.ROOT),
                         playerId(phase.getPlayerTurn()),
                         playerId(phase.getPriorityPlayer())
                 ),

@@ -49,6 +49,8 @@ export class FramePlaybackQueue {
   private readonly knownIds = new Set<number>();
   private pumping = false;
 
+  acknowledge(frames: readonly PublicGameFrame[]): void { for (const frame of frames) this.knownIds.add(frame.id); }
+
   enqueue(frames: readonly PublicGameFrame[]): void {
     let added = false;
     for (const frame of frames) {

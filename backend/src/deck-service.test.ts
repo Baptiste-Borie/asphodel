@@ -73,3 +73,36 @@ it("fails clearly when neither the printing nor the name resolves to any card", 
     await close();
   }
 });
+
+it('imports a public Archidekt spec through shared persistence and can reload the library id', async () => {
+  const { ArchidektDeckSource } = await import('./decks/archidekt-deck-source.js');
+  const { ForgeDeckAdapter } = await import('./forge/forge-deck-adapter.js');
+  const db = await createTestDatabase();
+  const payload = { name:'Uurg imported',cards:[{quantity:1,categories:['Commander'],card:{oracleCard:{name:'Uurg, Spawn of Turg'}}},{quantity:99,card:{oracleCard:{name:'Forest'}}}] };
+  try {
+    const requests:string[]=[];
+    const source=new ArchidektDeckSource(async url=>{requests.push(url);return {ok:true,status:200,json:async()=>payload};});
+    const service=new DeckService(db.db,new FakeCardProvider(),source);
+    const deck=await service.importArchidektDeck('https://archidekt.com/decks/123/test');
+    assert.equal(deck.name,'Uurg imported'); assert.equal(deck.totalCards,100);
+    assert.equal(deck.cards.find(c=>c.section==='commander')?.name,'Uurg, Spawn of Turg');
+    assert.equal(new ForgeDeckAdapter().toForgeDeckSpec(await service.getDeck(deck.id)).sourceDeckId,deck.id);
+    assert.deepEqual(requests,['https://archidekt.com/api/decks/123/']);
+    assert.equal((await service.listDecks()).length,1);
+  } finally { db.close(); }
+});
+
+it('failed URL imports never persist a partial deck: host, privacy, size, commander and resolution', async () => {
+  const { ArchidektDeckSource } = await import('./decks/archidekt-deck-source.js');
+  const db = await createTestDatabase();
+  const payload={name:'Failed',cards:[{quantity:1,categories:['Commander'],card:{oracleCard:{name:'Uurg'}}},{quantity:99,card:{oracleCard:{name:'Forest'}}}]};
+  try {
+    for(const failure of ['host','private','size','commander','resolution']) {
+      const copy=structuredClone(payload); if(failure==='size') copy.cards[1]!.quantity=1; if(failure==='commander') copy.cards[0]!.categories=[];
+      const source=new ArchidektDeckSource(async()=>({ok:failure!=='private',status:failure==='private'?403:200,json:async()=>copy}));
+      const service=new DeckService(db.db,new FakeCardProvider(new Set(failure==='resolution'?['Forest']:[])),source);
+      await assert.rejects(service.importArchidektDeck(failure==='host'?'https://evil.example/decks/123':'https://archidekt.com/decks/123'));
+      assert.equal((await service.listDecks()).length,0);
+    }
+  } finally {db.close();}
+});

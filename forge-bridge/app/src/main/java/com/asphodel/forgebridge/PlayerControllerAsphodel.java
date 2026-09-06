@@ -141,14 +141,16 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
     @Override
     public Card chooseSingleCardForZoneChange(ZoneType destination, List<ZoneType> origin, SpellAbility sa,
             CardCollection cards, DelayedReveal reveal, String title, boolean optional, Player decider) {
-        List<Card> chosen = select("object_selection", "zone_change", title, sa, cards, 1, 1, optional);
+        List<Card> chosen = selections.selectVisible(decisions, observations, getPlayer(), "object_selection", "zone_change", title, sa, cards, 1, 1, optional,
+                reveal != null && cards.stream().allMatch(c -> reveal.getCards().contains(c.getView())));
         return chosen.isEmpty() ? null : chosen.get(0);
     }
 
     @Override
     public List<Card> chooseCardsForZoneChange(ZoneType destination, List<ZoneType> origin, SpellAbility sa,
             CardCollection cards, int min, int max, DelayedReveal reveal, String title, Player decider) {
-        return select("object_selection", "zone_change", title, sa, cards, min, max, false);
+        return selections.selectVisible(decisions, observations, getPlayer(), "object_selection", "zone_change", title, sa, cards, min, max, false,
+                reveal != null && cards.stream().allMatch(c -> reveal.getCards().contains(c.getView())));
     }
 
     @Override
@@ -196,8 +198,10 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
 
     @Override
     public boolean mulliganKeepHand(Player first, int cardsToReturn) {
-        // Explicit baseline pregame policy, not a Forge AI mulligan decision.
-        return true;
+        // Only the explicitly configured human seat participates. The agent's baseline Keep
+        // never reaches generic yes/no scoring, and legacy external matches retain auto-Keep.
+        if (!AgentObservationBuilder.playerId(getPlayer()).equals(decisions.mulliganPlayerId)) return true;
+        return yesNo("mulligan_keep", "Keep this opening hand?", null);
     }
 
     private ImmutablePair<CardCollection, CardCollection> arrangeTop(CardCollection cards, String kind) {

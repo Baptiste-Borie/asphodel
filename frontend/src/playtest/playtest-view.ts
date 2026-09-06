@@ -1,3 +1,5 @@
+import { decisionPresentationNames, renderDecisionCards } from "./decision-cards.js";
+import { ApiError } from "../api/api-client.js";
 import "../styles/playtest.css";
 import "../styles/tabletop.css";
 import "../styles/table-scene.css";
@@ -124,7 +126,7 @@ function renderActions(container: HTMLElement, events: PublicGameEvent[]): void 
 }
 
 /** Wires the whole Play screen (setup, live game, end) into #play-view. Talks only to the backend playtest API — never to Forge directly. */
-export function initPlaytestView(): void {
+export function initPlaytestView(onGameActive: () => void = () => {}): void {
   const root = element<HTMLElement>("#play-view");
   const setupSection = document.createElement("div");
   const gameSection = document.createElement("div");
@@ -152,7 +154,10 @@ export function initPlaytestView(): void {
 
   // Public turn-of-Asphodel frames (V2e.3) are queued and replayed in order with a short delay —
   // the human decision is only ever revealed once this queue is genuinely idle (see revealLiveState).
-  const frameQueue = new FramePlaybackQueue();
+  let frameQueue = new FramePlaybackQueue();
+  let polling = false;
+  let decisionCardStore = new CardPresentationStore();
+  let candidateDecisionId: string | null = null;
   let playedEvents: PublicGameEvent[] = [];
   let latestState: WebPlaytestStateDTO | null = null;
 
@@ -182,6 +187,7 @@ export function initPlaytestView(): void {
   function showSetup(): void {
     stopPolling();
     sessionId = null;
+    frameQueue = new FramePlaybackQueue();
     lastObservation = null;
     lastObservationKey = "";
     lastDecisionKey = "";
@@ -200,6 +206,7 @@ export function initPlaytestView(): void {
   }
 
   function showGameScreen(): void {
+    onGameActive();
     document.body.classList.add("tabletop-active");
     setupSection.hidden = true;
     gameSection.hidden = false;
@@ -235,10 +242,15 @@ export function initPlaytestView(): void {
     renderResuming();
     try {
       const result = await getActivePlaytest();
-      if ("sessionId" in result) {
+      if ("sessionId" in result && !TERMINAL_STATUSES.has(result.status)) {
         sessionId = result.sessionId;
         buildGameScreen(result.humanDeckName, result.asphodelDeckName);
         showGameScreen();
+        frameQueue = new FramePlaybackQueue();
+        frameQueue.acknowledge(result.frames);
+        playedEvents = result.publicEvents.slice(-60); renderActions(actionsEl, playedEvents);
+        const initial = result.observation ?? result.frames.at(-1)?.observation;
+        if (initial) { await cardStore.ensure(collectVisibleCardNames(initial)).catch(() => {}); paintBoard(initial); }
         pollTimer = setInterval(() => void poll(), POLL_INTERVAL_MS);
         await poll();
         return;
@@ -247,6 +259,8 @@ export function initPlaytestView(): void {
       /* Fall through to a fresh setup screen — nothing to resume, or the backend is unreachable. */
     }
     showSetup();
+    const retry = document.createElement('button'); retry.type='button'; retry.className='secondary-button'; retry.textContent='Resume active game';
+    retry.onclick=()=>void resumeActivePlaytestIfAny(); setupSection.append(retry);
   }
 
   function renderSetup(): void {
@@ -321,6 +335,7 @@ export function initPlaytestView(): void {
       await poll();
     } catch (error) {
       feedback.hidden = false;
+      if (error instanceof ApiError && error.payload.error === 'PLAYTEST_ALREADY_RUNNING') { await resumeActivePlaytestIfAny(); return; }
       feedback.textContent = error instanceof Error ? error.message : "Could not start the playtest.";
     } finally {
       button.disabled = false;
@@ -649,9 +664,12 @@ export function initPlaytestView(): void {
   }
 
   async function poll(): Promise<void> {
-    if (!sessionId) return;
+    if (!sessionId || polling) return;
+    polling = true;
+    const pollingSession = sessionId;
     try {
       const state = await getPlaytestState(sessionId);
+      if (sessionId !== pollingSession) return;
       latestState = state;
       if (state.humanDeckName && state.asphodelDeckName) setDeckInfo(state.humanDeckName, state.asphodelDeckName);
       frameQueue.enqueue(state.frames);
@@ -660,10 +678,15 @@ export function initPlaytestView(): void {
         .filter((o): o is AgentObservation => o !== null);
       let presentationChanged = false;
       for (const observation of observationsInPlay) {
-        if (await cardStore.ensure(collectVisibleCardNames(observation))) presentationChanged = true;
+        if (await cardStore.ensure(collectVisibleCardNames(observation)).catch(() => false)) presentationChanged = true;
       }
       if (presentationChanged) lastPresentationVersion++;
 
+      const candidateId = state.pendingDecision?.decisionId ?? null;
+      if (candidateDecisionId !== candidateId) { decisionCardStore = new CardPresentationStore(); candidateDecisionId = candidateId; }
+      const names = decisionPresentationNames(state.pendingDecision?.rendered);
+      for (let i=0;i<names.length;i+=75) await decisionCardStore.ensure(names.slice(i,i+75)).catch(() => false);
+      if (sessionId !== pollingSession) return;
       pumpFrames();
 
       if (TERMINAL_STATUSES.has(state.status) && frameQueue.isIdle()) {
@@ -673,13 +696,16 @@ export function initPlaytestView(): void {
       }
     } catch (error) {
       stopPolling();
+      if (sessionId !== pollingSession) return;
+      if (error instanceof ApiError && error.status === 404) { showSetup(); return; }
       decisionDock.textContent = error instanceof Error ? error.message : "Lost contact with the playtest.";
-    }
+      const retry=document.createElement('button'); retry.textContent='Reconnect'; retry.onclick=()=> { pollTimer=setInterval(()=>void poll(),POLL_INTERVAL_MS); void poll(); }; decisionDock.append(retry);
+    } finally { polling = false; }
   }
 
   function renderStatusLine(status: WebPlaytestStateDTO["status"]): void {
     decisionDock.replaceChildren();
-    decisionDock.classList.remove("table-decision-dock--complex");
+    decisionDock.classList.remove("table-decision-dock--complex", "table-decision-dock--cards");
     const text = submitting ? "Submitting choice…" : {
       starting: "Starting Forge…", running: "Asphodel is thinking…",
       waiting_for_human: "", completed: "", ended_by_human: "", failed: "",
@@ -728,6 +754,13 @@ export function initPlaytestView(): void {
       return;
     }
     manaOverlay.close();
+    decisionDock.classList.remove('table-decision-dock--cards');
+    const prompt=state.pendingDecision?.rendered;
+    if (prompt?.kind==='card_picker' || prompt?.kind==='opening_hand') {
+      decisionDock.replaceChildren(); decisionDock.classList.remove('table-decision-dock--complex'); decisionDock.classList.add('table-decision-dock--cards');
+      renderDecisionCards(decisionDock,prompt,state.observation,(name)=>prompt.kind==='card_picker'?decisionCardStore.get(name):cardStore.get(name),(choice)=>void submitChoice(choice));
+      return;
+    }
 
     if (state.pendingDecision) {
       renderDecision(decisionDock, filterDockDecision(state.pendingDecision, unmapped), (choice) => void submitChoice(choice));
@@ -819,5 +852,7 @@ export function initPlaytestView(): void {
     endSection.append(newGameButton);
   }
 
+  document.addEventListener('decks-changed', () => { if (!sessionId) renderSetup(); });
+  document.querySelector('#nav-play')?.addEventListener('click', () => { if (!sessionId) void resumeActivePlaytestIfAny(); });
   void resumeActivePlaytestIfAny();
 }

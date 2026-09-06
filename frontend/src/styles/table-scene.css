@@ -100,3 +100,13 @@
 .table-decision-dock { z-index: 4; }
 /* Color choices are contextual controls belonging to the payment surface. */
 .table-hand-menu { z-index: 35; }
+.table-decision-dock--cards { position:absolute; inset: 12% 12% auto; width:auto; max-height:76vh; padding:26px; z-index:8; border:1px solid #a18b5e; background:#14201bf5; box-shadow:0 25px 100px #000a; text-align:center; }
+.table-decision-dock--cards h2 { font:26px Georgia,serif; margin:0; }
+.table-picker-progress { color:#b9b29e; font-size:13px; }
+.table-picker-cards { display:flex; flex-wrap:wrap; gap:14px; justify-content:center; padding:20px 10px; max-height:51vh; overflow:auto; }
+.table-decision-dock .table-picker-card { position:relative; width:150px; min-height:210px; flex-shrink:0; padding:0; border:1px solid #94825d; border-radius:8px; background:#24332a; color:#eee5d2; box-shadow:0 8px 18px #0008; }
+.table-picker-card img { width:100%; border-radius:8px; display:block; }
+.table-picker-card span { display:block; padding:7px; font-size:12px; }
+.table-picker-card:hover,.table-picker-card:focus-visible { outline:2px solid #e4c993; z-index:1; }
+.table-picker-actions { display:flex; justify-content:center; gap:14px; }
+.table-picker-actions .decision-option { max-width:220px; }

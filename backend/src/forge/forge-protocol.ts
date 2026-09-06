@@ -47,6 +47,7 @@ export interface ForgeRequestMap {
     seed?: number;
     decks: [ForgeDeckSpec, ForgeDeckSpec];
     seats?: [ForgeMatchSeatController, ForgeMatchSeatController];
+    mulliganPlayerId?: string;
   };
   get_external_match: {
     type: "get_external_match";

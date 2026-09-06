@@ -1,3 +1,4 @@
+import { ArchidektDeckSource } from "./archidekt-deck-source.js";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
   CardsNotFoundError,
@@ -72,6 +73,7 @@ export class DeckService {
   constructor(
     private readonly db: AsphodelDatabase,
     private readonly cardProvider: CardProvider,
+    private readonly archidekt = new ArchidektDeckSource(),
   ) {}
 
   async listDecks() {
@@ -171,7 +173,16 @@ export class DeckService {
     const parsed = parseDeckList(decklist);
     if (parsed.issues.length > 0) throw new InvalidDeckError(parsed.issues);
 
-    const entries = aggregateEntries(parsed.cards);
+    return this.createDeckFromEntries(name, parsed.cards);
+  }
+
+  async importArchidektDeck(url: string): Promise<DeckDetailView> {
+    const spec = await this.archidekt.fetchDeckSpec(url);
+    return this.createDeckFromEntries(spec.name, spec.cards.map(card => ({ ...card, section: card.section as DeckSection })));
+  }
+
+  private async createDeckFromEntries(name: string, cardsToStore: ParsedCard[]): Promise<DeckDetailView> {
+    const entries = aggregateEntries(cardsToStore);
     const requestedNames = new Map<string, string>();
     const requestedPrintings = new Map<string, { setCode: string; collectorNumber: string }>();
     for (const entry of entries) {

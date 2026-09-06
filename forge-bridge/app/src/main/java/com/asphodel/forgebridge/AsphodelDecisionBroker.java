@@ -27,6 +27,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 final class AsphodelDecisionBroker {
+    String mulliganPlayerId;
     private final AtomicLong decisionIds = new AtomicLong();
     private final AtomicLong actionIds = new AtomicLong();
     private final AtomicLong targetIds = new AtomicLong();
@@ -204,7 +205,7 @@ final class AsphodelDecisionBroker {
                     playerId(player),
                     new DecisionContext(
                             phase.getTurn(),
-                            phase.getPhase().name().toLowerCase(Locale.ROOT),
+                            phase.getPhase() == null ? "pregame" : phase.getPhase().name().toLowerCase(Locale.ROOT),
                             playerId(phase.getPlayerTurn()),
                             playerId(phase.getPriorityPlayer()),
                             game.getStack().size()
@@ -872,7 +873,7 @@ final class AsphodelDecisionBroker {
     private static DecisionContext context(Game game, PhaseHandler phase) {
         return new DecisionContext(
                 phase.getTurn(),
-                phase.getPhase().name().toLowerCase(Locale.ROOT),
+                phase.getPhase() == null ? "pregame" : phase.getPhase().name().toLowerCase(Locale.ROOT),
                 playerId(phase.getPlayerTurn()),
                 playerId(phase.getPriorityPlayer()),
                 game.getStack().size()

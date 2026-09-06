@@ -39,7 +39,8 @@ final class ExternalMatchSession {
             long seed,
             Deck playerDeck,
             Deck aiDeck,
-            List<String> seats
+            List<String> seats,
+            String mulliganPlayerId
     ) {
         this.sessionId = sessionId;
         this.format = format;
@@ -52,6 +53,7 @@ final class ExternalMatchSession {
         // competing pending decisions even when both seats are external. Each request/response is
         // still tagged with the actual owning Player, so there is no cross-seat routing ambiguity.
         this.decisions = new AsphodelDecisionBroker(this::decisionWaitingChanged);
+        this.decisions.mulliganPlayerId = mulliganPlayerId;
         this.executor = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "asphodel-external-match-" + sessionId);
             thread.setDaemon(true);

@@ -38,7 +38,7 @@ navDecks.addEventListener("click", showDecksGroup);
 navPlay.addEventListener("click", showPlayGroup);
 
 const deckLibrary = initDeckLibraryView();
-initPlaytestView();
+initPlaytestView(showPlayGroup);
 
 element<HTMLButtonElement>("#home-button").addEventListener("click", () => {
   showDecksGroup();

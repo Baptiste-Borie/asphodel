@@ -43,7 +43,7 @@ export class TerminalHumanDecisionProvider implements HumanDecisionProvider {
     this.print(renderHeader(observation));
     this.print(renderBoard(observation));
     const prompt = describeDecision(observation, d);
-    return prompt.kind === "value" ? this.chooseValue(prompt) : this.chooseMenu(observation, prompt);
+    return prompt.kind === "value" ? this.chooseValue(prompt) : this.chooseMenu(observation, { kind: "menu", title: prompt.title, items: prompt.items });
   }
 
   private print(lines: string[]): void {

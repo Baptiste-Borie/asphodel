@@ -9,6 +9,7 @@ import type {
 
 export interface ForgeExternalMatchStartOptions {
   seed?: number;
+  mulliganPlayerId?: string;
   /** Defaults to ["external", "forge_ai"] — the historical single-external-seat match. */
   seats?: [ForgeMatchSeatController, ForgeMatchSeatController];
 }
@@ -41,6 +42,7 @@ export class ForgeExternalMatchClient {
       format: "commander",
       ...(options.seed === undefined ? {} : { seed: options.seed }),
       ...(options.seats === undefined ? {} : { seats: options.seats }),
+      ...(options.mulliganPlayerId ? { mulliganPlayerId: options.mulliganPlayerId } : {}),
       decks: [playerDeck, aiDeck],
     });
   }

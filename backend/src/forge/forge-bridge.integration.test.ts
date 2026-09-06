@@ -759,6 +759,83 @@ afterEach(async () => {
 });
 
 describe("ForgeBridgeClient integration", () => {
+  it("V2e.8 externalizes human mulligans and exact Forge bottom cards", async () => {
+    const client=createClient(); await client.start(); const external=new ForgeExternalMatchClient(client);
+    const {sessionId}=await external.startSpecs(redDeck(),greenDeck(),{seed:12345,mulliganPlayerId:'player-1'});
+    const next=()=>waitForExternalSnapshot(external,sessionId,s=>Boolean(s.pendingDecision));
+    let state=await next();
+    const first=observedPlayers(state.observation!).self.hand.map(c=>c.cardRef);
+    let bottomCount=0;
+    for(let i=0;i<2;i++) {
+      const d=state.pendingDecision!; assert.equal(d.type,'yes_no'); if(d.type!=='yes_no') throw Error('No mulligan');
+      assert.equal(d.selectionKind,'mulligan_keep'); assert.equal(d.playerId,'player-1');
+      assert.ok(!('hand' in observedPlayers(state.observation!).opponent));
+      await external.submitSelection(sessionId,d.decisionId,d.options.find(o=>o.label==='No')!.objectId);
+      state=await next();
+      // Pinned Forge LondonMulligan asks for bottom cards during mulliganDraw, before Keep. Forge
+      // requires the FULL batch (minSelections === maxSelections, growing with mulligan count)
+      // before it actually commits the zone change — a card legitimately stays visible in hand
+      // until every card for this round has been chosen, not after each individual pick.
+      const bottomedThisRound: string[] = [];
+      while(state.pendingDecision?.type==='object_selection'&&state.pendingDecision.selectionKind==='mulligan_bottom') {
+        const bottom=state.pendingDecision; const option=bottom.options.find(o=>!o.finish)!;
+        assert.ok(observedPlayers(state.observation!).self.hand.some(c=>c.cardRef===option.cardRef));
+        await external.submitSelection(sessionId,bottom.decisionId,option.objectId); bottomCount++;
+        bottomedThisRound.push(option.cardRef!);
+        state=await next();
+      }
+      for(const cardRef of bottomedThisRound) {
+        assert.ok(!observedPlayers(state.observation!).self.hand.some(c=>c.cardRef===cardRef));
+      }
+    }
+    assert.ok(bottomCount>0);
+    assert.notDeepEqual(observedPlayers(state.observation!).self.hand.map(c=>c.cardRef),first);
+    const keep=state.pendingDecision!; if(keep.type!=='yes_no') throw Error('No Keep');
+    const keptHand=observedPlayers(state.observation!).self.hand.map(c=>c.cardRef);
+    await external.submitSelection(sessionId,keep.decisionId,keep.options.find(o=>o.label==='Yes')!.objectId);
+    state=await next();
+    assert.deepEqual(observedPlayers(state.observation!).self.hand.map(c=>c.cardRef).sort(),keptHand.sort());
+    await external.cancel(sessionId);
+  });
+
+  it("V2e.8 pays Uurg with each exact Strangled Cemetery color and keeps library search options private", async () => {
+    for(const color of ['B','G']) {
+      const client=createClient(); await client.start(); const external=new ForgeExternalMatchClient(client);
+      const deck:ForgeDeckSpec={name:'Finite BG',cards:[{name:'Uurg, Spawn of Turg',quantity:1,section:'commander'},{name:'Strangled Cemetery',quantity:12,section:'mainboard'},{name:'Swamp',quantity:30,section:'mainboard'},{name:'Forest',quantity:27,section:'mainboard'},{name:'Cultivate',quantity:30,section:'mainboard'}]};
+      const {sessionId}=await external.startSpecs(deck,{name:'Inert opponent',cards:[{name:'Progenitus',quantity:1,section:'commander'},{name:'Wastes',quantity:99,section:'mainboard'}]},{seed:12345});
+      const found=await driveUntilObservedAction(external,sessionId,(o,a)=>a.type==='cast_spell' && a.cardName==='Uurg, Spawn of Turg' && observedPlayers(o).self.battlefield.some(c=>c.name==='Strangled Cemetery'&&!c.tapped) && observedPlayers(o).self.battlefield.filter(c=>c.name==='Swamp'&&!c.tapped).length>=2 && observedPlayers(o).self.battlefield.some(c=>c.name==='Forest'&&!c.tapped));
+      await external.submitDecision(sessionId,found.decision.decisionId,found.action.actionId);
+      const payment=await waitForManaPaymentDecision(external,sessionId);
+      const dual=payment.pendingDecision.options.filter(o=>o.sourceCardName==='Strangled Cemetery');
+      assert.ok(dual.length>=2); const ref=dual[0]!.sourceCardRef;
+      assert.deepEqual(dual.filter(o=>o.sourceCardRef===ref).map(o=>o.color).sort(),['B','G']);
+      const option=dual.find(o=>o.sourceCardRef===ref&&o.color===color)!; assert.deepEqual(option.produces,[color]);
+      await external.submitManaOption(sessionId,payment.pendingDecision.decisionId,option.manaOptionId);
+      const next=await waitForManaPaymentDecision(external,sessionId);
+      assert.equal(observedPlayers(next.observation).self.battlefield.find(c=>c.cardRef===ref)?.tapped,true);
+      assert.equal(next.pendingDecision.remainingCost.shards.filter(c=>c===color).length,payment.pendingDecision.remainingCost.shards.filter(c=>c===color).length-1);
+      await driveUntilObservation(external,sessionId,o=>observedPlayers(o).self.battlefield.some(c=>c.name==='Uurg, Spawn of Turg'));
+      // Real library search, following Forge's legal candidate list, not normal observation.
+      const search=await driveUntilObservedAction(external,sessionId,(_o,a)=>a.type==='cast_spell'&&a.cardName==='Cultivate');
+      await external.submitDecision(sessionId,search.decision.decisionId,search.action.actionId);
+      let searched=false;
+      for(let i=0;i<100;i++) {
+        const snap=await waitForExternalSnapshot(external,sessionId,s=>Boolean(s.pendingDecision)); const d=snap.pendingDecision!;
+        if(d.type==='object_selection'&&d.selectionKind==='zone_change') {
+          const candidates=d.options.filter(o=>!o.finish); assert.ok(candidates.length);
+          assert.ok(candidates.every(o=>o.label==='Forest'||o.label==='Swamp'));
+          const self=observedPlayers(snap.observation!).self;
+          assert.ok(candidates.every(o=>!self.hand.some(c=>c.cardRef===o.cardRef)&&!self.battlefield.some(c=>c.cardRef===o.cardRef)));
+          searched=true; break;
+        }
+        if(d.type==='priority_action') await external.submitDecision(sessionId,d.decisionId,d.actions.find(a=>a.type==='pass')!.actionId);
+        else await submitDeterministicSecondary(external,sessionId,d);
+      }
+      assert.ok(searched,'real Cultivate search was externalized');
+      await external.cancel(sessionId);
+    }
+  });
+
   it("V2e.7 cancels cycling during mana payment and returns the exact card to hand", async () => {
     const client = createClient(); await client.start();
     const external = new ForgeExternalMatchClient(client);

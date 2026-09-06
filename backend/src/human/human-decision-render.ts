@@ -11,6 +11,7 @@ import type { EvaluationDiagnostics } from "../agent/evaluation-diagnostics.js";
 
 /** One selectable line in a rendered decision. `choice` is a complete, already-legal answer. */
 export interface MenuItem {
+  presentationName?: string;
   /** Presentation hint for an explicit Forge cancellation choice. */
   control?: "cancel";
   label: string;
@@ -33,6 +34,9 @@ export interface MenuItem {
 
 /** A decision the human must answer: either a numbered menu, or a bounded numeric value. */
 export type DecisionPrompt =
+  | { kind: "opening_hand"; title: string; items: MenuItem[] }
+  | { kind: "card_picker"; title: string; items: MenuItem[]; selected: string[]; minSelections: number; maxSelections: number }
+
   | { kind: "menu"; title: string; items: MenuItem[] }
   | { kind: "value"; title: string; decisionId: string; min: number; max: number; suggested: number[] };
 
@@ -180,11 +184,21 @@ export function describeDecision(observation: AgentObservation, d: ForgePendingE
     case "yes_no":
     case "object_selection":
     case "ordering_selection": {
-      const items = d.options.map((o): MenuItem => ({
-        label: o.finish ? "Finish selection" : o.cardRef ? describeCard(cardMap(observation).get(o.cardRef), o.cardRef) : o.label,
-        choice: { decisionId: d.decisionId, kind: "object", choice: o.objectId, reason },
-        cardRef: o.finish ? null : o.cardRef,
-      }));
+      const observed = cardMap(observation);
+      const items = d.options.map((o): MenuItem => {
+        const card = o.cardRef ? observed.get(o.cardRef) : undefined;
+        const label = o.finish ? "Finish selection" : card ? describeCard(card, card.cardRef) : o.label?.trim() || o.cardRef || "Unknown choice";
+        const presentationName = card ? (!card.hidden && !card.faceDown ? card.name : null)
+          : !/^Hidden object\b/i.test(label) && !o.finish ? o.label?.trim() : null;
+        return { label, choice: { decisionId: d.decisionId, kind: "object", choice: o.objectId, reason },
+          cardRef: o.finish ? null : o.cardRef, ...(presentationName ? { presentationName } : {}) };
+      });
+      if (d.selectionKind === 'mulligan_keep') return { kind: 'opening_hand', title: 'Opening hand', items: items.map((item,i) => ({...item,label:d.options[i]!.label === 'Yes' ? 'Keep' : 'Mulligan'})) };
+      const cardKind = /^(zone_change|zone_order|cards_for_effect|mulligan_bottom|cleanup_discard|scry_|surveil_)/.test(d.selectionKind);
+      if (d.type !== 'yes_no' && cardKind && d.options.some(o => o.cardRef && !o.finish)) {
+        return { kind: 'card_picker', title: d.selectionKind === 'mulligan_bottom' ? 'Choose cards to bottom' : d.prompt,
+          items, selected: d.selected, minSelections: d.minSelections, maxSelections: d.maxSelections };
+      }
       return { kind: "menu", title: d.prompt, items };
     }
   }

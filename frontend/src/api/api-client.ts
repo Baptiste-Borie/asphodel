@@ -13,10 +13,12 @@ export interface ApiErrorPayload {
 
 export class ApiError extends Error {
   readonly payload: ApiErrorPayload;
+  readonly status?: number;
 
-  constructor(payload: ApiErrorPayload) {
+  constructor(payload: ApiErrorPayload, status?: number) {
     super(payload.message ?? "Une erreur inattendue est survenue.");
     this.payload = payload;
+    this.status = status;
   }
 }
 
@@ -37,7 +39,7 @@ export async function apiRequest<T>(url: string, options?: RequestInit): Promise
   }
 
   if (!response.ok) {
-    throw new ApiError((payload ?? {}) as ApiErrorPayload);
+    throw new ApiError((payload ?? {}) as ApiErrorPayload, response.status);
   }
 
   return payload as T;

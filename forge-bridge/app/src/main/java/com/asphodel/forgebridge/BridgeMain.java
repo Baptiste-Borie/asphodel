@@ -250,7 +250,8 @@ public final class BridgeMain {
                 getLong(request, "seed", 12345L),
                 playerDeck,
                 aiDeck,
-                seats
+                seats,
+                request.has("mulliganPlayerId") ? request.get("mulliganPlayerId").getAsString() : null
         );
         return success(requestId, "start_external_match", started);
     }

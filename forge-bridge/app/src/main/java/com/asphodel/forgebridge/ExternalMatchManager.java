@@ -19,7 +19,8 @@ final class ExternalMatchManager {
             long seed,
             Deck playerDeck,
             Deck aiDeck,
-            List<String> seats
+            List<String> seats,
+            String mulliganPlayerId
     ) {
         ensureMatchSlotAvailable();
         ExternalMatchSession created = new ExternalMatchSession(
@@ -28,7 +29,8 @@ final class ExternalMatchManager {
                 seed,
                 playerDeck,
                 aiDeck,
-                seats
+                seats,
+                mulliganPlayerId
         );
         session = created;
         try {

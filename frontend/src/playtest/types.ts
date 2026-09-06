@@ -98,6 +98,7 @@ export type AgentChoice = { decisionId: string; reason: string } & (
 );
 
 export interface MenuItem {
+  presentationName?: string;
   /** Presentation hint for an explicit Forge cancellation choice. */
   control?: "cancel";
   label: string;
@@ -111,6 +112,9 @@ export interface MenuItem {
 }
 
 export type DecisionPrompt =
+  | { kind: "opening_hand"; title: string; items: MenuItem[] }
+  | { kind: "card_picker"; title: string; items: MenuItem[]; selected: string[]; minSelections: number; maxSelections: number }
+
   | { kind: "menu"; title: string; items: MenuItem[] }
   | { kind: "value"; title: string; decisionId: string; min: number; max: number; suggested: number[] };
 

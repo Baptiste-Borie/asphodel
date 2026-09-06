@@ -97,7 +97,9 @@ final class ForgeManaPaymentChoiceEnumerator {
                     continue;
                 }
                 List<AbilityManaPart> parts = manaAbility.getAllManaParts();
-                if (parts.size() == 1 && isSupportedComboColorIdentityPart(parts.get(0), paidFor)) {
+                if (parts.size() == 1 && isSupportedFiniteChoicePart(parts.get(0), paidFor)
+                        && manaAbility.totalAmountOfManaGenerated(paidFor, true) == 1
+                        && !hasManaReplacement(player)) {
                     result.addAll(comboColorIdentityCandidates(player, manaAbility, parts.get(0), cost, usableColors));
                 } else if (parts.stream().allMatch(part -> isSimpleFixedPart(part, paidFor))) {
                     result.add(Candidate.ability(
@@ -135,11 +137,13 @@ final class ForgeManaPaymentChoiceEnumerator {
     }
 
     /**
-     * Revalidates a "Command Tower"-style forced-color candidate immediately before mutation
-     * (V2e.6.1 §6): the source/ability legality itself was already reconfirmed by
-     * {@code isBaseUsableAbility} above; this additionally re-derives Forge's own current
-     * commander-color-identity set and confirms the SPECIFIC previously-selected color is still
-     * both identity-legal and still useful for the current remaining cost. Never substitutes a
+     * Revalidates a forced-color candidate immediately before mutation (V2e.6.1 §6; generalized
+     * beyond Command Tower to any finite-choice source in V2e.8, e.g. Strangled Cemetery's "Add
+     * {B} or {G}"): the source/ability legality itself was already reconfirmed by
+     * {@code isBaseUsableAbility} above; this additionally re-derives Forge's own current finite
+     * color set (commander-color-identity for a "Combo ColorIdentity" source, or the literal fixed
+     * list for a "Combo &lt;colors&gt;" source) and confirms the SPECIFIC previously-selected color
+     * is still both legal and still useful for the current remaining cost. Never substitutes a
      * different color if the original choice is no longer valid — the candidate is simply
      * rejected, exactly like any other stale candidate.
      */
@@ -151,7 +155,8 @@ final class ForgeManaPaymentChoiceEnumerator {
             String forcedColor
     ) {
         List<AbilityManaPart> parts = ability.getAllManaParts();
-        if (parts.size() != 1 || !isSupportedComboColorIdentityPart(parts.get(0), paidFor)) {
+        if (parts.size() != 1 || !isSupportedFiniteChoicePart(parts.get(0), paidFor)
+                || ability.totalAmountOfManaGenerated(paidFor, true) != 1 || hasManaReplacement(player)) {
             return false;
         }
         String combo = parts.get(0).getComboColors(ability);
@@ -162,14 +167,17 @@ final class ForgeManaPaymentChoiceEnumerator {
     }
 
     /**
-     * Derives ONE external candidate per currently-useful, commander-identity-legal color for a
-     * "Combo ColorIdentity" mana ability (V2e.6.1 §§3-4) — e.g. Command Tower on a WB commander
-     * externalizes as up to two candidates, "-> W" and "-> B", NEVER a vague
-     * {@code produces: ["Combo","ColorIdentity"]} and never a color outside the real commander
-     * identity. Colors are Forge's own ({@link AbilityManaPart#getComboColors}, which reads the
-     * controller's actual {@code getCommanderColorID()} — never inferred from card names/decklists
-     * /Scryfall), intersected with the SAME {@code usableColors} affordability mask every other
-     * candidate in this enumerator is already filtered through (never a bespoke calculator).
+     * Derives ONE external candidate per currently-useful, legal color for a finite-choice combo
+     * mana ability (V2e.6.1 §§3-4; generalized in V2e.8 §§16-20): Command Tower on a WB commander
+     * externalizes as up to two candidates, "-> W" and "-> B"; Strangled Cemetery ("Add {B} or
+     * {G}") likewise externalizes as "-> B" and "-> G" — NEVER a vague
+     * {@code produces: ["Combo","B","G"]} and never a color the source cannot actually produce.
+     * Colors are Forge's own ({@link AbilityManaPart#getComboColors}, which resolves either the
+     * controller's real {@code getCommanderColorID()} for a "Combo ColorIdentity" source, or the
+     * literal fixed list for a "Combo &lt;colors&gt;" source like Strangled Cemetery's "Combo B
+     * G" — never inferred from card names/decklists/Scryfall), intersected with the SAME
+     * {@code usableColors} affordability mask every other candidate in this enumerator is already
+     * filtered through (never a bespoke calculator).
      */
     private static List<Candidate> comboColorIdentityCandidates(
             Player player,
@@ -271,15 +279,25 @@ final class ForgeManaPaymentChoiceEnumerator {
     }
 
     /**
-     * The ONLY combo-mana shape this bridge externalizes (V2e.6.1 §2): a simple mana part whose
+     * The finite combo-mana shapes this bridge externalizes (V2e.6.1 §2): a simple mana part whose
      * {@code isComboMana()} is true and whose original production is specifically the pinned
-     * Forge string "Combo ColorIdentity" — Command Tower's exact shape. Deliberately narrow and
+     * Forge string "Combo ColorIdentity" or a literal list of color symbols. Deliberately narrow and
      * documented rather than broadly enabling arbitrary combo mana.
      */
-    private static boolean isSupportedComboColorIdentityPart(AbilityManaPart part, SpellAbility paidFor) {
+    private static boolean isSupportedFiniteChoicePart(AbilityManaPart part, SpellAbility paidFor) {
         return isBaseSimplePart(part, paidFor)
                 && part.isComboMana()
-                && "Combo ColorIdentity".equals(part.getOrigProduced());
+                && ("Combo ColorIdentity".equals(part.getOrigProduced())
+                    || part.getOrigProduced().matches("Combo [WUBRGC]( [WUBRGC])*"));
+    }
+
+    /** Conservative: a live production replacement requires a richer payment model. */
+    private static boolean hasManaReplacement(Player player) {
+        for (Card card : player.getGame().getCardsIn(ZoneType.Battlefield)) {
+            if (card.getReplacementEffects().stream().anyMatch(effect ->
+                    effect.getMode() == forge.game.replacement.ReplacementType.ProduceMana)) return true;
+        }
+        return false;
     }
 
     private static byte usableColors(Player player, ManaCostBeingPaid cost) {

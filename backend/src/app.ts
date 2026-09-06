@@ -1,3 +1,4 @@
+import { ArchidektDeckSource, ArchidektDeckSourceError } from "./decks/archidekt-deck-source.js";
 import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { AppError } from "./app-errors.js";
@@ -37,6 +38,7 @@ interface DeckParams {
 export interface BuildAppOptions {
   cardProvider?: CardProvider;
   database?: DatabaseConnection;
+  archidektSource?: ArchidektDeckSource;
 }
 
 const deckIdParamsSchema = {
@@ -60,7 +62,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   const ownsDatabase = !options.database;
   const database = options.database ?? (await createDatabase());
   const cardProvider = options.cardProvider ?? new ScryfallCardProvider();
-  const deckService = new DeckService(database.db, cardProvider);
+  const deckService = new DeckService(database.db, cardProvider, options.archidektSource);
   const cardPresentationService = new CardPresentationService(cardProvider);
 
   await app.register(cors, {
@@ -74,6 +76,9 @@ export async function buildApp(options: BuildAppOptions = {}) {
   }
 
   app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof ArchidektDeckSourceError) {
+      return reply.code(error.code === 'FETCH_FAILED' ? 502 : 400).send({ error: error.code, message: error.message });
+    }
     if (error instanceof AppError) {
       return reply.code(error.statusCode).send({
         error: error.code,
@@ -86,6 +91,10 @@ export async function buildApp(options: BuildAppOptions = {}) {
 
     return reply.send(error);
   });
+
+  app.post<{ Body: { url: string } }>("/decks/import/archidekt", {
+    schema: { body: { type: 'object', additionalProperties: false, required: ['url'], properties: { url: { type: 'string', minLength: 1, maxLength: 2048 } } } },
+  }, async (request, reply) => reply.code(201).send(await deckService.importArchidektDeck(request.body.url)));
 
   app.get("/health", async () => {
     return {

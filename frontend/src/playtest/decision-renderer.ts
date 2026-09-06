@@ -35,6 +35,7 @@ export function renderDecision(
   pending: WebPendingDecisionDTO,
   onChoose: (choice: AgentChoice) => void,
 ): void {
+  if (pending.rendered.kind === "card_picker" || pending.rendered.kind === "opening_hand") return;
   container.replaceChildren();
   container.classList.toggle("table-decision-dock--complex", pending.rendered.kind === "value" || pending.rendered.items.length > 5);
 

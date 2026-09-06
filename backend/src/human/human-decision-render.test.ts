@@ -174,3 +174,18 @@ it("exposes and validates cancellation only when the pending Forge payment suppl
   assert.throws(() => validateChoice(decision, {...cancel, decisionId: 'stale'}));
   assert.equal(decision.options.length, 0, 'agent mana options remain unchanged');
 });
+
+it('library picker uses only current explicit option labels, exact ids and Forge selection progress', () => {
+  const d: Extract<Decision,{type:'object_selection'|'yes_no'|'ordering_selection'}>={
+    decisionId:'search',type:'object_selection',playerId:'player-1',context:priorityDecision().context,selectionKind:'zone_change',prompt:'Choose a basic land',source:null,
+    options:[{objectId:'one',cardRef:'card-48',label:'Forest',finish:false},{objectId:'two',cardRef:'card-49',label:'Forest',finish:false},{objectId:'done',cardRef:null,label:'Finish',finish:true}],selected:['card-47'],minSelections:0,maxSelections:2,canFinish:true,
+  };
+  const obs=observation(), original=structuredClone(obs); const p=describeDecision(obs,d);
+  assert.equal(p.kind,'card_picker'); if(p.kind!=='card_picker') return;
+  assert.equal(p.items[0]!.label,'Forest'); assert.equal(p.items[0]!.presentationName,'Forest');
+  assert.deepEqual(p.items.map(i=>i.choice.choice),['one','two','done']);
+  assert.deepEqual(p.selected,['card-47']); assert.equal(p.maxSelections,2);
+  assert.deepEqual(obs,original);
+  d.selectionKind='other_card_choice'; const menu=describeDecision(obs,d); assert.equal(menu.kind,'menu');
+  if(menu.kind==='menu') assert.equal(menu.items[0]!.label,'Forest');
+});
