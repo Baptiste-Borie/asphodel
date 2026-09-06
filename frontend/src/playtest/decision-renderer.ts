@@ -36,6 +36,7 @@ export function renderDecision(
   onChoose: (choice: AgentChoice) => void,
 ): void {
   container.replaceChildren();
+  container.classList.toggle("table-decision-dock--complex", pending.rendered.kind === "value" || pending.rendered.items.length > 5);
 
   const context = document.createElement("p");
   context.className = "decision-context";

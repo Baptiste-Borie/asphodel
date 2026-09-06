@@ -64,7 +64,7 @@ export function collectVisibleCardNames(observation: AgentObservation): string[]
   const names = new Set<string>();
   for (const player of observation.players) {
     const zones = [player.battlefield, player.graveyard, player.exile, commandZoneCards(player), ...(player.role === "self" ? [player.hand] : [])];
-    for (const zone of zones) for (const card of zone) if (card.name) names.add(card.name);
+    for (const zone of zones) for (const card of zone) if (card.name && !card.hidden && !card.faceDown) names.add(card.name);
   }
   return [...names];
 }
@@ -101,7 +101,8 @@ function renderCardRow(container: HTMLElement, groups: CardGroup[], callbacks: B
   const nextChildren: HTMLElement[] = [];
   for (const group of groups) {
     const card = group.representative;
-    const existingInner = existingByKey.get(group.key);
+    const renderKey = group.representative.cardRef;
+    const existingInner = existingByKey.get(renderKey);
     const previousCountText = existingInner?.querySelector(".table-card-count")?.textContent ?? null;
 
     const className = [extraClassName, callbacks.isPlayable?.(card) ? "table-card--playable" : ""].filter(Boolean).join(" ");
@@ -113,7 +114,7 @@ function renderCardRow(container: HTMLElement, groups: CardGroup[], callbacks: B
       useSlot: true,
       count: group.count,
     }, existingInner);
-    root.setAttribute("data-key", group.key);
+    root.setAttribute("data-key", renderKey);
 
     if (!existingInner) {
       root.classList.add("table-card--entering");
@@ -192,12 +193,19 @@ export function renderHand(
   getPresentation: (name: string) => CardPresentation | null | undefined,
   handActions?: HandActionCallbacks,
 ): void {
-  container.replaceChildren();
-  for (const card of hand) {
+  const existing = new Map(Array.from(container.children, node => [(node as HTMLElement).dataset.cardRef, node as HTMLElement]));
+  const children = hand.map((card, index) => {
     const playable = handActions?.isPlayable(card) ?? false;
-    container.append(createTableCard(card, card.name ? getPresentation(card.name) : null, {
+    const node = createTableCard(card, card.name ? getPresentation(card.name) : null, {
       className: playable ? "table-card--hand table-card--playable" : "table-card--hand",
       ...(playable && handActions ? { onActivate: handActions.onActivate } : {}),
-    }));
-  }
+    }, existing.get(card.cardRef));
+    const offset = index - (hand.length - 1) / 2;
+    node.style.setProperty('--fan-angle', `${offset * Math.min(2.6, 22 / Math.max(hand.length, 1))}deg`);
+    node.style.setProperty('--fan-rise', `${Math.abs(offset) ** 2 * Math.min(1.4, 32 / Math.max(hand.length ** 2 / 4, 1))}px`);
+    node.tabIndex = 0;
+    return node;
+  });
+  container.classList.toggle("table-hand--crowded", hand.length > 12);
+  container.replaceChildren(...children);
 }

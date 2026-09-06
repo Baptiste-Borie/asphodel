@@ -1,5 +1,8 @@
 import "../styles/playtest.css";
 import "../styles/tabletop.css";
+import "../styles/table-scene.css";
+import { createZoneInspector, renderPublicZones, renderHiddenHand, renderStack } from "./table-scene.js";
+import { VisualTransitions } from "./visual-transitions.js";
 import { apiRequest } from "../api/api-client.js";
 import { endPlaytest, getActivePlaytest, getPlaytestReport, getPlaytestState, startPlaytest, submitPlaytestChoice } from "../api/playtest-api.js";
 import { element } from "../dom.js";
@@ -17,7 +20,7 @@ import type { AgentCardObservation, AgentChoice, AgentObservation, AgentSelfPlay
 
 const POLL_INTERVAL_MS = 300;
 const TERMINAL_STATUSES = new Set(["completed", "ended_by_human", "failed"]);
-const MAX_VISIBLE_ACTIONS = 6;
+
 const RECENT_ACTION_COUNT = 3;
 
 interface DeckOption {
@@ -106,7 +109,8 @@ function showLifeDelta(container: HTMLElement, delta: number): void {
 /** Compact Hearthstone-style history: last few actions, most recent least faded. Public info only (Asphodel's own accepted actions — the human already sees their own choices directly). Full card names are never truncated. */
 function renderActions(container: HTMLElement, events: PublicGameEvent[]): void {
   container.replaceChildren();
-  const visible = events.slice(-MAX_VISIBLE_ACTIONS);
+  const visible = events.slice(-60);
+  if (!visible.length) container.textContent = "The table is quiet.";
   visible.forEach((event, index) => {
     const item = document.createElement("p");
     const isRecent = index >= visible.length - RECENT_ACTION_COUNT;
@@ -141,6 +145,10 @@ export function initPlaytestView(): void {
   const previewPanel = createCardPreviewPanel();
   const handActionMenu = createHandActionMenu();
   const manaOverlay = createManaPaymentOverlay();
+  const zoneInspector = createZoneInspector((name) => cardStore.get(name));
+  const transitions = new VisualTransitions();
+  let opponentHand: HTMLElement, stackEl: HTMLElement;
+  let opponentPiles: HTMLElement, humanPiles: HTMLElement;
 
   // Public turn-of-Asphodel frames (V2e.3) are queued and replayed in order with a short delay —
   // the human decision is only ever revealed once this queue is genuinely idle (see revealLiveState).
@@ -179,6 +187,8 @@ export function initPlaytestView(): void {
     lastDecisionKey = "";
     playedEvents = [];
     latestState = null;
+    transitions.reset();
+    zoneInspector.close();
     document.body.classList.remove("tabletop-active");
     previewPanel.close();
     handActionMenu.close();
@@ -197,6 +207,8 @@ export function initPlaytestView(): void {
   }
 
   function showEndScreen(): void {
+    transitions.reset();
+    zoneInspector.close();
     document.body.classList.remove("tabletop-active");
     setupSection.hidden = true;
     gameSection.hidden = true;
@@ -318,6 +330,8 @@ export function initPlaytestView(): void {
 
   /** The battlefield fills the screen; header/nav/import chrome is hidden via the "tabletop-active" body class (see styles/tabletop.css). */
   function buildGameScreen(humanDeckName: string | null, asphodelDeckName: string | null): void {
+    transitions.reset();
+    zoneInspector.close();
     gameSection.replaceChildren();
     gameSection.className = "table-root";
 
@@ -362,7 +376,19 @@ export function initPlaytestView(): void {
     actionsEl.className = "table-actions";
     humanLifeEl = document.createElement("div");
     humanLifeEl.className = "table-life table-life--human";
-    rail.append(asphodelLifeEl, actionsEl, humanLifeEl);
+    asphodelHalfEl.prepend(asphodelLifeEl);
+    humanHalfEl.prepend(humanLifeEl);
+    const history = document.createElement('details'); history.className = 'table-history';
+    const historyTitle = document.createElement('summary'); historyTitle.textContent = 'Recent actions';
+    history.append(historyTitle, actionsEl); rail.append(history);
+    opponentPiles = document.createElement('div'); opponentPiles.className = 'table-public-zones';
+    humanPiles = document.createElement('div'); humanPiles.className = 'table-public-zones';
+    asphodelHalfEl.append(opponentPiles); humanHalfEl.append(humanPiles);
+    opponentHand = document.createElement('div'); opponentHand.className = 'table-opponent-hand';
+    stackEl = document.createElement('div'); stackEl.className = 'table-stack'; stackEl.hidden = true;
+    stackEl.setAttribute('aria-label', 'Spell stack');
+    const wordmark = document.createElement('div'); wordmark.className = 'table-wordmark'; wordmark.textContent = 'ASPHODEL';
+    battlefield.append(opponentHand, stackEl, wordmark);
     renderLife(asphodelLifeEl, "ASPHODEL", undefined);
     renderLife(humanLifeEl, "YOU", undefined);
 
@@ -393,7 +419,7 @@ export function initPlaytestView(): void {
     handContainer = document.createElement("div");
     handContainer.className = "table-hand";
 
-    gameSection.append(battlefield, rail, hud, menuButton, menuPanel, previewPanel.element, decisionDock, handContainer, handActionMenu.element, manaOverlay.element);
+    gameSection.append(battlefield, rail, hud, menuButton, menuPanel, previewPanel.element, decisionDock, handContainer, handActionMenu.element, manaOverlay.element, zoneInspector.element);
   }
 
   function setDeckInfo(humanDeckName: string, asphodelDeckName: string): void {
@@ -464,25 +490,34 @@ export function initPlaytestView(): void {
       },
     } : { ...boardCallbacks, isCombatSelected };
 
+    transitions.paint(gameSection, observation, () => {
+    zoneInspector.close();
     renderHud(observation);
+    renderStack(stackEl, observation);
 
     const opponent = opponentPlayer(observation);
     const self = selfPlayer(observation);
     asphodelHalfEl.classList.toggle("table-battlefield-half--active", opponent?.playerId === observation.game.activePlayerId);
     humanHalfEl.classList.toggle("table-battlefield-half--active", self?.playerId === observation.game.activePlayerId);
     if (opponent) {
+      asphodelHalfEl.dataset.playerId = opponent.playerId;
+      renderPublicZones(opponentPiles, opponent, (name) => cardStore.get(name), zoneInspector.open);
+      renderHiddenHand(opponentHand, opponent.handSize);
       renderLifeWithDelta(asphodelLifeEl, "ASPHODEL", opponent.life);
       renderCommanderDock(asphodelCommanderDock, opponent, boardCallbacksForThisRender, expand);
       renderBattlefieldHalf(asphodelBattlefieldCards, opponent, boardCallbacksForThisRender, expand);
       renderLandZone(asphodelLandZone, opponent, boardCallbacksForThisRender, expand);
     }
     if (self) {
+      humanHalfEl.dataset.playerId = self.playerId;
+      renderPublicZones(humanPiles, self, (name) => cardStore.get(name), zoneInspector.open);
       renderLifeWithDelta(humanLifeEl, "YOU", self.life);
       renderCommanderDock(humanCommanderDock, self, boardCallbacksForThisRender, expand);
       renderBattlefieldHalf(humanBattlefieldCards, self, boardCallbacksForThisRender, expand);
       renderLandZone(humanLandZone, self, boardCallbacksForThisRender, expand);
       if (self.role === "self") renderHand(handContainer, self.hand, (name) => cardStore.get(name), handActions);
     }
+    });
   }
 
   /**
@@ -586,7 +621,7 @@ export function initPlaytestView(): void {
   }
 
   function pushPlayedEvent(event: PublicGameEvent): void {
-    playedEvents = [...playedEvents, event].slice(-MAX_VISIBLE_ACTIONS);
+    playedEvents = [...playedEvents, event].slice(-60);
     renderActions(actionsEl, playedEvents);
   }
 
@@ -644,6 +679,7 @@ export function initPlaytestView(): void {
 
   function renderStatusLine(status: WebPlaytestStateDTO["status"]): void {
     decisionDock.replaceChildren();
+    decisionDock.classList.remove("table-decision-dock--complex");
     const text = submitting ? "Submitting choice…" : {
       starting: "Starting Forge…", running: "Asphodel is thinking…",
       waiting_for_human: "", completed: "", ended_by_human: "", failed: "",
@@ -695,6 +731,10 @@ export function initPlaytestView(): void {
 
     if (state.pendingDecision) {
       renderDecision(decisionDock, filterDockDecision(state.pendingDecision, unmapped), (choice) => void submitChoice(choice));
+      if (unmapped && state.pendingDecision.rendered.kind === 'menu' && unmapped.length < state.pendingDecision.rendered.items.length) {
+        const hint = document.createElement('p'); hint.className = 'table-action-hint'; hint.textContent = 'Choose a highlighted card, or an action below.';
+        decisionDock.querySelector('.decision-title')?.after(hint);
+      }
     } else {
       renderStatusLine(state.status);
     }

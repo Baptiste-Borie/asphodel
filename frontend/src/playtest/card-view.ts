@@ -80,7 +80,9 @@ export function createTableCard(
   options: TableCardOptions = {},
   existingCardElement?: HTMLElement,
 ): HTMLElement {
-  const name = cardDisplayName(card);
+  const concealed = card.hidden || card.faceDown;
+  const name = concealed ? "Face-down card" : cardDisplayName(card);
+  if (concealed) presentation = null;
   const wantsButton = Boolean(options.onActivate);
   const canReuse = Boolean(
     existingCardElement
@@ -97,6 +99,7 @@ export function createTableCard(
     ? Array.from(existingCardElement!.querySelectorAll(".table-card-counter")).map((el) => el.textContent)
     : [];
 
+  element.dataset.cardRef = card.cardRef;
   element.className = tableCardClassName(card, Boolean(options.selected), options.className ?? "", { combatSelected: options.combatSelected, stacked });
   const accessibleName = card.tapped ? `${name} (Tapped)` : name;
   element.title = accessibleName;
@@ -115,6 +118,9 @@ export function createTableCard(
     img.alt = name;
     img.loading = "lazy";
     face.append(img);
+  } else if (concealed) {
+    face.classList.add("table-card-back");
+    face.textContent = "◇";
   } else if (card.token) {
     // A Forge-reported token with no resolved art yet (V2e.6): a deliberate token-styled
     // treatment, never the generic grey placeholder or a broken-image icon. A later milestone may
