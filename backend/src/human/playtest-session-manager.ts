@@ -5,13 +5,15 @@ import { commanderFixtures } from "../forge/testing/commander-fixtures.js";
 import type { AgentChoice, AsphodelAgent } from "../agent/baseline-agent.js";
 import { BaselineAsphodelAgentV2b } from "../agent/improved-agent.js";
 import type { AgentMatchTransport } from "../agent/agent-runner.js";
-import type { AgentObservation, ForgeDeckSpec, ForgeGameResult } from "../forge/forge-protocol.js";
+import type { AgentCardObservation, AgentObservation, ForgeDeckSpec, ForgeGameResult } from "../forge/forge-protocol.js";
 import type { DeckInput } from "../decks/deck-resolver.js";
 import { resolveDeckInput } from "../decks/deck-resolver.js";
+import type { DecisionOwner } from "./human-vs-agent-runner.js";
 import { runHumanVsAgentMatch } from "./human-vs-agent-runner.js";
 import { WebHumanDecisionProvider } from "./web-human-decision-provider.js";
 import { DecisionRecorder } from "./decision-recorder.js";
 import { describeAgentAction, describeDecision, type DecisionPrompt } from "./human-decision-render.js";
+import { sanitizeAgentObservation, type PublicGameFrame } from "./public-game-frame.js";
 import { writePlaytestReport, type PlaytestReportResult } from "./playtest-report.js";
 
 /** The only two things the manager needs from a running bridge process — real or faked in tests. */
@@ -64,6 +66,13 @@ export interface WebPlaytestStateDTO {
   observation: AgentObservation | null;
   pendingDecision: WebPendingDecisionDTO | null;
   publicEvents: PublicGameEvent[];
+  /**
+   * Ordered, human-safe snapshots of Asphodel's turn in progress (V2e.3) — never Asphodel's own
+   * `AgentObservation` raw; see `sanitizeAgentObservation`. The full list every poll (same
+   * always-authoritative, browser-dedupes-itself shape as `publicEvents`); the frontend plays
+   * unseen ids back in order with a short delay instead of jumping straight to the final board.
+   */
+  frames: PublicGameFrame[];
   asphodelDecisionCount: number;
   endedByHuman: boolean;
   result: ForgeGameResult | null;
@@ -93,6 +102,14 @@ interface Session {
   provider: WebHumanDecisionProvider;
   recorder: DecisionRecorder;
   events: PublicGameEvent[];
+  frames: PublicGameFrame[];
+  /** The human's own hand from the last time it was genuinely their observation — carried into sanitized frames captured mid-Asphodel-turn, since an agent-self observation never contains it at all. */
+  lastHumanHand: AgentCardObservation[];
+  /** Text for the NEXT frame, stashed from the agent decision that is about to resolve into it (see onDecision below) — null when there is nothing worth narrating (e.g. a mana ability tap). */
+  pendingFrameEvent: { turn: number; phase: string; text: string } | null;
+  /** The owner of the previously processed decision. A frame is captured only when this was "agent" — i.e. the incoming observation reflects a state Asphodel's own action just produced, regardless of who owns the decision that just arrived. */
+  pendingFrameOwner: DecisionOwner | null;
+  lastFrameObservationKey: string | null;
   phase: "starting" | "in_progress" | "completed" | "ended_by_human" | "failed";
   result: ForgeGameResult | null;
   errorMessage: string | null;
@@ -141,6 +158,7 @@ export class PlaytestSessionManager {
       id: randomUUID(), humanDeckName: humanDeck.name, agentDeckName: agentDeck.name,
       seed: request.seed ?? 42, startedAt: new Date(), bridge, client,
       provider: new WebHumanDecisionProvider(), recorder: new DecisionRecorder(), events: [],
+      frames: [], lastHumanHand: [], pendingFrameEvent: null, pendingFrameOwner: null, lastFrameObservationKey: null,
       phase: "starting", result: null, errorMessage: null, reportResult: null,
       runPromise: Promise.resolve(),
     };
@@ -159,10 +177,39 @@ export class PlaytestSessionManager {
         {
           seed: session.seed,
           endRequested: session.provider.endRequested,
+          // `observation` here is always the state that LED TO `decision` — i.e. the state Asphodel's
+          // previous action (if any) actually produced. So a frame representing the PREVIOUS agent
+          // decision's result is captured here, one iteration later, using THIS decision's incoming
+          // observation. Only while BOTH the previous and the current decision belong to Asphodel:
+          // the very first agent decision after a human turn needs no frame (the human already saw
+          // that exact board live), and the final agent->human transition needs none either — Magic's
+          // own priority rules mean Asphodel always gets one more decision (typically "pass") after
+          // its last real action before priority actually reaches the human, so that final real
+          // action is already captured here one step early; the human's own already-isolated
+          // `observation`/`pendingDecision` fields expose the (by then unchanged) settled board the
+          // instant it is genuinely their turn — no second, redundant frame is needed for that.
           onDecision: (owner, observation, decision, choice) => {
-            if (owner !== "agent") return;
+            if (owner === "agent" && session.pendingFrameOwner === "agent") {
+              const safeObservation = sanitizeAgentObservation(observation, HUMAN_PLAYER_ID, session.lastHumanHand);
+              const key = JSON.stringify(safeObservation);
+              if (session.pendingFrameEvent !== null || key !== session.lastFrameObservationKey) {
+                const frameId = session.frames.length + 1;
+                const event = session.pendingFrameEvent ? { id: frameId, ...session.pendingFrameEvent } : null;
+                session.frames.push({ id: frameId, event, observation: safeObservation });
+                session.lastFrameObservationKey = key;
+              }
+            }
+            if (owner === "human") {
+              const self = observation.players.find(p => p.role === "self");
+              if (self) session.lastHumanHand = self.hand;
+              session.pendingFrameEvent = null;
+              session.pendingFrameOwner = "human";
+              return;
+            }
             session.recorder.record(observation, decision, choice);
             const text = describeAgentAction(observation, decision, choice);
+            session.pendingFrameEvent = text ? { turn: decision.context.turn, phase: decision.context.phase, text } : null;
+            session.pendingFrameOwner = "agent";
             if (text) session.events.push({ id: session.events.length + 1, turn: decision.context.turn, phase: decision.context.phase, text });
           },
         },
@@ -212,6 +259,7 @@ export class PlaytestSessionManager {
         rendered: describeDecision(pending.observation, pending.decision),
       } : null,
       publicEvents: session.events,
+      frames: session.frames,
       asphodelDecisionCount: session.recorder.all().length,
       endedByHuman: session.phase === "ended_by_human",
       result: session.result,

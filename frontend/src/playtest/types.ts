@@ -118,6 +118,18 @@ export interface PublicGameEvent {
   text: string;
 }
 
+/**
+ * One step of Asphodel's turn the human is allowed to watch (V2e.3) — always human-safe: never
+ * Asphodel's own hand, never a hidden/agent-only field. `event` mirrors a `PublicGameEvent` when
+ * this step is worth narrating in the timeline, or is `null` for a state change with nothing to
+ * say (e.g. a mana ability tapping a land) — the frame is still captured so the board updates.
+ */
+export interface PublicGameFrame {
+  id: number;
+  event: PublicGameEvent | null;
+  observation: AgentObservation;
+}
+
 export interface ForgeGameResult {
   gameId: string;
   format: "commander" | "constructed";
@@ -140,6 +152,7 @@ export interface WebPlaytestStateDTO {
   observation: AgentObservation | null;
   pendingDecision: WebPendingDecisionDTO | null;
   publicEvents: PublicGameEvent[];
+  frames: PublicGameFrame[];
   asphodelDecisionCount: number;
   endedByHuman: boolean;
   result: ForgeGameResult | null;

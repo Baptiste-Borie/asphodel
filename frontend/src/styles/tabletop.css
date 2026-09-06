@@ -3,6 +3,11 @@
   nav, no import chrome. Dark felt-like ground, the same violet accent as the rest of Asphodel,
   no permanent boxed side panels — the left rail and right preview are light overlays on top of
   the battlefield, not dedicated layout columns.
+
+  V2e.3 — same paradigm, refined: commanders get their own dock next to each life total (never
+  merged into the battlefield row), cards are roughly doubled in size and use the available table
+  space instead of shrinking eagerly, tapped cards rotate a full 90° in a reserved slot, and the
+  card inspector is nothing but the card itself, floating — no panel/band/border/text block.
 */
 
 body.tabletop-active .app-header {
@@ -54,35 +59,99 @@ body.tabletop-active #play-view {
   content: "";
 }
 
+/* Life (far left, via .table-rail-left) -> commander dock -> battlefield cards. */
 .table-battlefield-half {
   flex: 1;
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  padding: 20px 210px;
+  min-height: 0;
+}
+
+/* --- Commander dock: pinned next to the matching life total, never part of the battlefield row --- */
+
+.table-commander-dock {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.table-commander-dock:not(:empty) {
+  padding-right: 16px;
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.table-battlefield-half--asphodel .table-commander-dock {
+  justify-content: flex-end;
+}
+
+.table-battlefield-half--human .table-commander-dock {
+  justify-content: flex-start;
+}
+
+.table-card--commander:not(.table-card--tapped) {
+  border-color: rgba(232, 162, 58, 0.55);
+}
+
+/* Commander-dock cards keep a stable size of their own — never subject to the battlefield's
+   count-driven scale (there are only ever one or two of them). */
+.table-commander-dock .table-card-slot {
+  width: 150px;
+}
+
+.table-commander-dock .table-card-slot--tapped {
+  width: calc(150px * 7 / 5);
+}
+
+.table-commander-dock .table-card {
+  width: 150px;
+}
+
+/* --- Battlefield cards proper: wraps, uses the available space before shrinking (see battlefield-scale.ts) --- */
+
+.table-battlefield-cards {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 22px;
-  padding: 20px 210px;
-  min-height: 0;
+  gap: 18px;
   overflow-y: auto;
 }
 
-.table-battlefield-half--asphodel {
+.table-battlefield-half--asphodel .table-battlefield-cards {
   align-content: flex-end;
 }
 
-.table-battlefield-half--human {
+.table-battlefield-half--human .table-battlefield-cards {
   align-content: flex-start;
 }
 
-/* --- Cards: real images, correct aspect ratio, tapped = rotated --- */
+.table-battlefield-cards .table-card-slot {
+  width: var(--bf-card-width, 160px);
+}
+
+.table-battlefield-cards .table-card-slot:not(:first-child) {
+  margin-left: calc(-1 * var(--bf-card-overlap, 0px));
+}
+
+.table-battlefield-cards .table-card {
+  width: var(--bf-card-width, 160px);
+}
+
+/* --- Cards: real images, correct aspect ratio --- */
 
 .table-card {
   flex-shrink: 0;
-  width: 92px;
+  width: 160px;
   aspect-ratio: 5 / 7;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 9px;
   overflow: visible;
   color: inherit;
   background: transparent;
@@ -101,7 +170,7 @@ body.tabletop-active #play-view {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  border-radius: 6px;
+  border-radius: 7px;
   background: var(--surface-raised);
 }
 
@@ -123,9 +192,28 @@ body.tabletop-active #play-view {
   text-align: center;
 }
 
-/* Rotated in place — never the primary "[T]" text signal. Accessible name still says "Tapped". */
-.table-card--tapped {
-  transform: rotate(45deg);
+/*
+  Tapped: rotated a real 90° in place, never a "[T]" text badge as the primary signal (the
+  title/aria-label still say "Tapped" for accessibility). `.table-card-slot` is the reserved
+  footprint a battlefield/commander card renders inside — swapping its own aspect ratio to the
+  rotated card's actual bounding box means neighbors get correctly-sized spacing and nothing
+  clips, without the row's height changing unpredictably from one card to the next.
+*/
+.table-card-slot {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 5 / 7;
+}
+
+.table-card-slot--tapped {
+  width: calc(var(--bf-card-width, 160px) * 7 / 5);
+  aspect-ratio: 7 / 5;
+}
+
+.table-card-slot--tapped .table-card {
+  transform: rotate(90deg);
 }
 
 .table-card--selected {
@@ -176,19 +264,21 @@ body.tabletop-active #play-view {
   flex: 1;
   flex-direction: column;
   justify-content: center;
-  gap: 7px;
+  gap: 9px;
   margin: 20px 0;
   overflow: hidden;
 }
 
 .table-action-item {
   margin: 0;
-  overflow: hidden;
   color: #d7d7dc;
   font-size: 0.76rem;
   line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Two lines allowed — a real card name is never truncated into something meaningless. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .table-action-item--faded {
@@ -246,80 +336,27 @@ body.tabletop-active #play-view {
   font-size: 0.8rem;
 }
 
-/* --- Preview: large, right side, only present while a battlefield card is pinned --- */
+/*
+  --- Preview (V2e.3): no panel, no band, no border, no background, no text block. Just the
+  selected card, large, floating on the right, as if it were brought closer to the player.
+  `pointer-events: none` so it never blocks a click to anything behind/around it — the only ways
+  to close it are the ones the spec lists (same card again, a different card, or Escape), never a
+  click on the floating image itself.
+--- */
 
 .table-preview {
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
+  top: 50%;
+  right: 56px;
   z-index: 5;
-  width: 320px;
-  overflow-y: auto;
-  padding: 24px;
-  border-left: 1px solid var(--border);
-  background: rgba(11, 12, 15, 0.94);
-  backdrop-filter: blur(12px);
+  transform: translateY(-50%);
+  pointer-events: none;
+  filter: drop-shadow(0 26px 50px rgba(0, 0, 0, 0.55));
 }
 
-.table-preview-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--text-muted);
-  background: var(--surface-raised);
-  line-height: 1;
-}
-
-.table-preview-close:hover {
-  color: #f7f7f8;
-  border-color: #4b4f5c;
-}
-
-.table-preview-image {
-  display: block;
-  width: 100%;
-  margin-bottom: 14px;
-  border-radius: 10px;
-}
-
-.table-preview-name {
-  margin: 0 0 6px;
-  color: #f7f7f8;
-  font-size: 1.05rem;
-  font-weight: 700;
-}
-
-.table-preview-type,
-.table-preview-pt,
-.table-preview-counters {
-  margin: 0 0 8px;
-  color: var(--text-muted);
-  font-size: 0.82rem;
-}
-
-.table-preview-text {
-  margin: 0 0 10px;
-  color: #d7d7dc;
-  font-size: 0.86rem;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-.table-preview-tapped {
-  display: inline-block;
-  margin: 0;
-  padding: 2px 9px;
-  border-radius: 999px;
-  color: #1a1408;
-  background: var(--asphodel);
-  font-size: 0.7rem;
-  font-weight: 750;
-  text-transform: uppercase;
+.table-preview-card {
+  width: 300px;
+  cursor: default;
 }
 
 /* --- Decision dock: lower-center, immediately above the hand --- */
@@ -353,13 +390,13 @@ body.tabletop-active #play-view {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  height: 190px;
+  height: 220px;
   padding: 0 220px 14px;
 }
 
 .table-card--hand {
-  width: 116px;
-  margin-left: -52px;
+  width: 124px;
+  margin-left: -56px;
   cursor: default;
 }
 
@@ -370,7 +407,7 @@ body.tabletop-active #play-view {
 .table-card--hand:hover {
   position: relative;
   z-index: 20;
-  transform: translateY(-42px) scale(1.16);
+  transform: translateY(-68px) scale(1.7);
 }
 
 @media (max-width: 1180px) {
@@ -398,7 +435,7 @@ body.tabletop-active #play-view {
     padding-right: 140px;
   }
 
-  .table-preview {
-    width: 260px;
+  .table-preview-card {
+    width: 220px;
   }
 }

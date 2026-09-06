@@ -231,6 +231,74 @@ it("getActiveState() lets a browser reconnect (e.g. after F5) to the one running
   });
 });
 
+// A second fake agent that actually casts (instead of always passing) so `describeAgentAction`
+// produces real narration text for the frame/event tests below.
+class CastingFakeAgent implements AsphodelAgent {
+  choose(_o: AgentObservation, d: Decision): AgentChoice {
+    const actions = (d as Extract<Decision, { type: "priority_action" }>).actions;
+    const cast = actions.find(a => a.type === "cast_spell") ?? actions[0]!;
+    return { decisionId: d.decisionId, kind: "action", choice: cast.actionId, reason: "fake_agent" };
+  }
+}
+
+it("captures a public frame after an accepted Asphodel action, in order, human-safe, without consuming them on poll", async () => {
+  await withTempReports(async reportsRoot => {
+    const { client } = scriptedTransport([
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: humanObservation(1), pendingDecision: priorityDecision("player-1", "d-1") }),
+      // Three consecutive Asphodel decisions (e.g. play a land, pay a cost, cast a spell) — each
+      // later one's INCOMING observation becomes the frame for the one before it, sanitized from
+      // Asphodel's own self-perspective (proving the redaction path is actually exercised). The
+      // very first agent decision after the human's turn produces no frame of its own (that board
+      // was already visible to the human live) — only the two transitions BETWEEN agent decisions do.
+      // (priorityDecision's context is hardcoded to turn 1, so every observation here stays on
+      // turn 1 too — the runner's own coherence check requires decision.context.turn to match
+      // observation.game.turn exactly.)
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: agentObservation(1), pendingDecision: priorityDecision("player-2", "d-2") }),
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: agentObservation(1), pendingDecision: priorityDecision("player-2", "d-3") }),
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: agentObservation(1), pendingDecision: priorityDecision("player-2", "d-4") }),
+      // Back to the human — already exposed directly via the existing live observation/pendingDecision
+      // fields, so no additional frame is expected for this last transition.
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: humanObservation(1), pendingDecision: priorityDecision("player-1", "d-5") }),
+    ]);
+    const manager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => client, createAgent: () => new CastingFakeAgent(), reportsRoot });
+    const started = await manager.start({ humanDeck: { type: "fixture" }, asphodelDeck: { type: "fixture" } });
+
+    // d-1 is the human's own decision — must be answered before Asphodel's chain can even start.
+    let state = manager.getState(started.sessionId);
+    for (let i = 0; i < 50 && state.pendingDecision === null; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      state = manager.getState(started.sessionId);
+    }
+    manager.submitChoice(started.sessionId, { decisionId: "d-1", kind: "action", choice: "pass", reason: "human_choice" });
+
+    for (let i = 0; i < 100 && state.frames.length < 2; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      state = manager.getState(started.sessionId);
+    }
+    assert.equal(state.frames.length, 2, "expected exactly two public frames from this scripted sequence");
+
+    // Ordered ids.
+    assert.equal(state.frames[0]!.id, 1);
+    assert.equal(state.frames[1]!.id, 2);
+
+    // Human-safe: both frames were sanitized from Asphodel's own self-perspective observations,
+    // and must never carry Asphodel's real hand card, anywhere in their serialized JSON.
+    for (const frame of state.frames) {
+      assert.equal(frame.observation.selfPlayerId, "player-1");
+      const agentSide = frame.observation.players.find(p => p.playerId === "player-2")!;
+      assert.equal((agentSide as unknown as { hand?: unknown }).hand, undefined);
+      assert.ok(!JSON.stringify(frame).includes(AGENT_HAND_CARD), "a public frame must never contain Asphodel's real hand card name");
+    }
+    // The narrated action text ("Asphodel casts...") travels with the frame it belongs to.
+    assert.ok(state.frames[0]!.event?.text.includes("Asphodel casts"));
+
+    // Polling again must not consume/delete/reorder frames — a plain, repeatable read.
+    const polledAgain = manager.getState(started.sessionId);
+    assert.equal(polledAgain.frames.length, 2);
+    assert.deepEqual(polledAgain.frames.map(f => f.id), [1, 2]);
+  });
+});
+
 it("getActiveState() is null again once the playtest reaches a terminal status", async () => {
   await withTempReports(async reportsRoot => {
     const { client } = scriptedTransport([

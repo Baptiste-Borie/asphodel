@@ -3,10 +3,11 @@ import "../styles/tabletop.css";
 import { apiRequest } from "../api/api-client.js";
 import { endPlaytest, getActivePlaytest, getPlaytestReport, getPlaytestState, startPlaytest, submitPlaytestChoice } from "../api/playtest-api.js";
 import { element } from "../dom.js";
-import { collectVisibleCardNames, opponentPlayer, renderBattlefieldHalf, renderHand, selfPlayer, type BoardCallbacks } from "./board-renderer.js";
+import { collectVisibleCardNames, opponentPlayer, renderBattlefieldHalf, renderCommanderDock, renderHand, selfPlayer, type BoardCallbacks } from "./board-renderer.js";
 import { createCardPreviewPanel } from "./card-preview.js";
 import { CardPresentationStore } from "./card-presentation-store.js";
 import { renderDecision } from "./decision-renderer.js";
+import { FramePlaybackQueue } from "./frame-playback.js";
 import type { AgentCardObservation, AgentObservation, DeckInput, PublicGameEvent, StartPlaytestRequest, WebPlaytestStateDTO } from "./types.js";
 
 const POLL_INTERVAL_MS = 300;
@@ -86,7 +87,7 @@ function renderLife(container: HTMLElement, label: string, life: number | undefi
   container.append(name, value);
 }
 
-/** Compact Hearthstone-style history: last few actions, most recent least faded. Public info only (Asphodel's own accepted actions — the human already sees their own choices directly). */
+/** Compact Hearthstone-style history: last few actions, most recent least faded. Public info only (Asphodel's own accepted actions — the human already sees their own choices directly). Full card names are never truncated. */
 function renderActions(container: HTMLElement, events: PublicGameEvent[]): void {
   container.replaceChildren();
   const visible = events.slice(-MAX_VISIBLE_ACTIONS);
@@ -117,22 +118,28 @@ export function initPlaytestView(): void {
   let submitting = false;
 
   // The backend only ever exposes `observation` while it is the human's own turn to decide (V2c
-  // isolation: it is never Asphodel's). The frontend remembers the last one it legitimately saw so
-  // the table stays visible while Asphodel is thinking, instead of flashing blank every poll.
+  // isolation: it is never Asphodel's). Kept here only as a fallback (e.g. the end screen's turn
+  // number) — the board itself now stays populated throughout Asphodel's turn via frame playback.
   let lastObservation: AgentObservation | null = null;
   const cardStore = new CardPresentationStore();
   const previewPanel = createCardPreviewPanel();
 
+  // Public turn-of-Asphodel frames (V2e.3) are queued and replayed in order with a short delay —
+  // the human decision is only ever revealed once this queue is genuinely idle (see revealLiveState).
+  const frameQueue = new FramePlaybackQueue();
+  let playedEvents: PublicGameEvent[] = [];
+  let latestState: WebPlaytestStateDTO | null = null;
+
   // Persistent game-screen elements, built once per game — never torn down by a poll, so the
   // pinned preview, menu state and any hover survive polling. Each section only re-renders when
-  // its own underlying data actually changed.
+  // its own underlying data actually changed (or, for frame playback, once per played frame).
   let asphodelLifeEl: HTMLElement, humanLifeEl: HTMLElement, actionsEl: HTMLElement;
-  let asphodelHalf: HTMLElement, humanHalf: HTMLElement, handContainer: HTMLElement;
+  let asphodelCommanderDock: HTMLElement, humanCommanderDock: HTMLElement;
+  let asphodelBattlefieldCards: HTMLElement, humanBattlefieldCards: HTMLElement, handContainer: HTMLElement;
   let decisionDock: HTMLElement, menuPanel: HTMLElement, menuDeckInfo: HTMLElement;
   let lastObservationKey = "";
   let lastPresentationVersion = 0;
   let renderedPresentationVersion = -1;
-  let lastEventsKey = "";
   let lastDecisionKey = "";
 
   function stopPolling(): void {
@@ -147,8 +154,9 @@ export function initPlaytestView(): void {
     sessionId = null;
     lastObservation = null;
     lastObservationKey = "";
-    lastEventsKey = "";
     lastDecisionKey = "";
+    playedEvents = [];
+    latestState = null;
     document.body.classList.remove("tabletop-active");
     previewPanel.close();
     setupSection.hidden = false;
@@ -291,10 +299,23 @@ export function initPlaytestView(): void {
 
     const battlefield = document.createElement("div");
     battlefield.className = "table-battlefield";
-    asphodelHalf = document.createElement("div");
+
+    const asphodelHalf = document.createElement("div");
     asphodelHalf.className = "table-battlefield-half table-battlefield-half--asphodel";
-    humanHalf = document.createElement("div");
+    asphodelCommanderDock = document.createElement("div");
+    asphodelCommanderDock.className = "table-commander-dock";
+    asphodelBattlefieldCards = document.createElement("div");
+    asphodelBattlefieldCards.className = "table-battlefield-cards";
+    asphodelHalf.append(asphodelCommanderDock, asphodelBattlefieldCards);
+
+    const humanHalf = document.createElement("div");
     humanHalf.className = "table-battlefield-half table-battlefield-half--human";
+    humanCommanderDock = document.createElement("div");
+    humanCommanderDock.className = "table-commander-dock";
+    humanBattlefieldCards = document.createElement("div");
+    humanBattlefieldCards.className = "table-battlefield-cards";
+    humanHalf.append(humanCommanderDock, humanBattlefieldCards);
+
     battlefield.append(asphodelHalf, humanHalf);
 
     const rail = document.createElement("div");
@@ -349,22 +370,69 @@ export function initPlaytestView(): void {
     isSelected: (card: AgentCardObservation) => previewPanel.isSelected(card.cardRef),
   };
 
+  /** Unconditionally paints the table from one observation — used both by the live (idle) path and by every played frame. */
+  function paintBoard(observation: AgentObservation): void {
+    const opponent = opponentPlayer(observation);
+    const self = selfPlayer(observation);
+    if (opponent) {
+      renderLife(asphodelLifeEl, "ASPHODEL", opponent.life);
+      renderCommanderDock(asphodelCommanderDock, opponent, boardCallbacks);
+      renderBattlefieldHalf(asphodelBattlefieldCards, opponent, boardCallbacks);
+    }
+    if (self) {
+      renderLife(humanLifeEl, "YOU", self.life);
+      renderCommanderDock(humanCommanderDock, self, boardCallbacks);
+      renderBattlefieldHalf(humanBattlefieldCards, self, boardCallbacks);
+      if (self.role === "self") renderHand(handContainer, self.hand, (name) => cardStore.get(name));
+    }
+  }
+
+  function pushPlayedEvent(event: PublicGameEvent): void {
+    playedEvents = [...playedEvents, event].slice(-MAX_VISIBLE_ACTIONS);
+    renderActions(actionsEl, playedEvents);
+  }
+
+  /** Only while frame playback is genuinely idle — never mid-queue — do we paint the live board/decision, so the human never jumps ahead of a state they have not visually seen play out. */
+  function revealLiveState(state: WebPlaytestStateDTO): void {
+    if (state.observation) {
+      lastObservation = state.observation;
+      renderTableIfChanged(state.observation);
+    }
+    renderDecisionIfChanged(state);
+  }
+
+  /** Feeds any newly-arrived frames into the queue and (re)starts playback — safe to call every poll; a call while already playing is a harmless no-op re-entry that keeps draining the same shared queue. */
+  function pumpFrames(): void {
+    void frameQueue.pump({
+      onFrame: (frame) => {
+        paintBoard(frame.observation);
+        if (frame.event) pushPlayedEvent(frame.event);
+      },
+      onIdle: () => {
+        if (latestState) revealLiveState(latestState);
+      },
+    });
+  }
+
   async function poll(): Promise<void> {
     if (!sessionId) return;
     try {
       const state = await getPlaytestState(sessionId);
-      if (state.observation) lastObservation = state.observation;
+      latestState = state;
       if (state.humanDeckName && state.asphodelDeckName) setDeckInfo(state.humanDeckName, state.asphodelDeckName);
+      frameQueue.enqueue(state.frames);
 
+      const observationsInPlay = [state.observation, ...state.frames.map((f) => f.observation)]
+        .filter((o): o is AgentObservation => o !== null);
       let presentationChanged = false;
-      if (lastObservation) presentationChanged = await cardStore.ensure(collectVisibleCardNames(lastObservation));
+      for (const observation of observationsInPlay) {
+        if (await cardStore.ensure(collectVisibleCardNames(observation))) presentationChanged = true;
+      }
       if (presentationChanged) lastPresentationVersion++;
 
-      renderTableIfChanged();
-      renderActionsIfChanged(state.publicEvents);
-      renderDecisionIfChanged(state);
+      pumpFrames();
 
-      if (TERMINAL_STATUSES.has(state.status)) {
+      if (TERMINAL_STATUSES.has(state.status) && frameQueue.isIdle()) {
         stopPolling();
         await renderEnd(state);
         showEndScreen();
@@ -388,27 +456,12 @@ export function initPlaytestView(): void {
     decisionDock.append(line);
   }
 
-  function renderTableIfChanged(): void {
-    if (!lastObservation) return;
-    const key = JSON.stringify(lastObservation);
+  function renderTableIfChanged(observation: AgentObservation): void {
+    const key = JSON.stringify(observation);
     if (key === lastObservationKey && lastPresentationVersion === renderedPresentationVersion) return;
     lastObservationKey = key;
     renderedPresentationVersion = lastPresentationVersion;
-    const opponent = opponentPlayer(lastObservation);
-    const self = selfPlayer(lastObservation);
-    if (opponent) { renderLife(asphodelLifeEl, "ASPHODEL", opponent.life); renderBattlefieldHalf(asphodelHalf, opponent, boardCallbacks); }
-    if (self) {
-      renderLife(humanLifeEl, "YOU", self.life);
-      renderBattlefieldHalf(humanHalf, self, boardCallbacks);
-      if (self.role === "self") renderHand(handContainer, self.hand, (name) => cardStore.get(name));
-    }
-  }
-
-  function renderActionsIfChanged(events: PublicGameEvent[]): void {
-    const key = JSON.stringify(events);
-    if (key === lastEventsKey) return;
-    lastEventsKey = key;
-    renderActions(actionsEl, events);
+    paintBoard(observation);
   }
 
   function renderDecisionIfChanged(state: WebPlaytestStateDTO): void {
