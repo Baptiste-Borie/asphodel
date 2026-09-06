@@ -93,10 +93,30 @@ export function renderCommanderDock(container: HTMLElement, player: AgentPlayerO
   }
 }
 
-/** The human's hand as a fanned/overlapping row of real cards — read via hover (CSS-only rise+scale), never pinned to the preview panel. */
-export function renderHand(container: HTMLElement, hand: AgentCardObservation[], getPresentation: (name: string) => CardPresentation | null | undefined): void {
+/**
+ * A playable hand card, and what clicking it does — supplied only while a `priority_action`
+ * decision is genuinely showing (see `hand-action-mapping.ts` and `playtest-view.ts`); `undefined`
+ * at every other time (mid-frame-playback, a non-priority decision, no decision at all), in which
+ * case every hand card renders exactly as before: hover-only, never clickable.
+ */
+export interface HandActionCallbacks {
+  isPlayable: (card: AgentCardObservation) => boolean;
+  onActivate: (card: AgentCardObservation, element: HTMLElement) => void;
+}
+
+/** The human's hand as a fanned/overlapping row of real cards — read via hover (CSS-only rise+scale), never pinned to the preview panel. A playable card (see HandActionCallbacks) gets a distinct highlight and becomes clickable; every other card is unaffected. */
+export function renderHand(
+  container: HTMLElement,
+  hand: AgentCardObservation[],
+  getPresentation: (name: string) => CardPresentation | null | undefined,
+  handActions?: HandActionCallbacks,
+): void {
   container.replaceChildren();
   for (const card of hand) {
-    container.append(createTableCard(card, card.name ? getPresentation(card.name) : null, { className: "table-card--hand" }));
+    const playable = handActions?.isPlayable(card) ?? false;
+    container.append(createTableCard(card, card.name ? getPresentation(card.name) : null, {
+      className: playable ? "table-card--hand table-card--playable" : "table-card--hand",
+      ...(playable && handActions ? { onActivate: handActions.onActivate } : {}),
+    }));
   }
 }

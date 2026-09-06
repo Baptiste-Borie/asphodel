@@ -98,6 +98,12 @@ export type AgentChoice = { decisionId: string; reason: string } & (
 export interface MenuItem {
   label: string;
   choice: AgentChoice;
+  /**
+   * The Forge cardRef this action refers to (V2e.4) — populated only for `priority_action` items;
+   * `undefined` for every other decision family, `null` for a card-less action (e.g. "Pass
+   * priority"). A stable id, never a name — two same-named cards (two Mountains) stay distinct.
+   */
+  cardRef?: string | null;
 }
 
 export type DecisionPrompt =

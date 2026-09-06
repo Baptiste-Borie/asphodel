@@ -390,13 +390,15 @@ body.tabletop-active #play-view {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  height: 220px;
+  height: 250px;
   padding: 0 220px 14px;
 }
 
+/* Base ~158px / hover ~245px (scale 1.55) — readable targets, not hardcoded mandates. Overlap
+   grows with the card so a normal Commander hand (7-10 cards) still fits comfortably in the row. */
 .table-card--hand {
-  width: 124px;
-  margin-left: -56px;
+  width: 158px;
+  margin-left: -72px;
   cursor: default;
 }
 
@@ -407,7 +409,57 @@ body.tabletop-active #play-view {
 .table-card--hand:hover {
   position: relative;
   z-index: 20;
-  transform: translateY(-68px) scale(1.7);
+  transform: translateY(-92px) scale(1.55);
+}
+
+/*
+  V2e.4: a hand card Forge currently allows as a priority action — a clear but restrained
+  affordance (accent border + one soft ring), never an "excessive glow". Non-playable cards are
+  completely untouched. Only ever set by the frontend from Forge's own legal-actions list (see
+  hand-action-mapping.ts) — never guessed from card metadata.
+*/
+.table-card--playable {
+  cursor: pointer;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(139, 124, 246, 0.22);
+}
+
+.table-card--playable:hover {
+  border-color: var(--accent-hover);
+}
+
+/* --- Hand action menu: a small contextual menu anchored above a hand card with >1 legal action --- */
+
+.table-hand-menu {
+  position: fixed;
+  z-index: 25;
+  transform: translate(-50%, calc(-100% - 14px));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 190px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.5);
+}
+
+.table-hand-menu-option {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: #f7f7f8;
+  background: var(--surface-raised);
+  font-size: 0.86rem;
+  font-weight: 620;
+  text-align: left;
+}
+
+.table-hand-menu-option:hover {
+  border-color: var(--accent);
+  background: rgba(139, 124, 246, 0.12);
 }
 
 @media (max-width: 1180px) {

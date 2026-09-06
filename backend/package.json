@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc --noEmit",
-    "test": "tsx --test src/*.test.ts",
+    "test": "tsx --test $(find src -name '*.test.ts' -not -path 'src/forge/*')",
     "agent:evaluate": "tsx src/agent/run-evaluation.ts",
     "agent:baseline": "tsx src/agent/run-baseline.ts",
     "game:human-vs-asphodel": "tsx src/human/run-human-vs-asphodel.ts",

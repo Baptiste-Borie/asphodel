@@ -13,6 +13,14 @@ import type { EvaluationDiagnostics } from "../agent/evaluation-diagnostics.js";
 export interface MenuItem {
   label: string;
   choice: AgentChoice;
+  /**
+   * The Forge cardRef this specific action refers to, taken verbatim from
+   * `ForgeExternalAction.cardRef` — populated only for `priority_action` items (V2e.4); every
+   * other decision family leaves this `undefined`, unchanged from before. `null` for an action
+   * with no associated card (e.g. "Pass priority"). Never a name — a stable id, so two
+   * physically distinct cards sharing a name (two Mountains) are never conflated.
+   */
+  cardRef?: string | null;
 }
 
 /** A decision the human must answer: either a numbered menu, or a bounded numeric value. */
@@ -103,10 +111,10 @@ export function describeDecision(observation: AgentObservation, d: ForgePendingE
   switch (d.type) {
     case "priority_action": {
       const items = d.actions.map((a): MenuItem => {
-        if (a.type === "pass") return { label: "Pass priority", choice: { decisionId: d.decisionId, kind: "action", choice: a.actionId, reason } };
+        if (a.type === "pass") return { label: "Pass priority", choice: { decisionId: d.decisionId, kind: "action", choice: a.actionId, reason }, cardRef: null };
         const cost = a.manaCost ? ` [${a.manaCost}]` : "";
         const verb = a.type === "play_land" ? "Play" : a.type === "cast_spell" ? "Cast" : "Activate";
-        return { label: `${verb} ${a.cardName}${cost}`, choice: { decisionId: d.decisionId, kind: "action", choice: a.actionId, reason } };
+        return { label: `${verb} ${a.cardName}${cost}`, choice: { decisionId: d.decisionId, kind: "action", choice: a.actionId, reason }, cardRef: a.cardRef };
       });
       return { kind: "menu", title: "Choose an action", items };
     }

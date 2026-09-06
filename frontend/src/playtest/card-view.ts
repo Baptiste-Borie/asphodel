@@ -2,8 +2,14 @@ import { cardDisplayName } from "./card-format.js";
 import type { AgentCardObservation, CardPresentation } from "./types.js";
 
 export interface TableCardOptions {
-  /** Present only for battlefield cards: click/Enter toggles the large right-side preview. Hand cards omit this — they are read via hover, never pinned. */
-  onActivate?: (card: AgentCardObservation) => void;
+  /**
+   * Present for battlefield cards (click/Enter toggles the large right-side preview) and, since
+   * V2e.4, for a playable hand card (click submits its one legal action or opens a contextual
+   * menu of its several) — the rendered element is passed too, so a caller can anchor a menu near
+   * it. A non-playable hand card omits this entirely — it is read via hover only, never pinned or
+   * clickable.
+   */
+  onActivate?: (card: AgentCardObservation, element: HTMLElement) => void;
   /** True when this is the card currently pinned in the preview panel. */
   selected?: boolean;
   className?: string;
@@ -62,7 +68,7 @@ export function createTableCard(
   }
   element.append(face);
 
-  if (options.onActivate) element.addEventListener("click", () => options.onActivate!(card));
+  if (options.onActivate) element.addEventListener("click", () => options.onActivate!(card, element));
   if (!options.useSlot) return element;
 
   const slot = document.createElement("div");
