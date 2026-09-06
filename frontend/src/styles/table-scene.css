@@ -93,3 +93,10 @@
   .table-pile-face { width: 58px; height: 81px; }
   .table-pile-label { font-size: 8px; }
 }
+/* Empty hand space must never intercept the adjacent action dock. */
+.table-hand { pointer-events: none; }
+.table-hand > .table-card { pointer-events: auto; }
+.table-hand--crowded { pointer-events: auto; }
+.table-decision-dock { z-index: 4; }
+/* Color choices are contextual controls belonging to the payment surface. */
+.table-hand-menu { z-index: 35; }

@@ -179,7 +179,8 @@ export function createTableCard(
 
   activationState.set(element, { card, onActivate: options.onActivate });
   if (options.onActivate && !hasClickListener.has(element)) {
-    element.addEventListener("click", () => {
+    element.addEventListener("click", (event) => {
+      event.stopPropagation();
       const state = activationState.get(element);
       state?.onActivate?.(state.card, element);
     });

@@ -7,11 +7,37 @@ const card=(name,id,zone='battlefield',typeLine='Creature')=>({name,cardRef:id,z
 const player=(playerId,role)=>({playerId,role,name:role==='self'?'You':'Asphodel',life:role==='self'?36:32,startingLife:40,handSize:7,librarySize:82,graveyardSize:1,exileSize:0,commandZoneSize:1,battlefieldSize:5,externalController:true,battlefield:[card('Sol Ring',playerId+'sol','battlefield','Artifact'),card('Llanowar Elves',playerId+'elf'),card('Forest',playerId+'f','battlefield','Basic Land'),{...card('Swamp',playerId+'s','battlefield','Basic Land'),tapped:true}],graveyard:[card('Cultivate',playerId+'g','graveyard','Sorcery')],exile:[],command:[card('Uurg, Spawn of Turg',playerId+'c','command')],commanders:[],...(role==='self'?{hand:['Forest','Swamp','Cultivate','Sol Ring','Llanowar Elves','Doom Blade','Command Tower'].map((n,i)=>card(n,'h'+i,'hand'))}:{})});
 const observation={gameRef:'visual',game:{turn:6,phase:'main1',activePlayerId:'p1',priorityPlayerId:'p1'},selfPlayerId:'p1',players:[player('p1','self'),player('p2','opponent')],stack:[]};
 const state={sessionId:'visual',status:'waiting_for_human',humanDeckName:'Uurg',asphodelDeckName:'Uurg',observation,pendingDecision:{decisionId:'d',type:'priority_action',context:{...observation.game,stackSize:0},rendered:{kind:'menu',title:'Choose an action',items:[{label:'Play Forest',cardRef:'h0',choice:{decisionId:'d',kind:'action',choice:'land',reason:''}},{label:'Pass priority',choice:{decisionId:'d',kind:'action',choice:'pass',reason:''}}]},selectedCardRefs:null},publicEvents:[],frames:[],asphodelDecisionCount:0,endedByHuman:false,result:null,error:null};
-await page.route('**/playtests/**',route=>route.fulfill({json:state}));
+const submissions=[];
+await page.route('**/playtests/**',route=> {
+  if (route.request().method() === 'POST') { submissions.push(route.request().postDataJSON()); return route.fulfill({json:{accepted:true}}); }
+  return route.fulfill({json:state});
+});
 await page.goto(process.env.TABLETOP_URL ?? 'http://127.0.0.1:5174');
 await page.waitForTimeout(900); await page.evaluate(()=>document.querySelector('#nav-play').click());
 await page.waitForTimeout(2500);
 await page.screenshot({path:'/tmp/asphodel-after.png'});
+// Real pointer hit testing: the transparent hand used to intercept this click.
+await page.getByRole('button',{name:'Pass priority →',exact:true}).click({timeout:3000});
+await page.waitForTimeout(700);
+assert.equal(submissions.length,1); assert.equal(submissions[0].choice,'pass');
+// A card's action menu must survive its opening click and cancel without a submission.
+state.pendingDecision.rendered.items.push({label:'Cycle Forest (fixture)',cardRef:'h0',choice:{decisionId:'d',kind:'action',choice:'cycle',reason:'human_choice'}});
+await page.waitForTimeout(700);
+await page.locator('.table-hand [data-card-ref="h0"]').click();
+assert.equal(await page.locator('.table-hand-menu:not([hidden])').count(),1);
+await page.getByRole('button',{name:'Cancel',exact:true}).click();
+assert.equal(submissions.length,1);
+const priority=structuredClone(state.pendingDecision);
+state.pendingDecision={...priority,decisionId:'pay',type:'mana_payment',rendered:{kind:'menu',title:'Pay mana: {2}',items:[{label:'Green mana',cardRef:'p1f',choice:{decisionId:'pay',kind:'mana',choice:'green',reason:'human_choice'}},{label:'Black mana',cardRef:'p1f',choice:{decisionId:'pay',kind:'mana',choice:'black',reason:'human_choice'}},{control:'cancel',label:'Cancel action',cardRef:null,choice:{decisionId:'pay',kind:'mana',choice:'cancel-from-forge',reason:'human_choice'}}]}};
+await page.waitForTimeout(700);
+await page.locator('.table-mana-overlay [data-card-ref="p1f"]').click();
+await page.getByRole('button',{name:'Cancel',exact:true}).click();
+assert.equal(submissions.length,1,'closing color choices does not submit payment');
+await page.getByRole('button',{name:'Cancel action',exact:true}).click();
+await page.waitForTimeout(700);
+assert.deepEqual(submissions[1],{decisionId:'pay',kind:'mana',choice:'cancel-from-forge',reason:'human_choice'});
+state.pendingDecision=priority;
+await page.waitForTimeout(700);
 assert.equal(await page.locator('.table-public-zones').count(),2);
 assert.equal(await page.locator('.table-opponent-hand > span').count(),7);
 await page.getByRole('button',{name:'You: graveyard, 1 cards',exact:true}).click();
@@ -36,5 +62,5 @@ await page.setViewportSize({width:1366,height:768});
 await page.screenshot({path:'/tmp/asphodel-1366.png'});
 assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth > innerWidth),false);
 assert.deepEqual(errors,[]);
-console.log('Browser checks passed: piles, hidden hand count, inspector/Escape, keyboard hand focus, F5 resume, confirmed land move, reduced motion, 1366px overflow.');
+console.log('Browser checks passed: pass button hit testing, contextual cancel, Forge payment cancel, piles, hidden hand count, inspector/Escape, keyboard hand focus, F5 resume, confirmed land move, reduced motion, 1366px overflow.');
 await browser.close();

@@ -68,7 +68,9 @@ export function createManaPaymentOverlay(): ManaPaymentOverlay {
   const otherSection = buildSection("Other sources");
   const floatingSection = buildSection("Floating mana");
 
-  surface.append(title, cost, landsSection.section, otherSection.section, floatingSection.section);
+  const controls = document.createElement("div");
+  controls.className = "table-mana-controls";
+  surface.append(title, cost, landsSection.section, otherSection.section, floatingSection.section, controls);
   element.append(backdrop, surface);
 
   let open = false;
@@ -112,6 +114,7 @@ export function createManaPaymentOverlay(): ManaPaymentOverlay {
     otherSection.section.hidden = groups.other.length === 0;
 
     floatingSection.row.replaceChildren();
+    controls.replaceChildren();
     for (const item of groups.floating) {
       const chip = document.createElement("button");
       chip.type = "button";
@@ -122,9 +125,9 @@ export function createManaPaymentOverlay(): ManaPaymentOverlay {
         requestAnimationFrame(() => requestAnimationFrame(() => chip.classList.remove("table-mana-source-card--entering")));
       }
       chip.addEventListener("click", () => onFloatingActivate(item.choice));
-      floatingSection.row.append(chip);
+      (item.control === "cancel" ? controls : floatingSection.row).append(chip);
     }
-    floatingSection.section.hidden = groups.floating.length === 0;
+    floatingSection.section.hidden = !groups.floating.some(item => item.control !== "cancel");
     hasRenderedSinceOpen = true;
 
     element.hidden = false;

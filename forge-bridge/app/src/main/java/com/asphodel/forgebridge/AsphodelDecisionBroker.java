@@ -571,6 +571,8 @@ final class AsphodelDecisionBroker {
                         candidate.color()
                 ));
             }
+            String cancelChoiceId = "mana-cancel-" + manaOptionIds.incrementAndGet();
+            choices.put(cancelChoiceId, new ManaChoice(null, cancelChoiceId, () -> true));
             PendingManaPaymentDecision snapshot = new PendingManaPaymentDecision(
                     decisionId,
                     "mana_payment",
@@ -580,7 +582,8 @@ final class AsphodelDecisionBroker {
                     manaCost(remainingCost),
                     manaPool(player),
                     List.copyOf(options),
-                    remainingCost.isPaid()
+                    remainingCost.isPaid(),
+                    cancelChoiceId
             );
             decision = new PendingInternal(snapshot, observation, choices);
             pending = decision;
@@ -665,9 +668,9 @@ final class AsphodelDecisionBroker {
                 }
             } else if (choice instanceof CostObjectChoice) {
                 costObjectsSelected++;
-            } else if (choice instanceof ManaChoice) {
+            } else if (choice instanceof ManaChoice mana) {
                 manaPaymentDecisionsSubmitted++;
-                manaOptionsSelected++;
+                if (mana.candidate() != null) manaOptionsSelected++;
             }
         }
 
@@ -1132,7 +1135,8 @@ final class AsphodelDecisionBroker {
             ManaCostObservation remainingCost,
             ManaPoolObservation manaPool,
             List<ExternalManaPaymentOption> options,
-            boolean canFinish
+            boolean canFinish,
+            String cancelChoiceId
     ) implements DecisionSnapshot {
     }
 

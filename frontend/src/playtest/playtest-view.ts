@@ -741,7 +741,7 @@ export function initPlaytestView(): void {
   }
 
   async function submitChoice(choice: Parameters<typeof submitPlaytestChoice>[1]): Promise<void> {
-    if (!sessionId) return;
+    if (!sessionId || submitting) return;
     submitting = true;
     renderStatusLine("running");
     try {
@@ -750,6 +750,7 @@ export function initPlaytestView(): void {
       decisionDock.textContent = error instanceof Error ? error.message : "That choice was not accepted.";
     } finally {
       submitting = false;
+      lastDecisionKey = ""; // Re-enable the same decision after a rejected/retried submission.
     }
     await poll();
   }

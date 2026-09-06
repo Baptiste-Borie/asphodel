@@ -588,6 +588,9 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
                                 manaPayments,
                                 observations.build(getGame(), getPlayer())
                         );
+                // Declining native payment returns through PlaySpellAbility's own rollback:
+                // costs and mana are refunded by Forge, never reconstructed by the client.
+                if (selected == null) return false;
                 // The broker revalidates before acknowledging the selector. Do
                 // the same on the game thread immediately before mutation.
                 if (!manaPayments.isStillLegal(getPlayer(), ability, toPay, selected)) {

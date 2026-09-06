@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
+import { validateHumanChoice as validateChoice } from "./validate-human-choice.js";
 import { describeDecision } from "./human-decision-render.js";
 import type { AgentObservation, AgentSelfPlayerObservation, ForgePendingCombatDecision, ForgePendingExternalDecision as Decision, ForgePendingManaPaymentDecision } from "../forge/forge-protocol.js";
 
@@ -157,4 +158,19 @@ it("mana_payment (V2e.5.1): a multi-color source (e.g. Command Tower) preserves 
   const sameSource = prompt.items.filter(i => i.cardRef === "tower-1");
   assert.equal(sameSource.length, 2, "both color options for the same source must both be preserved, not collapsed into one");
   assert.deepEqual(sameSource.map(i => i.choice.choice), ["opt-w", "opt-u"]);
+});
+
+it("exposes and validates cancellation only when the pending Forge payment supplies it", () => {
+  const decision = manaPaymentDecision([]);
+  const cancel = { decisionId: decision.decisionId, kind: 'mana' as const, choice: 'cancel-exact', reason: 'human_choice' };
+  assert.throws(() => validateChoice(decision, cancel));
+  decision.cancelChoiceId = 'cancel-exact';
+  const prompt = describeDecision(observation(), decision);
+  assert.equal(prompt.kind, 'menu');
+  if (prompt.kind !== 'menu') return;
+  assert.deepEqual(prompt.items.map(i => [i.control, i.choice.choice, i.cardRef]), [['cancel','cancel-exact',null]]);
+  assert.doesNotThrow(() => validateChoice(decision, cancel));
+  assert.throws(() => validateChoice(decision, {...cancel, choice: 'invented'}));
+  assert.throws(() => validateChoice(decision, {...cancel, decisionId: 'stale'}));
+  assert.equal(decision.options.length, 0, 'agent mana options remain unchanged');
 });

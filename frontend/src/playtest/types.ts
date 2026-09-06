@@ -98,6 +98,8 @@ export type AgentChoice = { decisionId: string; reason: string } & (
 );
 
 export interface MenuItem {
+  /** Presentation hint for an explicit Forge cancellation choice. */
+  control?: "cancel";
   label: string;
   choice: AgentChoice;
   /**

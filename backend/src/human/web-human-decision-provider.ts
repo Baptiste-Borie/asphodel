@@ -1,4 +1,5 @@
-import { validateChoice, type AgentChoice } from "../agent/baseline-agent.js";
+import { validateHumanChoice } from "./validate-human-choice.js";
+import { type AgentChoice } from "../agent/baseline-agent.js";
 import type { AgentObservation, ForgePendingExternalDecision } from "../forge/forge-protocol.js";
 import { HumanEndMatchError, type HumanDecisionProvider } from "./human-decision-provider.js";
 
@@ -53,7 +54,7 @@ export class WebHumanDecisionProvider implements HumanDecisionProvider {
     if (choice.decisionId !== pending.decision.decisionId) {
       throw new WebHumanDecisionError("STALE_DECISION", "This decision has already been answered or is no longer the current one.");
     }
-    validateChoice(pending.decision, choice);
+    validateHumanChoice(pending.decision, choice);
     this.pending = undefined;
     pending.resolve(choice);
   }

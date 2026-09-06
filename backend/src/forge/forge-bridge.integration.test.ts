@@ -759,6 +759,40 @@ afterEach(async () => {
 });
 
 describe("ForgeBridgeClient integration", () => {
+  it("V2e.7 cancels cycling during mana payment and returns the exact card to hand", async () => {
+    const client = createClient(); await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const deck: ForgeDeckSpec = { name: 'Cycling cancellation', cards: [
+      { name: 'Talrand, Sky Summoner', quantity: 1, section: 'commander' },
+      { name: 'Island', quantity: 30, section: 'mainboard' },
+      { name: 'Complicate', quantity: 30, section: 'mainboard' },
+    ] };
+    const started = await external.startSpecs(deck, harmlessOpponentDeck(), { seed: 12345 });
+    const found = await driveUntilObservedAction(external, started.sessionId,
+      (_o, a) => a.type === 'activate_ability' && a.cardName === 'Complicate');
+    const before = observedPlayers(found.snapshot.observation).self;
+    await external.submitDecision(started.sessionId, found.decision.decisionId, found.action.actionId);
+    let paying = await waitForManaPaymentDecision(external, started.sessionId);
+    assert.ok(paying.pendingDecision.cancelChoiceId);
+    // Pay one source first: cancel must use Forge's actual refund path, not merely close a UI.
+    const source = paying.pendingDecision.options[0]!;
+    await external.submitManaOption(started.sessionId, paying.pendingDecision.decisionId, source.manaOptionId);
+    paying = await waitForManaPaymentDecision(external, started.sessionId);
+    assert.ok(paying.pendingDecision.cancelChoiceId);
+    await external.submitManaOption(started.sessionId, paying.pendingDecision.decisionId, paying.pendingDecision.cancelChoiceId);
+    const resumed = await waitForObservedDecision(external, started.sessionId);
+    const after = observedPlayers(resumed.observation).self;
+    assert.equal(resumed.progress.manaOptionsSelected, paying.progress.manaOptionsSelected, 'cancellation is not a mana source selection');
+    assert.ok(after.hand.some(c => c.cardRef === found.action.cardRef));
+    assert.equal(after.handSize, before.handSize);
+    assert.equal(after.librarySize, before.librarySize, 'cancel must not draw a card');
+    assert.equal(after.graveyardSize, before.graveyardSize);
+    assert.deepEqual(after.battlefield.map(c => [c.cardRef,c.tapped]), before.battlefield.map(c => [c.cardRef,c.tapped]));
+    assert.ok(resumed.pendingDecision.actions.some(a => a.type === 'activate_ability' && a.cardRef === found.action.cardRef), 'cycling remains available');
+    await assert.rejects(external.submitManaOption(started.sessionId, paying.pendingDecision.decisionId, paying.pendingDecision.cancelChoiceId), /already|STALE/i);
+    await external.cancel(started.sessionId);
+  });
+
   it("V1l drives a 100-card Commander game with an external baseline and audited fallbacks", { timeout: 120_000 }, async () => {
     const client = createClient(); await client.start();
     const external = new ForgeExternalMatchClient(client);

@@ -385,6 +385,8 @@ export interface ForgePendingManaPaymentDecision {
   manaPool: ForgeManaPoolObservation;
   options: ForgeManaPaymentOption[];
   canFinish: boolean;
+  /** Native Forge payment cancellation; absent on older bridges. */
+  cancelChoiceId?: string | null;
 }
 
 export interface ForgePendingCombatDecision {

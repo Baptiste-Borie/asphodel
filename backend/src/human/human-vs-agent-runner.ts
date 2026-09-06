@@ -1,3 +1,4 @@
+import { validateHumanChoice } from "./validate-human-choice.js";
 import type { AgentMatchTransport, AgentTraceEntry } from "../agent/agent-runner.js";
 import { AgentRunError, gameMetrics, submitExternalChoice } from "../agent/agent-runner.js";
 import { validateChoice, type AgentChoice, type AsphodelAgent } from "../agent/baseline-agent.js";
@@ -97,7 +98,8 @@ export async function runHumanVsAgentMatch(
           : d.type === "priority_action"
             ? agentCastLoopGuard.wrapPriorityDecision(observation, d, (filtered) => agent.choose(observation, filtered))
             : agent.choose(observation, d));
-        validateChoice(d, choice);
+        if (owner === "human") validateHumanChoice(d, choice);
+        else validateChoice(d, choice);
         options.signal?.throwIfAborted();
         await submitExternalChoice(client, sessionId, d, choice);
         trace.push({ turn: d.context.turn, phase: d.context.phase, type: d.type, choice });

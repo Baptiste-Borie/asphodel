@@ -11,6 +11,8 @@ import type { EvaluationDiagnostics } from "../agent/evaluation-diagnostics.js";
 
 /** One selectable line in a rendered decision. `choice` is a complete, already-legal answer. */
 export interface MenuItem {
+  /** Presentation hint for an explicit Forge cancellation choice. */
+  control?: "cancel";
   label: string;
   choice: AgentChoice;
   /**
@@ -158,6 +160,7 @@ export function describeDecision(observation: AgentObservation, d: ForgePendingE
         // render each as its own clickable card. Floating mana has no physical source: `null`.
         return { label: source, choice: { decisionId: d.decisionId, kind: "mana", choice: o.manaOptionId, reason }, cardRef: o.sourceCardRef };
       });
+      if (d.cancelChoiceId) items.push({ control: "cancel", label: "Cancel action", choice: { decisionId: d.decisionId, kind: "mana", choice: d.cancelChoiceId, reason }, cardRef: null });
       return { kind: "menu", title: `Pay mana: ${d.remainingCost.text || "(paid)"}`, items };
     }
     case "attackers_selection":

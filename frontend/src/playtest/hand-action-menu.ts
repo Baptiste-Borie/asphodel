@@ -40,6 +40,10 @@ export function createHandActionMenu(): HandActionMenu {
       });
       element.append(button);
     }
+    const cancel = document.createElement('button');
+    cancel.type = 'button'; cancel.className = 'table-hand-menu-option'; cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', (event) => { event.stopPropagation(); close(); });
+    element.append(cancel);
     const rect = anchor.getBoundingClientRect();
     element.style.left = `${rect.left + rect.width / 2}px`;
     element.style.top = `${rect.top}px`;
@@ -48,7 +52,9 @@ export function createHandActionMenu(): HandActionMenu {
   }
 
   element.addEventListener("click", (event) => event.stopPropagation());
-  document.addEventListener("click", () => { if (open) close(); });
+  document.addEventListener("click", (event) => {
+    if (open && event.target instanceof Node && !element.contains(event.target)) close();
+  }, true);
   document.addEventListener("keydown", (event) => { if (event.key === "Escape" && open) close(); });
 
   return { element, isOpen: () => open, openFor, close };
