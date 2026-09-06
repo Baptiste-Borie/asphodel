@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { computePlaybackDelayMs, FramePlaybackQueue } from "./frame-playback.js";
+import { computePlaybackDelayMs, FramePlaybackQueue, OPPONENT_ACTION_DELAY_MS, OPPONENT_MINOR_DELAY_MS } from "./frame-playback.js";
 import type { PublicGameFrame } from "./types.js";
 
 function frame(id: number, text: string | null = null): PublicGameFrame {
@@ -59,9 +59,19 @@ it("decision must stay hidden (isIdle() false) for the entire stretch until pump
 });
 
 it("computePlaybackDelayMs preserves order-relevant pacing but shrinks for a big backlog, never below a sane floor", () => {
-  const small = computePlaybackDelayMs(1);
-  const medium = computePlaybackDelayMs(4);
-  const large = computePlaybackDelayMs(20);
+  const meaningful = { event: { id: 1, turn: 1, phase: "main1", text: "Asphodel casts Krenko" } };
+  const small = computePlaybackDelayMs(meaningful, 1);
+  const medium = computePlaybackDelayMs(meaningful, 4);
+  const large = computePlaybackDelayMs(meaningful, 20);
   assert.ok(small >= medium && medium >= large, "delay should shrink (or stay equal) as the remaining backlog grows");
-  assert.ok(large >= 50, "even an accelerated catch-up must not collapse to ~0ms");
+  assert.ok(large >= 100, "even an accelerated catch-up must not collapse to ~0ms");
+});
+
+it("a meaningful opponent action gets the longer OPPONENT_ACTION_DELAY_MS; a minor transition gets the shorter OPPONENT_MINOR_DELAY_MS", () => {
+  const meaningful = { event: { id: 1, turn: 1, phase: "main1", text: "Asphodel casts Krenko" } };
+  const minor = { event: null };
+  assert.equal(computePlaybackDelayMs(meaningful, 0), OPPONENT_ACTION_DELAY_MS);
+  assert.equal(computePlaybackDelayMs(minor, 0), OPPONENT_MINOR_DELAY_MS);
+  assert.ok(OPPONENT_ACTION_DELAY_MS > OPPONENT_MINOR_DELAY_MS, "a real action should linger noticeably longer than a minor visual step");
+  assert.ok(OPPONENT_ACTION_DELAY_MS >= 900 && OPPONENT_MINOR_DELAY_MS >= 500 && OPPONENT_MINOR_DELAY_MS <= 650, "matches the V2e.5 suggested starting values");
 });

@@ -80,7 +80,8 @@ record AgentObservation(
             Integer toughness,
             String typeLine,
             List<String> combatKeywords,
-            List<String> selfAttackTriggers
+            List<String> selfAttackTriggers,
+            boolean token
     ) {
     }
 

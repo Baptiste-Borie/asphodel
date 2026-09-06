@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { decidePriorityCardAction, mapPriorityActionsToHand } from "./hand-action-mapping.js";
+import { decideCardAction, mapActionsToCards, mapPriorityActionsToHand } from "./hand-action-mapping.js";
 import type { AgentCardObservation, DecisionPrompt, MenuItem } from "./types.js";
 
 function handCard(cardRef: string, name = "Mountain"): AgentCardObservation {
@@ -74,15 +74,29 @@ it("calling the mapping again with unchanged inputs (simulated re-polling) yield
   assert.deepEqual(first.unmapped.map(i => i.label), second.unmapped.map(i => i.label));
 });
 
-it("decidePriorityCardAction: exactly one legal action submits it directly", () => {
-  const decision = decidePriorityCardAction([menuItem("Play Mountain", "play-1", "mtn-1")]);
+it("mapActionsToCards (V2e.5): generalizes beyond the hand — e.g. battlefield attacker options, by cardRef", () => {
+  const battlefieldRefs = ["goblin-1", "goblin-2", "goblin-3"];
+  const items = [
+    menuItem("Add Goblin (attacking)", "o-1", "goblin-1"),
+    menuItem("Add Goblin (attacking)", "o-2", "goblin-2"),
+    menuItem("Finish declaring attackers", "o-3", null),
+  ];
+  const mapping = mapActionsToCards(menuPrompt(items), battlefieldRefs);
+  assert.equal(mapping.byCardRef.size, 2);
+  assert.deepEqual(mapping.unmapped.map(i => i.label), ["Finish declaring attackers"]);
+  // goblin-3 is visible but has no legal action right now — correctly absent, not fabricated.
+  assert.equal(mapping.byCardRef.has("goblin-3"), false);
+});
+
+it("decideCardAction: exactly one legal action submits it directly", () => {
+  const decision = decideCardAction([menuItem("Play Mountain", "play-1", "mtn-1")]);
   assert.equal(decision.kind, "submit");
   if (decision.kind === "submit") assert.equal(decision.choice.choice, "play-1");
 });
 
-it("decidePriorityCardAction: more than one legal action opens a contextual menu of exactly those options", () => {
+it("decideCardAction: more than one legal action opens a contextual menu of exactly those options", () => {
   const items = [menuItem("Cast for {2}{R}", "cast-normal", "spell-1"), menuItem("Cast for alternate cost", "cast-alt", "spell-1")];
-  const decision = decidePriorityCardAction(items);
+  const decision = decideCardAction(items);
   assert.equal(decision.kind, "menu");
   if (decision.kind === "menu") assert.deepEqual(decision.items.map(i => i.label), ["Cast for {2}{R}", "Cast for alternate cost"]);
 });

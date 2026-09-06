@@ -32,6 +32,8 @@ export interface AgentCardObservation {
   typeLine: string | null;
   combatKeywords?: string[] | null;
   selfAttackTriggers?: string[] | null;
+  /** True for a Forge-generated token; absent on older bridges. Presentation-only (visual stacking) — never a rules input. */
+  token?: boolean;
 }
 
 export interface AgentCommanderObservation {

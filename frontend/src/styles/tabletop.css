@@ -146,6 +146,7 @@ body.tabletop-active #play-view {
 /* --- Cards: real images, correct aspect ratio --- */
 
 .table-card {
+  position: relative;
   flex-shrink: 0;
   width: 160px;
   aspect-ratio: 5 / 7;
@@ -155,7 +156,11 @@ body.tabletop-active #play-view {
   overflow: visible;
   color: inherit;
   background: transparent;
-  transition: transform 140ms ease, outline-color 140ms ease;
+  /* transform: tap/untap rotation (V2e.5, ~240ms, within the 200-300ms target). filter/box-shadow:
+     summoning sickness fading smoothly in and back out. Only animates when the SAME DOM element
+     persists across a render (see board-renderer.ts's reconciled battlefield rendering) — a
+     freshly created element has no "before" state to transition from. */
+  transition: transform 240ms ease, outline-color 140ms ease, filter 420ms ease, box-shadow 420ms ease;
 }
 
 .table-battlefield-half .table-card {
@@ -205,11 +210,80 @@ body.tabletop-active #play-view {
   align-items: center;
   justify-content: center;
   aspect-ratio: 5 / 7;
+  /* Card-enters-the-battlefield transition (V2e.5, ~220ms, within the 180-300ms target) — see
+     `.table-card--entering` below and board-renderer.ts's reconciled rendering, which applies it
+     only to a genuinely brand-new card/token, never to one already on the table. */
+  transition: opacity 220ms ease, transform 220ms ease;
 }
 
 .table-card-slot--tapped {
   width: calc(var(--bf-card-width, 160px) * 7 / 5);
   aspect-ratio: 7 / 5;
+}
+
+/* A brand-new card/token being placed onto the table: starts faded and slightly smaller/lower,
+   then transitions to its resting state the instant this class is removed (double-rAF in the
+   renderer, so the browser actually paints the "before" state first). Restrained — no bounce, no
+   long animation, no particle effects. */
+.table-card-slot.table-card--entering {
+  opacity: 0;
+  transform: scale(0.82) translateY(10px);
+}
+
+/* --- Summoning sickness (V2e.5): a restrained, immediately-readable visual, not just a badge --- */
+
+.table-card--summoning-sick {
+  filter: saturate(0.7) brightness(0.93);
+  box-shadow: 0 0 0 2px rgba(232, 162, 58, 0.28);
+  animation: table-card-sick-pulse 2.6s ease-in-out infinite;
+}
+
+/* A small supplementary marker — never the primary signal (that's the desaturation/pulse above). */
+.table-card--summoning-sick::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(232, 162, 58, 0.95);
+  box-shadow: 0 0 0 1px rgba(12, 14, 19, 0.6);
+}
+
+@keyframes table-card-sick-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(232, 162, 58, 0.2); }
+  50% { box-shadow: 0 0 0 3px rgba(232, 162, 58, 0.4); }
+}
+
+/* Static distinction (desaturation, box-shadow ring, corner marker) stays; only the low-intensity pulse is disabled. */
+@media (prefers-reduced-motion: reduce) {
+  .table-card--summoning-sick {
+    animation: none;
+  }
+}
+
+/* --- Stack count badge (V2e.5): "×N" for a group of identical permanents/tokens — see card-grouping.ts. Never a fake merged game object, purely this presentation layer. --- */
+
+.table-card-count {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 2;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(12, 14, 19, 0.82);
+  color: #f7f7f8;
+  font-size: 0.74rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  transition: transform 260ms ease;
+}
+
+/* Briefly emphasized the moment a stack's count actually changes (e.g. a new token joins) — never a full-battlefield re-animation, just this one badge. */
+.table-card-count--changed {
+  transform: scale(1.4);
 }
 
 .table-card-slot--tapped .table-card {

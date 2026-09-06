@@ -478,6 +478,8 @@ export interface AgentCardObservation {
   combatKeywords?: string[] | null;
   /** Static public descriptions of self-attack triggers, with unexpanded placeholders. */
   selfAttackTriggers?: string[] | null;
+  /** True for a Forge-generated token (Card.isToken()); absent on older bridges. Presentation-only signal (e.g. visual stacking) — never a rules input. */
+  token?: boolean;
 }
 
 export interface AgentCommanderObservation {

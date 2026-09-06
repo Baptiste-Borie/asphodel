@@ -3,13 +3,13 @@ import "../styles/tabletop.css";
 import { apiRequest } from "../api/api-client.js";
 import { endPlaytest, getActivePlaytest, getPlaytestReport, getPlaytestState, startPlaytest, submitPlaytestChoice } from "../api/playtest-api.js";
 import { element } from "../dom.js";
-import { collectVisibleCardNames, opponentPlayer, renderBattlefieldHalf, renderCommanderDock, renderHand, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
+import { collectVisibleCardNames, commandZoneCards, opponentPlayer, renderBattlefieldHalf, renderCommanderDock, renderHand, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
 import { createCardPreviewPanel } from "./card-preview.js";
 import { CardPresentationStore } from "./card-presentation-store.js";
 import { renderDecision } from "./decision-renderer.js";
 import { FramePlaybackQueue } from "./frame-playback.js";
 import { createHandActionMenu } from "./hand-action-menu.js";
-import { decidePriorityCardAction, mapPriorityActionsToHand, type HandActionMap } from "./hand-action-mapping.js";
+import { decideCardAction, mapActionsToCards, mapPriorityActionsToHand, type CardActionMap } from "./hand-action-mapping.js";
 import type { AgentCardObservation, AgentObservation, AgentSelfPlayerObservation, DeckInput, PublicGameEvent, StartPlaytestRequest, WebPendingDecisionDTO, WebPlaytestStateDTO } from "./types.js";
 
 const POLL_INTERVAL_MS = 300;
@@ -376,48 +376,86 @@ export function initPlaytestView(): void {
 
   /**
    * Unconditionally paints the table from one observation — used both by the live (idle) path and
-   * by every played frame. `handActions` is supplied only by the live path, and only while a
-   * `priority_action` decision is genuinely showing (see `computeHandMapping`) — a played frame
-   * never passes it, so hand cards are never clickable mid-Asphodel-turn-playback.
+   * by every played frame. `handActions`/`boardActionMap` are supplied only by the live path, and
+   * only while an actual menu decision is genuinely showing (see `computeActiveMapping`) — a
+   * played frame never passes either, so no card is ever clickable-for-a-decision mid-Asphodel-
+   * turn-playback. At most ONE of the two is ever set for a given decision (see below).
    */
-  function paintBoard(observation: AgentObservation, handActions?: HandActionCallbacks): void {
+  function paintBoard(observation: AgentObservation, handActions?: HandActionCallbacks, boardActionMap?: CardActionMap): void {
+    const expand = Boolean(boardActionMap);
+    const boardCallbacksForThisRender: BoardCallbacks = boardActionMap ? {
+      getPresentation: (name) => cardStore.get(name),
+      isSelected: () => false,
+      isPlayable: (card) => boardActionMap.byCardRef.has(card.cardRef),
+      onCardActivate: (card, cardElement) => {
+        const items = boardActionMap.byCardRef.get(card.cardRef);
+        if (!items) return;
+        const decision = decideCardAction(items);
+        if (decision.kind === "submit") {
+          handActionMenu.close();
+          void submitChoice(decision.choice);
+        } else {
+          handActionMenu.openFor(cardElement, decision.items, (choice) => {
+            handActionMenu.close();
+            void submitChoice(choice);
+          });
+        }
+      },
+    } : boardCallbacks;
+
     const opponent = opponentPlayer(observation);
     const self = selfPlayer(observation);
     if (opponent) {
       renderLife(asphodelLifeEl, "ASPHODEL", opponent.life);
-      renderCommanderDock(asphodelCommanderDock, opponent, boardCallbacks);
-      renderBattlefieldHalf(asphodelBattlefieldCards, opponent, boardCallbacks);
+      renderCommanderDock(asphodelCommanderDock, opponent, boardCallbacksForThisRender, expand);
+      renderBattlefieldHalf(asphodelBattlefieldCards, opponent, boardCallbacksForThisRender, expand);
     }
     if (self) {
       renderLife(humanLifeEl, "YOU", self.life);
-      renderCommanderDock(humanCommanderDock, self, boardCallbacks);
-      renderBattlefieldHalf(humanBattlefieldCards, self, boardCallbacks);
+      renderCommanderDock(humanCommanderDock, self, boardCallbacksForThisRender, expand);
+      renderBattlefieldHalf(humanBattlefieldCards, self, boardCallbacksForThisRender, expand);
       if (self.role === "self") renderHand(handContainer, self.hand, (name) => cardStore.get(name), handActions);
     }
   }
 
   /**
-   * V2e.4: while a `priority_action` menu decision is pending, maps its exact legal actions onto
-   * the human's own visible hand (`hand-action-mapping.ts`) — `null` for every other decision
-   * family/state, per spec ("this patch only replaces the first card-based priority action
-   * interaction"). Never re-derives legality; every mapped item is one of `pendingDecision`'s own.
+   * V2e.4/V2e.5: maps the current menu decision's exact legal actions onto whichever visible cards
+   * they refer to — the human's own hand for `priority_action` (unchanged since V2e.4: "this patch
+   * only replaces the first card-based priority action interaction"), or every visible battlefield
+   * / commander-dock card (either player's) for every other card-object decision family
+   * (`target_selection`, `cost_object_selection`, `attackers_selection`, `blockers_selection`,
+   * `combat_order_selection`, `yes_no`/`object_selection`/`ordering_selection`) — see V2e.5 §18.
+   * `forHand` tells the caller which of the two board-rendering modes to use. Returns `null`
+   * whenever nothing can be mapped (a value/mode/mana-payment prompt, or simply no matching card
+   * visible) — the board then stays fully grouped/uninteractive for this decision, exactly as
+   * before. Never re-derives legality; every mapped item is copied verbatim from Forge's own data.
    */
-  function computeHandMapping(state: WebPlaytestStateDTO): HandActionMap | null {
+  function computeActiveMapping(state: WebPlaytestStateDTO): { mapping: CardActionMap; forHand: boolean } | null {
     const pending = state.pendingDecision;
-    if (!pending || pending.type !== "priority_action" || pending.rendered.kind !== "menu") return null;
+    if (!pending || pending.rendered.kind !== "menu") return null;
     const self = state.observation ? selfPlayer(state.observation) : undefined;
-    if (!self || self.role !== "self") return null;
-    return mapPriorityActionsToHand(pending.rendered, (self as AgentSelfPlayerObservation).hand);
+    if (pending.type === "priority_action") {
+      if (!self || self.role !== "self") return null;
+      const mapping = mapPriorityActionsToHand(pending.rendered, (self as AgentSelfPlayerObservation).hand);
+      return mapping.byCardRef.size > 0 ? { mapping, forHand: true } : null;
+    }
+    if (!state.observation) return null;
+    const visibleRefs: string[] = [];
+    for (const player of state.observation.players) {
+      for (const zone of [player.battlefield, commandZoneCards(player)]) for (const card of zone) visibleRefs.push(card.cardRef);
+    }
+    const mapping = mapActionsToCards(pending.rendered, visibleRefs);
+    return mapping.byCardRef.size > 0 ? { mapping, forHand: false } : null;
   }
 
-  /** Wires a HandActionMap's per-card action lists into click behavior: one legal action submits it directly, several open the contextual menu anchored to the clicked card. */
-  function buildHandActionCallbacks(mapping: HandActionMap): HandActionCallbacks {
+  /** Wires a CardActionMap's per-card action lists into click behavior: one legal action submits it directly, several open the contextual menu anchored to the clicked card. */
+  function buildHandActionCallbacks(mapping: CardActionMap): HandActionCallbacks {
     return {
       isPlayable: (card) => mapping.byCardRef.has(card.cardRef),
       onActivate: (card, cardElement) => {
         const items = mapping.byCardRef.get(card.cardRef);
         if (!items) return;
-        const decision = decidePriorityCardAction(items);
+        const decision = decideCardAction(items);
         if (decision.kind === "submit") {
           handActionMenu.close();
           void submitChoice(decision.choice);
@@ -431,8 +469,8 @@ export function initPlaytestView(): void {
     };
   }
 
-  /** The action dock only ever shows what a hand card cannot already represent — "Pass priority" and any legal action with no matching visible hand card. Title/context are untouched; only the menu's own item list is filtered, and only for a priority_action menu. */
-  function filterDockDecision(pending: WebPendingDecisionDTO, mapping: HandActionMap | null): WebPendingDecisionDTO {
+  /** The action dock only ever shows what a card cannot already represent — "Pass priority"/"Finish" and any legal action with no matching visible card. Title/context are untouched; only the menu's own item list is filtered. */
+  function filterDockDecision(pending: WebPendingDecisionDTO, mapping: CardActionMap | null): WebPendingDecisionDTO {
     if (!mapping || pending.rendered.kind !== "menu") return pending;
     return { ...pending, rendered: { ...pending.rendered, items: mapping.unmapped } };
   }
@@ -444,12 +482,12 @@ export function initPlaytestView(): void {
 
   /** Only while frame playback is genuinely idle — never mid-queue — do we paint the live board/decision, so the human never jumps ahead of a state they have not visually seen play out. */
   function revealLiveState(state: WebPlaytestStateDTO): void {
-    const handMapping = computeHandMapping(state);
+    const active = computeActiveMapping(state);
     if (state.observation) {
       lastObservation = state.observation;
-      renderTableIfChanged(state.observation, state.pendingDecision, handMapping);
+      renderTableIfChanged(state.observation, state.pendingDecision, active);
     }
-    renderDecisionIfChanged(state, handMapping);
+    renderDecisionIfChanged(state, active?.mapping ?? null);
   }
 
   /** Feeds any newly-arrived frames into the queue and (re)starts playback — safe to call every poll; a call while already playing is a harmless no-op re-entry that keeps draining the same shared queue. */
@@ -507,25 +545,30 @@ export function initPlaytestView(): void {
     decisionDock.append(line);
   }
 
-  function renderTableIfChanged(observation: AgentObservation, pendingDecision: WebPendingDecisionDTO | null, handMapping: HandActionMap | null): void {
-    // `pendingDecision` is folded into the key too — a card's playable highlight is part of what
-    // "the table" looks like, even though it is only ever derived, never itself the source of a
-    // new decision. (Maps don't survive JSON.stringify meaningfully, so handMapping itself is
-    // deliberately NOT part of the key — it's a pure function of these two already-covered inputs.)
+  function renderTableIfChanged(observation: AgentObservation, pendingDecision: WebPendingDecisionDTO | null, active: { mapping: CardActionMap; forHand: boolean } | null): void {
+    // `pendingDecision` is folded into the key too — a card's playable highlight (and, since
+    // V2e.5, the battlefield's expanded/grouped mode) is part of what "the table" looks like, even
+    // though it is only ever derived, never itself the source of a new decision. (Maps don't
+    // survive JSON.stringify meaningfully, so `active` itself is deliberately NOT part of the key —
+    // it's a pure function of these two already-covered inputs.)
     const key = JSON.stringify(observation) + "|" + JSON.stringify(pendingDecision);
     if (key === lastObservationKey && lastPresentationVersion === renderedPresentationVersion) return;
     lastObservationKey = key;
     renderedPresentationVersion = lastPresentationVersion;
-    paintBoard(observation, handMapping ? buildHandActionCallbacks(handMapping) : undefined);
+    paintBoard(
+      observation,
+      active?.forHand ? buildHandActionCallbacks(active.mapping) : undefined,
+      active && !active.forHand ? active.mapping : undefined,
+    );
   }
 
-  function renderDecisionIfChanged(state: WebPlaytestStateDTO, handMapping: HandActionMap | null): void {
+  function renderDecisionIfChanged(state: WebPlaytestStateDTO, mapping: CardActionMap | null): void {
     const key = JSON.stringify(state.pendingDecision) + (submitting ? ":submitting" : "");
     if (key === lastDecisionKey) return;
     lastDecisionKey = key;
     handActionMenu.close();
     if (state.pendingDecision) {
-      renderDecision(decisionDock, filterDockDecision(state.pendingDecision, handMapping), (choice) => void submitChoice(choice));
+      renderDecision(decisionDock, filterDockDecision(state.pendingDecision, mapping), (choice) => void submitChoice(choice));
     } else {
       renderStatusLine(state.status);
     }

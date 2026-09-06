@@ -1,17 +1,26 @@
 import type { PublicGameFrame } from "./types.js";
 
-/** The one place this pacing constant lives — change it here to retune every playback speed. */
-export const DEFAULT_FRAME_PLAYBACK_DELAY_MS = 450;
+/**
+ * The one place these pacing constants live (V2e.5) — change them here to retune every playback
+ * speed. A "meaningful" opponent action (the frame carries a narratable `event`, e.g. "Asphodel
+ * casts Krenko") gets the longer delay; a minor/intermediate visual-only transition (e.g. a mana
+ * ability tapping a land, `event: null`) gets the shorter one — the human must be able to
+ * comfortably follow each individual step (land enters -> tap -> spell appears) before the next
+ * one is shown.
+ */
+export const OPPONENT_ACTION_DELAY_MS = 900;
+export const OPPONENT_MINOR_DELAY_MS = 600;
 
 /**
  * Pure. Paces individual actions generously in the common case, but caps how long a big backlog
  * takes to catch up — order is always preserved, only the per-frame wait shrinks as the queue
  * grows (a "reasonable accelerated catch-up", never abandoning any frame).
  */
-export function computePlaybackDelayMs(remainingAfterThisFrame: number, base = DEFAULT_FRAME_PLAYBACK_DELAY_MS): number {
+export function computePlaybackDelayMs(frame: Pick<PublicGameFrame, "event">, remainingAfterThisFrame: number): number {
+  const base = frame.event ? OPPONENT_ACTION_DELAY_MS : OPPONENT_MINOR_DELAY_MS;
   if (remainingAfterThisFrame <= 2) return base;
   if (remainingAfterThisFrame <= 6) return Math.round(base * 0.6);
-  return Math.max(80, Math.round(base * 0.3));
+  return Math.max(150, Math.round(base * 0.3));
 }
 
 export interface FramePlaybackCallbacks {
@@ -65,7 +74,7 @@ export class FramePlaybackQueue {
         callbacks.onFrame(frame);
         // Always pause after a frame, including the last one — so the final action is actually
         // seen for a beat before the decision controls appear, rather than being instantly swapped.
-        await wait(computePlaybackDelayMs(this.queue.length));
+        await wait(computePlaybackDelayMs(frame, this.queue.length));
       }
     } finally {
       this.pumping = false;

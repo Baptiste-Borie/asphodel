@@ -14,11 +14,16 @@ export interface MenuItem {
   label: string;
   choice: AgentChoice;
   /**
-   * The Forge cardRef this specific action refers to, taken verbatim from
-   * `ForgeExternalAction.cardRef` — populated only for `priority_action` items (V2e.4); every
-   * other decision family leaves this `undefined`, unchanged from before. `null` for an action
-   * with no associated card (e.g. "Pass priority"). Never a name — a stable id, so two
-   * physically distinct cards sharing a name (two Mountains) are never conflated.
+   * The Forge cardRef this specific action refers to, taken verbatim from Forge's own decision
+   * data (`ForgeExternalAction.cardRef`, a target's/option's `cardRef`, …) — populated for
+   * `priority_action` (V2e.4) and, since V2e.5, for every other card-object decision family
+   * (`target_selection`, `cost_object_selection`, `attackers_selection`, `blockers_selection`,
+   * `combat_order_selection`, `yes_no`/`object_selection`/`ordering_selection`) so the tabletop can
+   * make a battlefield card itself submit the choice, not just a dock button. `null` for an action
+   * with no associated card (e.g. "Pass priority", "Finish"); `undefined` only for decision
+   * families that never had a per-item card at all (`mode_selection`, `value_selection`,
+   * `optional_cost_selection`, `mana_payment`). Never a name — a stable id, so two physically
+   * distinct cards sharing a name (two Mountains) are never conflated.
    */
   cardRef?: string | null;
 }
@@ -122,6 +127,7 @@ export function describeDecision(observation: AgentObservation, d: ForgePendingE
       const items = d.targets.map((t): MenuItem => ({
         label: `Target ${t.type === "player" ? t.name : describeCard(cardMap(observation).get(t.cardRef ?? ""), t.cardRef)}`,
         choice: { decisionId: d.decisionId, kind: "target", choice: t.targetId, reason },
+        cardRef: t.type === "card" ? t.cardRef : null,
       }));
       if (d.canFinish && d.finishTargetId) items.push({ label: "Finish selecting targets", choice: { decisionId: d.decisionId, kind: "target", choice: d.finishTargetId, reason } });
       return { kind: "menu", title: d.prompt || "Choose a target", items };
@@ -139,7 +145,7 @@ export function describeDecision(observation: AgentObservation, d: ForgePendingE
       return { kind: "menu", title: d.prompt ?? "Choose an optional cost", items };
     }
     case "cost_object_selection": {
-      const items = d.options.map((o): MenuItem => ({ label: describeCard(cardMap(observation).get(o.cardRef), o.cardRef), choice: { decisionId: d.decisionId, kind: "object", choice: o.objectId, reason } }));
+      const items = d.options.map((o): MenuItem => ({ label: describeCard(cardMap(observation).get(o.cardRef), o.cardRef), choice: { decisionId: d.decisionId, kind: "object", choice: o.objectId, reason }, cardRef: o.cardRef }));
       if (d.canFinish && d.finishChoiceId) items.push(finishItem(d.decisionId, d.finishChoiceId, "object"));
       return { kind: "menu", title: d.prompt ?? "Choose a cost object", items };
     }
@@ -156,12 +162,12 @@ export function describeDecision(observation: AgentObservation, d: ForgePendingE
         const label = o.operation === "finish" ? "Finish declaring attackers/blockers"
           : `${o.operation === "add" ? "Add" : "Remove"} ${describeCardRef(observation, o.cardRef)}`
             + (d.type === "attackers_selection" ? ` attacking ${describeCardRef(observation, o.relatedRef)}` : ` blocking ${describeCardRef(observation, o.relatedRef)}`);
-        return { label, choice: { decisionId: d.decisionId, kind: "object", choice: o.objectId, reason } };
+        return { label, choice: { decisionId: d.decisionId, kind: "object", choice: o.objectId, reason }, cardRef: o.operation === "finish" ? null : o.cardRef };
       });
       return { kind: "menu", title: d.type === "attackers_selection" ? "Declare attackers" : "Declare blockers", items };
     }
     case "combat_order_selection": {
-      const items = d.options.map((o): MenuItem => ({ label: `${describeCardRef(observation, o.cardRef)}`, choice: { decisionId: d.decisionId, kind: "object", choice: o.objectId, reason } }));
+      const items = d.options.map((o): MenuItem => ({ label: `${describeCardRef(observation, o.cardRef)}`, choice: { decisionId: d.decisionId, kind: "object", choice: o.objectId, reason }, cardRef: o.cardRef }));
       return { kind: "menu", title: "Choose combat damage order", items };
     }
     case "yes_no":
@@ -170,6 +176,7 @@ export function describeDecision(observation: AgentObservation, d: ForgePendingE
       const items = d.options.map((o): MenuItem => ({
         label: o.finish ? "Finish selection" : o.cardRef ? describeCard(cardMap(observation).get(o.cardRef), o.cardRef) : o.label,
         choice: { decisionId: d.decisionId, kind: "object", choice: o.objectId, reason },
+        cardRef: o.finish ? null : o.cardRef,
       }));
       return { kind: "menu", title: d.prompt, items };
     }

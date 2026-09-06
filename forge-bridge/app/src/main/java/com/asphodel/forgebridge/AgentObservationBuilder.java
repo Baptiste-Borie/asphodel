@@ -139,7 +139,8 @@ final class AgentObservationBuilder {
                 battlefield && card.isCreature() ? card.getNetToughness() : null,
                 characteristicsVisible ? card.getType().toString() : null,
                 characteristicsVisible ? combatKeywords(card) : null,
-                characteristicsVisible ? selfAttackTriggers(card) : null
+                characteristicsVisible ? selfAttackTriggers(card) : null,
+                card.isToken()
         );
     }
 
