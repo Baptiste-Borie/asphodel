@@ -43,6 +43,31 @@ export function mapPriorityActionsToHand(prompt: DecisionPrompt, hand: readonly 
   return mapActionsToCards(prompt, hand.map((card) => card.cardRef));
 }
 
+export interface SplitCardActionMap {
+  hand: CardActionMap;
+  board: CardActionMap;
+}
+
+/**
+ * Pure. Splits one combined `CardActionMap` into a "hand" bucket and a "board" bucket, based on
+ * which of its mapped cardRefs are among the supplied `handCardRefs`. Introduced in V2e.6 so a
+ * single `priority_action` decision can highlight BOTH a castable hand card (e.g. Krenko) AND an
+ * activatable battlefield permanent (e.g. Skirk Prospector) at the same time — previously
+ * `priority_action` was special-cased to the hand only, which meant an activated ability already
+ * on the battlefield was never presented as a clickable card. Both buckets share the exact SAME
+ * `unmapped` array reference (nothing is filtered twice) — the decision dock only needs to read it
+ * from either side.
+ */
+export function splitCardActionMapByHand(map: CardActionMap, handCardRefs: Iterable<string>): SplitCardActionMap {
+  const handRefs = new Set(handCardRefs);
+  const hand: CardActionMap = { byCardRef: new Map(), unmapped: map.unmapped };
+  const board: CardActionMap = { byCardRef: new Map(), unmapped: map.unmapped };
+  for (const [cardRef, items] of map.byCardRef) {
+    (handRefs.has(cardRef) ? hand : board).byCardRef.set(cardRef, items);
+  }
+  return { hand, board };
+}
+
 export type CardActionDecision =
   | { kind: "submit"; choice: AgentChoice }
   | { kind: "menu"; items: MenuItem[] };

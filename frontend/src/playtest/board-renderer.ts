@@ -11,6 +11,8 @@ export interface BoardCallbacks {
   isSelected: (card: AgentCardObservation) => boolean;
   /** V2e.5: true while this card has a mapped legal action for the CURRENT selection decision (attackers/blockers/targets/cost-object) — gets the same clickable highlight as a playable hand card. Omitted (or always false) outside such a decision. */
   isPlayable?: (card: AgentCardObservation) => boolean;
+  /** V2e.6: true while Forge currently reports this card as a declared attacker/blocker — a distinct visual state, entirely independent of `isPlayable`/`tapped`. Omitted (or always false) outside attackers_selection/blockers_selection. */
+  isCombatSelected?: (card: AgentCardObservation) => boolean;
 }
 
 /** Pure. "main1" -> "Main 1", "combat_damage" -> "Combat Damage". */
@@ -20,6 +22,20 @@ export function formatPhase(phase: string): string {
     .split("_")
     .map((word) => word[0]!.toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+/** Concise combat-phase labels for the compact game HUD (V2e.6) — dropping the "Combat" prefix Forge's own phase names carry, per spec. Anything not explicitly listed falls back to the same general humanization as `formatPhase` (e.g. "main1" -> "Main 1", "upkeep" -> "Upkeep"). */
+const HUD_PHASE_LABELS: Readonly<Record<string, string>> = {
+  combat_begin: "Begin Combat",
+  combat_declare_attackers: "Declare Attackers",
+  combat_declare_blockers: "Declare Blockers",
+  combat_damage: "Combat Damage",
+  combat_end: "End of Combat",
+};
+
+/** Pure. The HUD's phase line — see HUD_PHASE_LABELS. Uses the actual current Forge phase (`observation.game.phase`), never a guess. */
+export function formatHudPhase(phase: string): string {
+  return HUD_PHASE_LABELS[phase] ?? formatPhase(phase);
 }
 
 export function selfPlayer(observation: AgentObservation): AgentPlayerObservation | undefined {
@@ -92,6 +108,7 @@ function renderCardRow(container: HTMLElement, groups: CardGroup[], callbacks: B
     const root = createTableCard(card, presentationFor(card, callbacks), {
       onActivate: callbacks.onCardActivate,
       selected: callbacks.isSelected(card),
+      combatSelected: callbacks.isCombatSelected?.(card) ?? false,
       className,
       useSlot: true,
       count: group.count,

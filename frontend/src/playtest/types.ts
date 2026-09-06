@@ -117,6 +117,8 @@ export interface WebPendingDecisionDTO {
   type: string;
   context: { turn: number; phase: string; activePlayerId: string; priorityPlayerId: string; stackSize: number };
   rendered: DecisionPrompt;
+  /** V2e.6: Forge's own currently-declared attackers/blockers, as cardRefs — null outside attackers_selection/blockers_selection. Never derived from tapped state. */
+  selectedCardRefs: string[] | null;
 }
 
 export interface PublicGameEvent {

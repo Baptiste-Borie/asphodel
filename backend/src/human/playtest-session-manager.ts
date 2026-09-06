@@ -55,6 +55,13 @@ export interface WebPendingDecisionDTO {
   context: { turn: number; phase: string; activePlayerId: string; priorityPlayerId: string };
   /** Ready-to-render menu/value prompt (`describeDecision`, human-decision-render.ts) — the browser never re-derives choices from the raw Forge decision. */
   rendered: DecisionPrompt;
+  /**
+   * V2e.6: Forge's own currently-declared attackers/blockers, relayed verbatim as cardRefs — so the
+   * tabletop can show a distinct "this card is selected as an attacker/blocker" visual, completely
+   * separate from `tapped`. `null` for every decision type other than `attackers_selection`/
+   * `blockers_selection` (never fabricated for other families, and never derived from tapped state).
+   */
+  selectedCardRefs: string[] | null;
 }
 
 export interface WebPlaytestStateDTO {
@@ -257,6 +264,8 @@ export class PlaytestSessionManager {
       pendingDecision: pending ? {
         decisionId: pending.decision.decisionId, type: pending.decision.type, context: pending.decision.context,
         rendered: describeDecision(pending.observation, pending.decision),
+        selectedCardRefs: (pending.decision.type === "attackers_selection" || pending.decision.type === "blockers_selection")
+          ? pending.decision.selected.map(s => s.cardRef) : null,
       } : null,
       publicEvents: session.events,
       frames: session.frames,

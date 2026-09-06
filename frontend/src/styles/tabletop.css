@@ -67,6 +67,16 @@ body.tabletop-active #play-view {
   gap: 16px;
   padding: 20px 210px;
   min-height: 0;
+  /* V2e.6 active-player emphasis (see .table-battlefield-half--active below) — subtle enough that
+     it never competes with the cards themselves. */
+  transition: background 400ms ease, box-shadow 400ms ease;
+}
+
+/* Whose turn it is, at a glance, even without reading the HUD — a tiny luminance lift and a very
+   soft inset glow, no heavy border, nothing neon. */
+.table-battlefield-half--active {
+  background: rgba(139, 124, 246, 0.035);
+  box-shadow: inset 0 0 70px rgba(139, 124, 246, 0.07);
 }
 
 /* --- Commander dock: pinned next to the matching life total, never part of the battlefield row --- */
@@ -144,25 +154,41 @@ body.tabletop-active #play-view {
 }
 
 /*
-  --- Land zone (V2e.5.1): a dedicated area, never mixed into the normal creature/artifact row.
-  Sits on the right side of each half (both Asphodel's and the human's), preserving top-vs-bottom
-  table symmetry — exact positioning is deliberately simple/symmetric rather than corner-pinned;
-  see docs. Collapsed by default (same V2e.5 grouping — e.g. "Forest ×4"); hovering the WHOLE zone
-  fans every group out horizontally with a short transition so every land becomes identifiable
-  without a click, then collapses again on mouse-leave. Tapped cards keep their normal 90° rotation
-  throughout — fanning only ever changes horizontal position, never a card's own tapped state.
+  --- Land zone (V2e.5.1, fixed in V2e.6): a dedicated area, never mixed into the normal
+  creature/artifact row. Sits on the right side of each half (both Asphodel's and the human's),
+  preserving top-vs-bottom table symmetry — exact positioning is deliberately simple/symmetric
+  rather than corner-pinned; see docs. Collapsed by default (same V2e.5 grouping — e.g.
+  "Forest ×4"); hovering the WHOLE zone fans every group out horizontally with a short transition
+  so every land becomes identifiable (and individually clickable) without a click, then collapses
+  again on mouse-leave. Tapped cards keep their normal 90° rotation throughout — fanning only ever
+  changes horizontal position, never a card's own tapped state.
+
+  V2e.6 fix: this was `flex-wrap: wrap`, which combined with the `:not(:first-child)` negative
+  overlap margin below is a real bug — `:not(:first-child)` matches the first card of a WRAPPED
+  second row too (it is not literally the zone's first child overall), pulling it left by the same
+  -54px as every other card and letting it creep up over the previous row, unpredictably covering
+  neighbors and blocking clicks. `nowrap` + horizontal scroll removes the row concept entirely, so
+  there is only ever one row and the selector means what it says. A land zone with many distinct
+  groups scrolls horizontally rather than wrapping — a graceful, rare-case trade-off.
 --- */
 
 .table-land-zone {
   flex: 0 0 auto;
   display: flex;
-  flex-wrap: wrap;
-  align-content: center;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
   min-width: 0;
   max-width: 320px;
+  overflow-x: auto;
+  overflow-y: hidden;
   padding-left: 16px;
+  transition: max-width 260ms ease;
+}
+
+.table-land-zone:hover {
+  max-width: 480px;
+  overflow-x: visible;
 }
 
 .table-land-zone:not(:empty) {
@@ -242,6 +268,42 @@ body.tabletop-active #play-view {
   font-size: 0.62rem;
   line-height: 1.25;
   text-align: center;
+}
+
+/* --- Token fallback (V2e.6): a deliberate token-styled treatment when a Forge-reported token has
+   no resolved art yet — never the generic grey placeholder, never a broken-image icon. A later
+   milestone may resolve exact Scryfall token art. --- */
+
+.table-card-face--token {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px;
+  background: linear-gradient(160deg, rgba(232, 162, 58, 0.16), rgba(139, 124, 246, 0.12));
+  text-align: center;
+}
+
+.table-card-token-name {
+  color: #f7f7f8;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.table-card-token-type {
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  line-height: 1.3;
+}
+
+.table-card-token-pt {
+  color: #f7f7f8;
+  font-size: 0.92rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 /*
@@ -337,9 +399,103 @@ body.tabletop-active #play-view {
   transform: rotate(90deg);
 }
 
+/* Counters/count-badge stay upright and readable even while the card itself is rotated 90° for
+   tapped — only their own orientation is corrected, the card's actual rotation is untouched. */
+.table-card-slot--tapped .table-card-count,
+.table-card-slot--tapped .table-card-counters {
+  transform: rotate(-90deg);
+}
+
 .table-card--selected {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
+}
+
+/* --- Counters (V2e.6): a compact badge per counter type Forge reports — generic, never hardcoded
+   to +1/+1 (loyalty, charge, -1/-1, or any other Forge-visible type use the same path). Stacks
+   vertically in the top-right corner, clear of the stack-count badge (bottom-right) and the
+   summoning-sick marker (top-left). --- */
+
+.table-card-counters {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.table-card-counter {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(12, 14, 19, 0.85);
+  color: #f7f7f8;
+  font-size: 0.62rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transition: transform 260ms ease;
+}
+
+/* Brief emphasis the moment a counter's value actually changes (e.g. an attack trigger adds a
+   +1/+1 counter) — never a full-card reanimation, just this one pill. */
+.table-card-counter--changed {
+  transform: scale(1.35);
+}
+
+/* --- Combat selection (V2e.6): "this card is currently declared as an attacker/blocker" — a
+   state entirely independent of `tapped`. Selection moves the card ~16-18px toward the shared
+   table centerline (down from Asphodel's half, up from the human's half); an accent outline makes
+   it unambiguous at a glance. Never represented by changing `tapped` locally — Forge's own
+   `card.tapped` is completely untouched by this. Deselecting (Forge's `selected` list no longer
+   contains this card) smoothly returns it to its normal position via the same `transform`
+   transition already on `.table-card`. --- */
+
+.table-card--combat-selected {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.table-battlefield-half--asphodel .table-card--combat-selected {
+  transform: translateY(18px);
+}
+
+.table-battlefield-half--asphodel .table-card--combat-selected.table-card--tapped {
+  transform: translateY(18px) rotate(90deg);
+}
+
+.table-battlefield-half--human .table-card--combat-selected {
+  transform: translateY(-18px);
+}
+
+.table-battlefield-half--human .table-card--combat-selected.table-card--tapped {
+  transform: translateY(-18px) rotate(90deg);
+}
+
+/* --- Stacked visual depth (V2e.6): 1-2 subtle offset frames behind the representative card for a
+   group of more than one — decoration only, no new interactive DOM identity; the underlying
+   cardRefs/grouping logic (card-grouping.ts) is completely unchanged. --- */
+
+.table-card--stacked::before,
+.table-card--stacked::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-raised);
+}
+
+.table-card--stacked::before {
+  transform: translate(4px, -4px);
+}
+
+.table-card--stacked::after {
+  transform: translate(8px, -8px);
+  opacity: 0.7;
 }
 
 /* --- Left rail: light overlay, not a boxed sidebar --- */
@@ -356,6 +512,10 @@ body.tabletop-active #play-view {
   width: 180px;
   padding: 28px 22px;
   pointer-events: none;
+}
+
+.table-life {
+  position: relative;
 }
 
 .table-life-name {
@@ -378,6 +538,43 @@ body.tabletop-active #play-view {
 
 .table-life--asphodel .table-life-value {
   color: var(--asphodel);
+}
+
+/* --- Life change feedback (V2e.6): a brief "+3"/"-4" float near the life total whenever it
+   actually changes between two displayed observations — a pure display comparison (see
+   playtest-view.ts), never a combat/damage rules system of its own. --- */
+
+.table-life-delta {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translate(-50%, 0);
+  font-size: 1rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  animation: table-life-delta-float 700ms ease forwards;
+}
+
+.table-life-delta--gain {
+  color: #4ade80;
+}
+
+.table-life-delta--loss {
+  color: #f87171;
+}
+
+@keyframes table-life-delta-float {
+  0% { opacity: 0; transform: translate(-50%, 4px); }
+  20% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -26px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table-life-delta {
+    animation: none;
+    opacity: 0;
+  }
 }
 
 .table-actions {
@@ -410,6 +607,55 @@ body.tabletop-active #play-view {
   margin-right: 5px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* --- Game HUD (V2e.6): small, elegant, top-center — never a giant header. Turn/active-player on
+   one line, a friendly phase label on the next (see board-renderer.ts's formatHudPhase). A subtle
+   transition plays whenever either line's text actually changes (see playtest-view.ts). --- */
+
+.table-hud {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  pointer-events: none;
+  text-align: center;
+}
+
+.table-hud-line {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.table-hud-turn {
+  color: #f7f7f8;
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.table-hud-line--changed {
+  animation: table-hud-line-change 260ms ease;
+}
+
+@keyframes table-hud-line-change {
+  0% { opacity: 0; transform: translateY(-4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table-hud-line--changed {
+    animation: none;
+  }
 }
 
 /* --- Menu: one small circular button, upper right --- */
@@ -511,15 +757,18 @@ body.tabletop-active #play-view {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  height: 250px;
+  /* Just enough taller than V2e.5's 250px to fit the bigger resting card below (190px wide ->
+     ~266px tall) — the footprint grows only exactly as much as the card itself requires, not more. */
+  height: 280px;
   padding: 0 220px 14px;
 }
 
-/* Base ~158px / hover ~245px (scale 1.55) — readable targets, not hardcoded mandates. Overlap
-   grows with the card so a normal Commander hand (7-10 cards) still fits comfortably in the row. */
+/* V2e.6: base ~190px / hover ~300px (scale ~1.58) — noticeably bigger, per playtest feedback that
+   158px/245px was still too timid. Overlap grows with the card so a normal Commander hand (7-10
+   cards) still fits comfortably at 1920px width (comfortably true even up to ~12 cards). */
 .table-card--hand {
-  width: 158px;
-  margin-left: -72px;
+  width: 190px;
+  margin-left: -88px;
   cursor: default;
 }
 
@@ -530,7 +779,7 @@ body.tabletop-active #play-view {
 .table-card--hand:hover {
   position: relative;
   z-index: 20;
-  transform: translateY(-92px) scale(1.55);
+  transform: translateY(-112px) scale(1.58);
 }
 
 /*

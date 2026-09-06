@@ -15,6 +15,7 @@ import type {
   AgentSelfPlayerObservation,
   ForgeExternalMatchProgress,
   ForgeExternalMatchSnapshot,
+  ForgePendingCombatDecision,
   ForgePendingExternalDecision as Decision,
 } from "./forge/forge-protocol.js";
 
@@ -194,6 +195,59 @@ it("security: the web playtest state never exposes Asphodel's hand, including in
     const serialized = JSON.stringify(state);
     assert.ok(!serialized.includes(AGENT_HAND_CARD), "the serialized web state must never contain an Asphodel hand card name");
     assert.ok(serialized.includes(HUMAN_HAND_CARD), "the human's own hand should still be visible to the human");
+  });
+});
+
+function attackersSelectionDecision(playerId: string, id: string, selected: { cardRef: string; relatedRef: string }[]): ForgePendingCombatDecision {
+  return {
+    decisionId: id, type: "attackers_selection", playerId,
+    context: { turn: 1, phase: "combat_declare_attackers", activePlayerId: playerId, priorityPlayerId: playerId, stackSize: 0 },
+    options: [
+      { objectId: "o-1", operation: "remove", cardRef: "krenko-1", relatedRef: "player-2", label: "Remove" },
+      { objectId: "o-2", operation: "finish", cardRef: null, relatedRef: null, label: "Finish" },
+    ],
+    selected,
+  };
+}
+
+it("V2e.6: relays Forge's currently-declared attackers as selectedCardRefs on the DTO, null for non-combat decisions", async () => {
+  await withTempReports(async reportsRoot => {
+    // The orchestrator's coherence check requires the decision's context.phase to match the
+    // observation's game.phase exactly — humanObservation() hardcodes "main1", so this needs its
+    // own observation with a matching "combat_declare_attackers" phase.
+    const combatObservation: AgentObservation = { ...humanObservation(1), game: { ...humanObservation(1).game, phase: "combat_declare_attackers" } };
+    const { client } = scriptedTransport([
+      () => ({
+        sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [],
+        observation: combatObservation, pendingDecision: attackersSelectionDecision("player-1", "d-1", [{ cardRef: "krenko-1", relatedRef: "player-2" }]),
+      }),
+    ]);
+    const manager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => client, createAgent: () => new FakeAgent(), reportsRoot });
+    const started = await manager.start({ humanDeck: { type: "fixture" }, asphodelDeck: { type: "fixture" } });
+
+    let state = manager.getState(started.sessionId);
+    for (let i = 0; i < 50 && state.pendingDecision === null; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      state = manager.getState(started.sessionId);
+    }
+    assert.deepEqual(state.pendingDecision?.selectedCardRefs, ["krenko-1"]);
+  });
+});
+
+it("V2e.6: selectedCardRefs is null for a non-combat decision (e.g. priority_action) — never fabricated", async () => {
+  await withTempReports(async reportsRoot => {
+    const { client } = scriptedTransport([
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: humanObservation(1), pendingDecision: priorityDecision("player-1", "d-1") }),
+    ]);
+    const manager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => client, createAgent: () => new FakeAgent(), reportsRoot });
+    const started = await manager.start({ humanDeck: { type: "fixture" }, asphodelDeck: { type: "fixture" } });
+
+    let state = manager.getState(started.sessionId);
+    for (let i = 0; i < 50 && state.pendingDecision === null; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      state = manager.getState(started.sessionId);
+    }
+    assert.equal(state.pendingDecision?.selectedCardRefs, null);
   });
 });
 

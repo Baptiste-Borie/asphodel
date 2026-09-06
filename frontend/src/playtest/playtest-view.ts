@@ -3,13 +3,14 @@ import "../styles/tabletop.css";
 import { apiRequest } from "../api/api-client.js";
 import { endPlaytest, getActivePlaytest, getPlaytestReport, getPlaytestState, startPlaytest, submitPlaytestChoice } from "../api/playtest-api.js";
 import { element } from "../dom.js";
-import { collectVisibleCardNames, commandZoneCards, opponentPlayer, renderBattlefieldHalf, renderCommanderDock, renderHand, renderLandZone, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
+import { collectVisibleCardNames, commandZoneCards, formatHudPhase, opponentPlayer, renderBattlefieldHalf, renderCommanderDock, renderHand, renderLandZone, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
 import { createCardPreviewPanel } from "./card-preview.js";
 import { CardPresentationStore } from "./card-presentation-store.js";
+import { combatSelectedCardRefs } from "./combat-selection.js";
 import { renderDecision } from "./decision-renderer.js";
 import { FramePlaybackQueue } from "./frame-playback.js";
 import { createHandActionMenu } from "./hand-action-menu.js";
-import { decideCardAction, mapActionsToCards, mapPriorityActionsToHand, type CardActionMap } from "./hand-action-mapping.js";
+import { decideCardAction, mapActionsToCards, splitCardActionMapByHand, type CardActionMap } from "./hand-action-mapping.js";
 import { groupManaPaymentOptions, type ManaPaymentGroups } from "./mana-payment-mapping.js";
 import { createManaPaymentOverlay } from "./mana-payment-overlay.js";
 import type { AgentCardObservation, AgentChoice, AgentObservation, AgentSelfPlayerObservation, DeckInput, MenuItem, PublicGameEvent, StartPlaytestRequest, WebPendingDecisionDTO, WebPlaytestStateDTO } from "./types.js";
@@ -80,7 +81,9 @@ function createDeckPicker(labelText: string): { element: HTMLElement; getValue: 
   };
 }
 
+/** Any in-flight `.table-life-delta` indicator (see showLifeDelta) is preserved across a rebuild — it manages its own removal via its own timer, independent of how often this gets called. */
 function renderLife(container: HTMLElement, label: string, life: number | undefined): void {
+  const inFlightDeltas = Array.from(container.querySelectorAll(".table-life-delta"));
   container.replaceChildren();
   const name = document.createElement("p");
   name.className = "table-life-name";
@@ -88,7 +91,16 @@ function renderLife(container: HTMLElement, label: string, life: number | undefi
   const value = document.createElement("p");
   value.className = "table-life-value";
   value.textContent = `${life ?? "?"}`;
-  container.append(name, value);
+  container.append(name, value, ...inFlightDeltas);
+}
+
+/** A brief "+3"/"-4" float near a life total (V2e.6) — purely a display comparison between two already-displayed values, never a combat/damage rules system of its own. Removes itself once its CSS animation finishes. */
+function showLifeDelta(container: HTMLElement, delta: number): void {
+  const el = document.createElement("span");
+  el.className = delta > 0 ? "table-life-delta table-life-delta--gain" : "table-life-delta table-life-delta--loss";
+  el.textContent = delta > 0 ? `+${delta}` : `${delta}`;
+  container.append(el);
+  setTimeout(() => el.remove(), 700);
 }
 
 /** Compact Hearthstone-style history: last few actions, most recent least faded. Public info only (Asphodel's own accepted actions — the human already sees their own choices directly). Full card names are never truncated. */
@@ -140,10 +152,13 @@ export function initPlaytestView(): void {
   // pinned preview, menu state and any hover survive polling. Each section only re-renders when
   // its own underlying data actually changed (or, for frame playback, once per played frame).
   let asphodelLifeEl: HTMLElement, humanLifeEl: HTMLElement, actionsEl: HTMLElement;
+  let asphodelHalfEl: HTMLElement, humanHalfEl: HTMLElement;
   let asphodelCommanderDock: HTMLElement, humanCommanderDock: HTMLElement;
   let asphodelBattlefieldCards: HTMLElement, humanBattlefieldCards: HTMLElement, handContainer: HTMLElement;
   let asphodelLandZone: HTMLElement, humanLandZone: HTMLElement;
+  let hudTurnEl: HTMLElement, hudPhaseEl: HTMLElement;
   let decisionDock: HTMLElement, menuPanel: HTMLElement, menuDeckInfo: HTMLElement;
+  const lastKnownLife = new WeakMap<HTMLElement, number>();
   let lastObservationKey = "";
   let lastPresentationVersion = 0;
   let renderedPresentationVersion = -1;
@@ -309,27 +324,35 @@ export function initPlaytestView(): void {
     const battlefield = document.createElement("div");
     battlefield.className = "table-battlefield";
 
-    const asphodelHalf = document.createElement("div");
-    asphodelHalf.className = "table-battlefield-half table-battlefield-half--asphodel";
+    asphodelHalfEl = document.createElement("div");
+    asphodelHalfEl.className = "table-battlefield-half table-battlefield-half--asphodel";
     asphodelCommanderDock = document.createElement("div");
     asphodelCommanderDock.className = "table-commander-dock";
     asphodelBattlefieldCards = document.createElement("div");
     asphodelBattlefieldCards.className = "table-battlefield-cards";
     asphodelLandZone = document.createElement("div");
     asphodelLandZone.className = "table-land-zone";
-    asphodelHalf.append(asphodelCommanderDock, asphodelBattlefieldCards, asphodelLandZone);
+    asphodelHalfEl.append(asphodelCommanderDock, asphodelBattlefieldCards, asphodelLandZone);
 
-    const humanHalf = document.createElement("div");
-    humanHalf.className = "table-battlefield-half table-battlefield-half--human";
+    humanHalfEl = document.createElement("div");
+    humanHalfEl.className = "table-battlefield-half table-battlefield-half--human";
     humanCommanderDock = document.createElement("div");
     humanCommanderDock.className = "table-commander-dock";
     humanBattlefieldCards = document.createElement("div");
     humanBattlefieldCards.className = "table-battlefield-cards";
     humanLandZone = document.createElement("div");
     humanLandZone.className = "table-land-zone";
-    humanHalf.append(humanCommanderDock, humanBattlefieldCards, humanLandZone);
+    humanHalfEl.append(humanCommanderDock, humanBattlefieldCards, humanLandZone);
 
-    battlefield.append(asphodelHalf, humanHalf);
+    battlefield.append(asphodelHalfEl, humanHalfEl);
+
+    const hud = document.createElement("div");
+    hud.className = "table-hud";
+    hudTurnEl = document.createElement("p");
+    hudTurnEl.className = "table-hud-line table-hud-turn";
+    hudPhaseEl = document.createElement("p");
+    hudPhaseEl.className = "table-hud-line table-hud-phase";
+    hud.append(hudTurnEl, hudPhaseEl);
 
     const rail = document.createElement("div");
     rail.className = "table-rail-left";
@@ -370,7 +393,7 @@ export function initPlaytestView(): void {
     handContainer = document.createElement("div");
     handContainer.className = "table-hand";
 
-    gameSection.append(battlefield, rail, menuButton, menuPanel, previewPanel.element, decisionDock, handContainer, handActionMenu.element, manaOverlay.element);
+    gameSection.append(battlefield, rail, hud, menuButton, menuPanel, previewPanel.element, decisionDock, handContainer, handActionMenu.element, manaOverlay.element);
   }
 
   function setDeckInfo(humanDeckName: string, asphodelDeckName: string): void {
@@ -383,21 +406,50 @@ export function initPlaytestView(): void {
     isSelected: (card: AgentCardObservation) => previewPanel.isSelected(card.cardRef),
   };
 
+  function renderLifeWithDelta(container: HTMLElement, label: string, life: number | undefined): void {
+    const previous = lastKnownLife.get(container);
+    renderLife(container, label, life);
+    if (life !== undefined) {
+      if (previous !== undefined && previous !== life) showLifeDelta(container, life - previous);
+      lastKnownLife.set(container, life);
+    }
+  }
+
+  /** Updates one HUD line only when its text actually changed, with a brief transition — see styles/tabletop.css `.table-hud-line--changed`. */
+  function updateHudLine(el: HTMLElement, text: string): void {
+    if (el.textContent === text) return;
+    el.textContent = text;
+    el.classList.remove("table-hud-line--changed");
+    void el.offsetWidth; // restart the animation even if it was still running from a rapid prior change
+    el.classList.add("table-hud-line--changed");
+  }
+
+  /** Small, elegant turn/phase HUD (V2e.6) — uses the actual current Forge turn/phase, never a guess; friendly combat-phase labels via `formatHudPhase`. */
+  function renderHud(observation: AgentObservation): void {
+    const activeLabel = observation.game.activePlayerId === observation.selfPlayerId ? "You" : "Asphodel";
+    updateHudLine(hudTurnEl, `Turn ${observation.game.turn} · ${activeLabel}`);
+    updateHudLine(hudPhaseEl, formatHudPhase(observation.game.phase));
+  }
+
   /**
    * Unconditionally paints the table from one observation — used both by the live (idle) path and
    * by every played frame. `handActions`/`boardActionMap` are supplied only by the live path, and
    * only while an actual menu decision is genuinely showing (see `computeActiveMapping`) — a
    * played frame never passes either, so no card is ever clickable-for-a-decision mid-Asphodel-
-   * turn-playback. At most ONE of the two is ever set for a given decision (see below).
+   * turn-playback. `combatSelectedRefs` (V2e.6) is Forge's own declared attackers/blockers for the
+   * current decision, if any — entirely independent of tapped state.
    */
-  function paintBoard(observation: AgentObservation, handActions?: HandActionCallbacks, boardActionMap?: CardActionMap): void {
-    const expand = Boolean(boardActionMap);
-    const boardCallbacksForThisRender: BoardCallbacks = boardActionMap ? {
+  function paintBoard(observation: AgentObservation, handActions?: HandActionCallbacks, boardActionMap?: CardActionMap, combatSelectedRefs?: ReadonlySet<string>): void {
+    const boardHasActions = Boolean(boardActionMap && boardActionMap.byCardRef.size > 0);
+    const expand = boardHasActions;
+    const isCombatSelected = (card: AgentCardObservation) => combatSelectedRefs?.has(card.cardRef) ?? false;
+    const boardCallbacksForThisRender: BoardCallbacks = boardHasActions ? {
       getPresentation: (name) => cardStore.get(name),
       isSelected: () => false,
-      isPlayable: (card) => boardActionMap.byCardRef.has(card.cardRef),
+      isPlayable: (card) => boardActionMap!.byCardRef.has(card.cardRef),
+      isCombatSelected,
       onCardActivate: (card, cardElement) => {
-        const items = boardActionMap.byCardRef.get(card.cardRef);
+        const items = boardActionMap!.byCardRef.get(card.cardRef);
         if (!items) return;
         const decision = decideCardAction(items);
         if (decision.kind === "submit") {
@@ -410,18 +462,22 @@ export function initPlaytestView(): void {
           });
         }
       },
-    } : boardCallbacks;
+    } : { ...boardCallbacks, isCombatSelected };
+
+    renderHud(observation);
 
     const opponent = opponentPlayer(observation);
     const self = selfPlayer(observation);
+    asphodelHalfEl.classList.toggle("table-battlefield-half--active", opponent?.playerId === observation.game.activePlayerId);
+    humanHalfEl.classList.toggle("table-battlefield-half--active", self?.playerId === observation.game.activePlayerId);
     if (opponent) {
-      renderLife(asphodelLifeEl, "ASPHODEL", opponent.life);
+      renderLifeWithDelta(asphodelLifeEl, "ASPHODEL", opponent.life);
       renderCommanderDock(asphodelCommanderDock, opponent, boardCallbacksForThisRender, expand);
       renderBattlefieldHalf(asphodelBattlefieldCards, opponent, boardCallbacksForThisRender, expand);
       renderLandZone(asphodelLandZone, opponent, boardCallbacksForThisRender, expand);
     }
     if (self) {
-      renderLife(humanLifeEl, "YOU", self.life);
+      renderLifeWithDelta(humanLifeEl, "YOU", self.life);
       renderCommanderDock(humanCommanderDock, self, boardCallbacksForThisRender, expand);
       renderBattlefieldHalf(humanBattlefieldCards, self, boardCallbacksForThisRender, expand);
       renderLandZone(humanLandZone, self, boardCallbacksForThisRender, expand);
@@ -430,37 +486,40 @@ export function initPlaytestView(): void {
   }
 
   /**
-   * V2e.4/V2e.5: maps the current menu decision's exact legal actions onto whichever visible cards
-   * they refer to — the human's own hand for `priority_action` (unchanged since V2e.4: "this patch
-   * only replaces the first card-based priority action interaction"), or every visible battlefield
-   * / commander-dock card (either player's) for every other card-object decision family
-   * (`target_selection`, `cost_object_selection`, `attackers_selection`, `blockers_selection`,
-   * `combat_order_selection`, `yes_no`/`object_selection`/`ordering_selection`) — see V2e.5 §18.
-   * `forHand` tells the caller which of the two board-rendering modes to use. Returns `null`
-   * whenever nothing can be mapped (a value/mode/mana-payment prompt, or simply no matching card
+   * V2e.6: maps the current menu decision's exact legal actions onto EVERY visible card that could
+   * represent one — the human's own hand AND, at the same time, every visible battlefield/
+   * commander-dock card (either player's). Previously (V2e.4/V2e.5) `priority_action` was
+   * special-cased to the hand only, which meant an activated ability already on the battlefield
+   * (Skirk Prospector, Zuran Orb, a utility land, a mana creature) was never presented as a
+   * clickable card — a castable hand card and an activatable battlefield permanent can now both be
+   * highlighted from the SAME `priority_action` decision. `splitCardActionMapByHand` partitions one
+   * combined mapping into `hand`/`board` buckets after the fact — no decision type is special-cased
+   * beyond mana_payment (which has its own dedicated overlay, see `computeManaPaymentGroups` below,
+   * and must never ALSO expand/highlight lands on the normal board). Returns `null` whenever
+   * nothing at all can be mapped (a value/mode/mana-payment prompt, or simply no matching card
    * visible) — the board then stays fully grouped/uninteractive for this decision, exactly as
    * before. Never re-derives legality; every mapped item is copied verbatim from Forge's own data.
    */
-  function computeActiveMapping(state: WebPlaytestStateDTO): { mapping: CardActionMap; forHand: boolean } | null {
+  function computeActiveMapping(state: WebPlaytestStateDTO): { hand: CardActionMap; board: CardActionMap; unmapped: MenuItem[] } | null {
     const pending = state.pendingDecision;
-    if (!pending || pending.rendered.kind !== "menu") return null;
-    // mana_payment (V2e.5.1) has its own dedicated overlay (see computeManaPaymentGroups /
-    // renderDecisionIfChanged below) — it must never ALSO expand/highlight lands on the normal
-    // board, which would be redundant with (and confusing next to) the overlay's own cards.
-    if (pending.type === "mana_payment") return null;
-    const self = state.observation ? selfPlayer(state.observation) : undefined;
-    if (pending.type === "priority_action") {
-      if (!self || self.role !== "self") return null;
-      const mapping = mapPriorityActionsToHand(pending.rendered, (self as AgentSelfPlayerObservation).hand);
-      return mapping.byCardRef.size > 0 ? { mapping, forHand: true } : null;
-    }
+    if (!pending || pending.rendered.kind !== "menu" || pending.type === "mana_payment") return null;
     if (!state.observation) return null;
-    const visibleRefs: string[] = [];
+    const self = selfPlayer(state.observation);
+    const allRefs: string[] = [];
+    const handRefs: string[] = [];
     for (const player of state.observation.players) {
-      for (const zone of [player.battlefield, commandZoneCards(player)]) for (const card of zone) visibleRefs.push(card.cardRef);
+      for (const zone of [player.battlefield, commandZoneCards(player)]) for (const card of zone) allRefs.push(card.cardRef);
     }
-    const mapping = mapActionsToCards(pending.rendered, visibleRefs);
-    return mapping.byCardRef.size > 0 ? { mapping, forHand: false } : null;
+    if (self?.role === "self") {
+      for (const card of (self as AgentSelfPlayerObservation).hand) {
+        allRefs.push(card.cardRef);
+        handRefs.push(card.cardRef);
+      }
+    }
+    const combined = mapActionsToCards(pending.rendered, allRefs);
+    if (combined.byCardRef.size === 0) return null;
+    const { hand, board } = splitCardActionMapByHand(combined, handRefs);
+    return { hand, board, unmapped: combined.unmapped };
   }
 
   /** Wires a CardActionMap's per-card action lists into click behavior: one legal action submits it directly, several open the contextual menu anchored to the clicked card. */
@@ -484,10 +543,10 @@ export function initPlaytestView(): void {
     };
   }
 
-  /** The action dock only ever shows what a card cannot already represent — "Pass priority"/"Finish" and any legal action with no matching visible card. Title/context are untouched; only the menu's own item list is filtered. */
-  function filterDockDecision(pending: WebPendingDecisionDTO, mapping: CardActionMap | null): WebPendingDecisionDTO {
-    if (!mapping || pending.rendered.kind !== "menu") return pending;
-    return { ...pending, rendered: { ...pending.rendered, items: mapping.unmapped } };
+  /** The action dock only ever shows what a card cannot already represent — "Pass priority"/"Finish" and any legal action with no matching visible card (hand or board). Title/context are untouched; only the menu's own item list is filtered. */
+  function filterDockDecision(pending: WebPendingDecisionDTO, unmapped: MenuItem[] | null): WebPendingDecisionDTO {
+    if (!unmapped || pending.rendered.kind !== "menu") return pending;
+    return { ...pending, rendered: { ...pending.rendered, items: unmapped } };
   }
 
   /**
@@ -538,7 +597,7 @@ export function initPlaytestView(): void {
       lastObservation = state.observation;
       renderTableIfChanged(state.observation, state.pendingDecision, active);
     }
-    renderDecisionIfChanged(state, active?.mapping ?? null);
+    renderDecisionIfChanged(state, active?.unmapped ?? null);
   }
 
   /** Feeds any newly-arrived frames into the queue and (re)starts playback — safe to call every poll; a call while already playing is a harmless no-op re-entry that keeps draining the same shared queue. */
@@ -596,7 +655,7 @@ export function initPlaytestView(): void {
     decisionDock.append(line);
   }
 
-  function renderTableIfChanged(observation: AgentObservation, pendingDecision: WebPendingDecisionDTO | null, active: { mapping: CardActionMap; forHand: boolean } | null): void {
+  function renderTableIfChanged(observation: AgentObservation, pendingDecision: WebPendingDecisionDTO | null, active: { hand: CardActionMap; board: CardActionMap; unmapped: MenuItem[] } | null): void {
     // `pendingDecision` is folded into the key too — a card's playable highlight (and, since
     // V2e.5, the battlefield's expanded/grouped mode) is part of what "the table" looks like, even
     // though it is only ever derived, never itself the source of a new decision. (Maps don't
@@ -608,12 +667,13 @@ export function initPlaytestView(): void {
     renderedPresentationVersion = lastPresentationVersion;
     paintBoard(
       observation,
-      active?.forHand ? buildHandActionCallbacks(active.mapping) : undefined,
-      active && !active.forHand ? active.mapping : undefined,
+      active ? buildHandActionCallbacks(active.hand) : undefined,
+      active?.board,
+      combatSelectedCardRefs(pendingDecision) ?? undefined,
     );
   }
 
-  function renderDecisionIfChanged(state: WebPlaytestStateDTO, mapping: CardActionMap | null): void {
+  function renderDecisionIfChanged(state: WebPlaytestStateDTO, unmapped: MenuItem[] | null): void {
     const key = JSON.stringify(state.pendingDecision) + (submitting ? ":submitting" : "");
     if (key === lastDecisionKey) return;
     lastDecisionKey = key;
@@ -634,7 +694,7 @@ export function initPlaytestView(): void {
     manaOverlay.close();
 
     if (state.pendingDecision) {
-      renderDecision(decisionDock, filterDockDecision(state.pendingDecision, mapping), (choice) => void submitChoice(choice));
+      renderDecision(decisionDock, filterDockDecision(state.pendingDecision, unmapped), (choice) => void submitChoice(choice));
     } else {
       renderStatusLine(state.status);
     }

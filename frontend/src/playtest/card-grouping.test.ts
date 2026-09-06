@@ -121,3 +121,43 @@ it("calling groupCards again with unchanged input yields the same grouping (stab
 it("an empty zone groups to an empty list", () => {
   assert.deepEqual(groupCards([]), []);
 });
+
+/*
+ * V2e.6 §9 regression investigation: real playtest feedback claimed identical Goblin tokens from a
+ * Krenko attack did not appear stacked. Reproduced against a REAL running game (V2e.5's own smoke
+ * test) — two real tokens Krenko's attack trigger created reported this EXACT shape:
+ *   { name: "Goblin Token", cardRef: "card-204"/"card-205", tapped: false, summoningSick: true,
+ *     power: 1, toughness: 1, token: true }
+ * i.e. genuinely equivalent visible state, distinct cardRefs. Locking that in here verbatim: this
+ * grouping logic was NOT the bug (see docs for the actual finding — the reported issue was almost
+ * certainly two tokens created on DIFFERENT turns, which legitimately differ in summoningSick and
+ * therefore correctly do NOT group; that is proven directly below too).
+ */
+it("V2e.6 §9 regression: two real Krenko-created Goblin tokens (exact captured shape) group into ×2", () => {
+  const cards = [
+    card({ cardRef: "card-204", name: "Goblin Token", tapped: false, summoningSick: true, power: 1, toughness: 1, token: true }),
+    card({ cardRef: "card-205", name: "Goblin Token", tapped: false, summoningSick: true, power: 1, toughness: 1, token: true }),
+  ];
+  const groups = groupCards(cards);
+  assert.equal(groups.length, 1, "genuinely equivalent tokens must group");
+  assert.equal(groups[0]!.count, 2);
+  assert.deepEqual(groups[0]!.cardRefs, ["card-204", "card-205"]);
+});
+
+it("V2e.6 §9: a token made on an EARLIER turn (no longer summoning sick) correctly does NOT group with a freshly-made one — this is real state, not a bug", () => {
+  const cards = [
+    card({ cardRef: "card-100", name: "Goblin Token", tapped: false, summoningSick: false, power: 1, toughness: 1, token: true }), // made last turn
+    card({ cardRef: "card-204", name: "Goblin Token", tapped: false, summoningSick: true, power: 1, toughness: 1, token: true }), // made this turn
+  ];
+  const groups = groupCards(cards);
+  assert.equal(groups.length, 2, "a genuine visible-state difference must never be hidden inside one stack");
+});
+
+it("V2e.6 §9: a countered token never groups with an uncountered one of the same name", () => {
+  const cards = [
+    card({ cardRef: "card-1", name: "Goblin Token", counters: null }),
+    card({ cardRef: "card-2", name: "Goblin Token", counters: { "+1/+1": 1 } }),
+  ];
+  const groups = groupCards(cards);
+  assert.equal(groups.length, 2);
+});

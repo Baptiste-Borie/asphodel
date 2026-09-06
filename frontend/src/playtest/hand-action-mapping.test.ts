@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { decideCardAction, mapActionsToCards, mapPriorityActionsToHand } from "./hand-action-mapping.js";
+import { decideCardAction, mapActionsToCards, mapPriorityActionsToHand, splitCardActionMapByHand } from "./hand-action-mapping.js";
 import type { AgentCardObservation, DecisionPrompt, MenuItem } from "./types.js";
 
 function handCard(cardRef: string, name = "Mountain"): AgentCardObservation {
@@ -99,4 +99,47 @@ it("decideCardAction: more than one legal action opens a contextual menu of exac
   const decision = decideCardAction(items);
   assert.equal(decision.kind, "menu");
   if (decision.kind === "menu") assert.deepEqual(decision.items.map(i => i.label), ["Cast for {2}{R}", "Cast for alternate cost"]);
+});
+
+it("splitCardActionMapByHand (V2e.6): a hand card AND a battlefield card can both be mapped from the SAME priority_action decision", () => {
+  const items = [
+    menuItem("Pass priority", "pass", null),
+    menuItem("Cast Krenko, Tin Street Kingpin", "cast-krenko", "krenko-hand-1"),
+    menuItem("Activate Skirk Prospector", "activate-skirk", "skirk-battlefield-1"),
+  ];
+  const combined = mapActionsToCards(menuPrompt(items), ["krenko-hand-1", "skirk-battlefield-1"]);
+  const { hand, board } = splitCardActionMapByHand(combined, ["krenko-hand-1"]);
+  assert.ok(hand.byCardRef.has("krenko-hand-1"), "the hand card must map to the hand bucket");
+  assert.equal(hand.byCardRef.has("skirk-battlefield-1"), false, "the battlefield card must not leak into the hand bucket");
+  assert.ok(board.byCardRef.has("skirk-battlefield-1"), "the battlefield permanent must map to the board bucket");
+  assert.equal(board.byCardRef.has("krenko-hand-1"), false, "the hand card must not leak into the board bucket");
+});
+
+it("splitCardActionMapByHand: a Skirk-Prospector-style battlefield activation maps by cardRef, distinct from any hand card", () => {
+  const items = [menuItem("Activate Skirk Prospector", "activate-skirk", "skirk-1")];
+  const combined = mapActionsToCards(menuPrompt(items), ["skirk-1"]);
+  const { hand, board } = splitCardActionMapByHand(combined, []); // empty hand this turn
+  assert.equal(hand.byCardRef.size, 0);
+  assert.deepEqual(board.byCardRef.get("skirk-1")?.map(i => i.choice.choice), ["activate-skirk"]);
+});
+
+it("splitCardActionMapByHand: Pass remains unmapped/dock on both sides", () => {
+  const items = [menuItem("Pass priority", "pass", null), menuItem("Cast Krenko", "cast-krenko", "krenko-1")];
+  const combined = mapActionsToCards(menuPrompt(items), ["krenko-1"]);
+  const { hand, board } = splitCardActionMapByHand(combined, ["krenko-1"]);
+  assert.deepEqual(hand.unmapped.map(i => i.label), ["Pass priority"]);
+  assert.deepEqual(board.unmapped.map(i => i.label), ["Pass priority"]);
+});
+
+it("splitCardActionMapByHand: duplicate card names (two Mountains, one in hand one on the battlefield) remain distinct by cardRef", () => {
+  const items = [
+    menuItem("Play Mountain", "play-mtn", "mtn-hand-1"),
+    menuItem("Activate Mountain-ability", "activate-mtn", "mtn-battlefield-1"),
+  ];
+  const combined = mapActionsToCards(menuPrompt(items), ["mtn-hand-1", "mtn-battlefield-1"]);
+  const { hand, board } = splitCardActionMapByHand(combined, ["mtn-hand-1"]);
+  assert.deepEqual(hand.byCardRef.get("mtn-hand-1")?.map(i => i.choice.choice), ["play-mtn"]);
+  assert.deepEqual(board.byCardRef.get("mtn-battlefield-1")?.map(i => i.choice.choice), ["activate-mtn"]);
+  assert.equal(hand.byCardRef.has("mtn-battlefield-1"), false);
+  assert.equal(board.byCardRef.has("mtn-hand-1"), false);
 });

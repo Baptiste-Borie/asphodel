@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { collectVisibleCardNames, commandZoneCards, formatPhase } from "./board-renderer.js";
+import { collectVisibleCardNames, commandZoneCards, formatHudPhase, formatPhase } from "./board-renderer.js";
 import type { AgentObservation, AgentSelfPlayerObservation } from "./types.js";
 
 it("formats phase identifiers into readable labels", () => {
@@ -8,6 +8,18 @@ it("formats phase identifiers into readable labels", () => {
   assert.equal(formatPhase("upkeep"), "Upkeep");
   assert.equal(formatPhase("combat_damage"), "Combat Damage");
   assert.equal(formatPhase("end_of_turn"), "End Of Turn");
+});
+
+it("formatHudPhase (V2e.6): drops the \"Combat\" prefix for the compact HUD, per spec's exact examples", () => {
+  assert.equal(formatHudPhase("combat_declare_attackers"), "Declare Attackers");
+  assert.equal(formatHudPhase("combat_declare_blockers"), "Declare Blockers");
+  assert.equal(formatHudPhase("combat_damage"), "Combat Damage");
+});
+
+it("formatHudPhase falls back to the general phase humanization for anything not explicitly listed", () => {
+  assert.equal(formatHudPhase("main1"), "Main 1");
+  assert.equal(formatHudPhase("main2"), "Main 2");
+  assert.equal(formatHudPhase("upkeep"), "Upkeep");
 });
 
 function card(name: string | null, hidden = false) {
