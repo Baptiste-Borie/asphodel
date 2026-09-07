@@ -8,6 +8,7 @@ import type {
 } from "../forge/forge-protocol.js";
 import type { AgentChoice } from "../agent/baseline-agent.js";
 import type { EvaluationDiagnostics } from "../agent/evaluation-diagnostics.js";
+import { resolvePlayerPresentation } from "./player-presentation.js";
 
 /** One selectable line in a rendered decision. `choice` is a complete, already-legal answer. */
 export interface MenuItem {
@@ -76,8 +77,18 @@ export function describeCard(card: AgentCardObservation | undefined, cardRef: st
 function describeCardRef(observation: AgentObservation, ref: string | null): string {
   if (ref === null) return "";
   const byPlayer = observation.players.find(p => p.playerId === ref);
-  if (byPlayer) return byPlayer.name;
+  if (byPlayer) return resolvePlayerPresentation(ref, observation)?.displayName ?? byPlayer.name;
   return describeCard(cardMap(observation).get(ref), ref);
+}
+
+/** "YOU · 36 LIFE" / "ASPHODEL · 28 LIFE" — a standalone player-target choice's own label (V2f.1
+ * §8). Falls back to Forge's raw player name only when the observation genuinely cannot resolve
+ * the player at all — the final diagnostic case, never the everyday path. */
+function playerTargetLabel(observation: AgentObservation, playerId: string, rawName: string): string {
+  const presentation = resolvePlayerPresentation(playerId, observation);
+  if (!presentation) return rawName;
+  const life = presentation.life !== null ? ` · ${presentation.life} LIFE` : "";
+  return `${presentation.displayName.toUpperCase()}${life}`;
 }
 
 /** Board header: turn/phase/priority and both life totals. Never dumps raw JSON by default. */
@@ -132,7 +143,9 @@ export function describeDecision(observation: AgentObservation, d: ForgePendingE
     }
     case "target_selection": {
       const items = d.targets.map((t): MenuItem => ({
-        label: `Target ${t.type === "player" ? t.name : describeCard(cardMap(observation).get(t.cardRef ?? ""), t.cardRef)}`,
+        label: t.type === "player"
+          ? playerTargetLabel(observation, t.playerId, t.name)
+          : `Target ${describeCard(cardMap(observation).get(t.cardRef ?? ""), t.cardRef)}`,
         choice: { decisionId: d.decisionId, kind: "target", choice: t.targetId, reason },
         cardRef: t.type === "card" ? t.cardRef : null,
       }));

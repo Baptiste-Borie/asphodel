@@ -59,6 +59,46 @@ it("target_selection (V2e.5): a card target carries its cardRef, a player target
   assert.equal(byTargetId.get("t-2"), "sol-ring-1", "a card target carries its own cardRef");
 });
 
+it("V2f.1 §8: a player-type target shows a human-readable label, never Forge's raw 'External Player N' name, and keeps the exact targetId", () => {
+  const targetDecision: Extract<Decision, { type: "target_selection" }> = {
+    decisionId: "d-2b", type: "target_selection", playerId: "player-2",
+    context: { turn: 1, phase: "main1", activePlayerId: "player-2", priorityPlayerId: "player-2", stackSize: 1 },
+    source: { actionId: null, cardRef: "spell-1", cardName: "Lightning Bolt", abilityText: null },
+    prompt: "Choose a target", minTargets: 1, maxTargets: 1, selectedTargetIds: [], canFinish: false, finishTargetId: null,
+    targets: [
+      { targetId: "t-you", type: "player", label: "External Player 1", playerId: "player-1", cardRef: null, stackRef: null, name: "External Player 1", zone: null, controllerId: "player-1", faceDown: false, hidden: false },
+      { targetId: "t-opponent", type: "player", label: "External Player 2", playerId: "player-2", cardRef: null, stackRef: null, name: "External Player 2", zone: null, controllerId: "player-2", faceDown: false, hidden: false },
+    ],
+  };
+  // The decision is FOR player-2 here, but observation() is always built from player-1's own POV;
+  // resolvePlayerPresentation only needs observation.players, so this exercises the real shape.
+  const prompt = describeDecision(observation(), targetDecision);
+  assert.equal(prompt.kind, "menu");
+  if (prompt.kind !== "menu") return;
+  const byTargetId = new Map(prompt.items.map(i => [i.choice.choice, i.label]));
+  assert.equal(byTargetId.get("t-you"), "YOU · 40 LIFE");
+  assert.equal(byTargetId.get("t-opponent"), "ASPHODEL · 40 LIFE");
+  assert.ok(![...byTargetId.values()].some(label => /External Player/i.test(label)), "must never show Forge's raw engine player name");
+  const byTargetIdChoice = new Map(prompt.items.map(i => [i.label, i.choice.choice]));
+  assert.equal(byTargetIdChoice.get("YOU · 40 LIFE"), "t-you", "the exact Forge targetId is preserved regardless of label");
+});
+
+it("V2f.1 §8: a target whose playerId the observation cannot resolve falls back to Forge's own raw name (last-resort diagnostic only)", () => {
+  const targetDecision: Extract<Decision, { type: "target_selection" }> = {
+    decisionId: "d-2c", type: "target_selection", playerId: "player-1",
+    context: { turn: 1, phase: "main1", activePlayerId: "player-1", priorityPlayerId: "player-1", stackSize: 1 },
+    source: { actionId: null, cardRef: "spell-1", cardName: "Lightning Bolt", abilityText: null },
+    prompt: "Choose a target", minTargets: 1, maxTargets: 1, selectedTargetIds: [], canFinish: false, finishTargetId: null,
+    targets: [
+      { targetId: "t-unknown", type: "player", label: "External Player 9", playerId: "player-9", cardRef: null, stackRef: null, name: "External Player 9", zone: null, controllerId: "player-9", faceDown: false, hidden: false },
+    ],
+  };
+  const prompt = describeDecision(observation(), targetDecision);
+  assert.equal(prompt.kind, "menu");
+  if (prompt.kind !== "menu") return;
+  assert.equal(prompt.items[0]?.label, "External Player 9");
+});
+
 it("attackers_selection (V2e.5): an add/remove option carries its cardRef; finish carries null", () => {
   const combatDecision: ForgePendingCombatDecision = {
     decisionId: "d-4", type: "attackers_selection", playerId: "player-1",
@@ -75,6 +115,22 @@ it("attackers_selection (V2e.5): an add/remove option carries its cardRef; finis
   const byObjectId = new Map(prompt.items.map(i => [i.choice.choice, i.cardRef]));
   assert.equal(byObjectId.get("o-1"), "krenko-1");
   assert.equal(byObjectId.get("o-2"), null);
+});
+
+it("V2f.1 §11: 'attacking <player>' never shows Forge's raw engine player name either — same underlying fix as target labels", () => {
+  const combatDecision: ForgePendingCombatDecision = {
+    decisionId: "d-4b", type: "attackers_selection", playerId: "player-1",
+    context: { turn: 1, phase: "combat_declare_attackers", activePlayerId: "player-1", priorityPlayerId: "player-1", stackSize: 0 },
+    options: [
+      { objectId: "o-1", operation: "add" as const, cardRef: "krenko-1", relatedRef: "player-2", label: "Add" },
+    ],
+    selected: [],
+  };
+  const prompt = describeDecision(observation(), combatDecision);
+  assert.equal(prompt.kind, "menu");
+  if (prompt.kind !== "menu") return;
+  assert.ok(prompt.items[0]!.label.includes("Asphodel"), `expected "Asphodel" in "${prompt.items[0]!.label}"`);
+  assert.ok(!/External Player/i.test(prompt.items[0]!.label));
 });
 
 it("cost_object_selection (V2e.5, e.g. sacrifice) carries each option's cardRef", () => {

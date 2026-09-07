@@ -50,7 +50,11 @@
 .table-card--hand { width: 178px; margin-left: -71px; transform: translateY(var(--fan-rise)) rotate(var(--fan-angle)); transform-origin: 50% 100%; box-shadow: 0 10px 22px #000b; }
 .table-card--hand:hover, .table-card--hand:focus-visible { z-index: 20; transform: translateY(-115px) rotate(0) scale(1.42); }
 .table-card { box-shadow: 0 8px 14px #0009; transition: transform .3s cubic-bezier(.2,.7,.2,1), box-shadow .2s, border-color .2s; }
-.table-card--playable { border-color: #d8c18b; box-shadow: 0 0 0 2px #cab27b55,0 8px 16px #0009; }
+/* V2f.1 §4: a restrained but immediately-readable warm amber/gold glow — soft border + one
+   controlled outer ring, distinct from `.table-card--selected`'s paler `--accent` outline so
+   "playable" and "inspected" never read as the same state at a glance. */
+.table-card--playable { border-color: #e2a542; box-shadow: 0 0 0 2px #e2a54277, 0 0 16px 3px #e2a54240, 0 8px 16px #0009; }
+.table-card--playable:hover { border-color: #f2c26b; box-shadow: 0 0 0 2px #f2c26b99, 0 0 20px 4px #f2c26b55, 0 8px 16px #0009; }
 .table-card--summoning-sick { animation: none; filter: saturate(.9); }
 .table-decision-dock { position: absolute; right: 55px; bottom: 35px; width: 230px; max-height: 245px; overflow-y: auto; padding: 15px; border-top: 1px solid #bba57366; text-align: left; align-items: stretch; background: linear-gradient(#17201be6,#0c1513ed); border-radius: 4px 4px 16px 16px; }
 .table-decision-dock:empty { display: none; }

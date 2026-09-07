@@ -16,6 +16,7 @@ import { renderDecision } from "./decision-renderer.js";
 import { FramePlaybackQueue } from "./frame-playback.js";
 import { createHandActionMenu } from "./hand-action-menu.js";
 import { decideCardAction, mapActionsToCards, splitCardActionMapByHand, type CardActionMap } from "./hand-action-mapping.js";
+import { computePreviewAction } from "./preview-action.js";
 import { groupManaPaymentOptions, type ManaPaymentGroups } from "./mana-payment-mapping.js";
 import { createManaPaymentOverlay } from "./mana-payment-overlay.js";
 import type { AgentCardObservation, AgentChoice, AgentObservation, AgentSelfPlayerObservation, DeckInput, MenuItem, PublicGameEvent, StartPlaytestRequest, WebPendingDecisionDTO, WebPlaytestStateDTO } from "./types.js";
@@ -441,11 +442,32 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     menuDeckInfo.textContent = `${humanDeckName} vs ${asphodelDeckName}`;
   }
 
-  const boardCallbacks: BoardCallbacks = {
-    getPresentation: (name) => cardStore.get(name),
-    onCardActivate: (card: AgentCardObservation) => previewPanel.togglePin(card, card.name ? cardStore.get(card.name) : null),
-    isSelected: (card: AgentCardObservation) => previewPanel.isSelected(card.cardRef),
-  };
+  /**
+   * V2f.1 §§1-2: inspecting a card and a legal Forge action existing for that same card are
+   * independent, coexisting states — refreshes the preview panel's small explicit action control
+   * for whichever card is CURRENTLY previewed (if any), from the board's CURRENT action mapping
+   * (if any). Call after every board paint, and immediately after a click toggles the preview, so
+   * the control is never stale relative to the decision actually showing.
+   */
+  function updatePreviewActionable(boardActionMap: CardActionMap | undefined): void {
+    const action = computePreviewAction(previewPanel.current(), boardActionMap);
+    if (!action) {
+      previewPanel.setActionable(null, null);
+      return;
+    }
+    previewPanel.setActionable(action.label, (buttonElement) => {
+      const decision = decideCardAction(action.items);
+      if (decision.kind === "submit") {
+        handActionMenu.close();
+        void submitChoice(decision.choice);
+      } else {
+        handActionMenu.openFor(buttonElement, decision.items, (choice) => {
+          handActionMenu.close();
+          void submitChoice(choice);
+        });
+      }
+    });
+  }
 
   function renderLifeWithDelta(container: HTMLElement, label: string, life: number | undefined): void {
     const previous = lastKnownLife.get(container);
@@ -481,29 +503,24 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
    * current decision, if any — entirely independent of tapped state.
    */
   function paintBoard(observation: AgentObservation, handActions?: HandActionCallbacks, boardActionMap?: CardActionMap, combatSelectedRefs?: ReadonlySet<string>): void {
-    const boardHasActions = Boolean(boardActionMap && boardActionMap.byCardRef.size > 0);
-    const expand = boardHasActions;
+    const expand = Boolean(boardActionMap && boardActionMap.byCardRef.size > 0);
     const isCombatSelected = (card: AgentCardObservation) => combatSelectedRefs?.has(card.cardRef) ?? false;
-    const boardCallbacksForThisRender: BoardCallbacks = boardHasActions ? {
+    // V2f.1 §§1-3: ONE consistent callback set, always — a card being actionable never replaces or
+    // suppresses its ability to be inspected (`onCardActivate` always just toggles the preview),
+    // never forces `isSelected` false, and `isPlayable` reflects the CURRENT decision's exact
+    // mapping regardless of whether ANY other card also happens to be actionable this render. The
+    // action itself is triggered only from the preview panel's own explicit control (see
+    // `updatePreviewActionable`) — never from the inspecting click itself.
+    const boardCallbacksForThisRender: BoardCallbacks = {
       getPresentation: (name) => cardStore.get(name),
-      isSelected: () => false,
-      isPlayable: (card) => boardActionMap!.byCardRef.has(card.cardRef),
+      isSelected: (card) => previewPanel.isSelected(card.cardRef),
+      isPlayable: (card) => boardActionMap?.byCardRef.has(card.cardRef) ?? false,
       isCombatSelected,
-      onCardActivate: (card, cardElement) => {
-        const items = boardActionMap!.byCardRef.get(card.cardRef);
-        if (!items) return;
-        const decision = decideCardAction(items);
-        if (decision.kind === "submit") {
-          handActionMenu.close();
-          void submitChoice(decision.choice);
-        } else {
-          handActionMenu.openFor(cardElement, decision.items, (choice) => {
-            handActionMenu.close();
-            void submitChoice(choice);
-          });
-        }
+      onCardActivate: (card) => {
+        previewPanel.togglePin(card, card.name ? cardStore.get(card.name) : null);
+        updatePreviewActionable(boardActionMap);
       },
-    } : { ...boardCallbacks, isCombatSelected };
+    };
 
     transitions.paint(gameSection, observation, () => {
     zoneInspector.close();
@@ -533,6 +550,10 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       if (self.role === "self") renderHand(handContainer, self.hand, (name) => cardStore.get(name), handActions);
     }
     });
+    // Also refresh outside of a fresh click — e.g. the same card stays previewed across a poll
+    // while the underlying decision (and so its legal actions) changed, or Asphodel's turn frame
+    // playback supplies no boardActionMap at all and any stale control must disappear.
+    updatePreviewActionable(boardActionMap);
   }
 
   /**

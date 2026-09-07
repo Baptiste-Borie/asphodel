@@ -719,11 +719,43 @@ body.tabletop-active #play-view {
   transform: translateY(-50%);
   pointer-events: none;
   filter: drop-shadow(0 26px 50px rgba(0, 0, 0, 0.55));
+  text-align: center;
 }
 
 .table-preview-card {
   width: 300px;
   cursor: default;
+}
+
+/*
+  V2f.1 §§1-2: the ONE explicit control that actually triggers a legal Forge action for the
+  currently-previewed card — inspecting a card never submits anything by itself, so this is
+  deliberately re-enabled for clicks (`pointer-events: auto`) even though the panel itself passes
+  clicks through. Shown only while `card-preview.ts`'s `setActionable` has a real mapped action for
+  the previewed card; otherwise entirely absent, never a disabled/greyed-out placeholder.
+*/
+.table-preview-action {
+  pointer-events: auto;
+  display: block;
+  width: fit-content;
+  margin: 14px auto 0;
+  padding: 10px 22px;
+  border: 1px solid #e2a542;
+  border-radius: 8px;
+  background: linear-gradient(160deg, #2a2115, #171310);
+  color: #f2d9a3;
+  font: 13px/1.2 Georgia, serif;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.table-preview-action:hover,
+.table-preview-action:focus-visible {
+  border-color: #f2c26b;
+  box-shadow: 0 0 0 2px rgba(242, 194, 107, 0.35), 0 8px 20px rgba(0, 0, 0, 0.5);
 }
 
 /* --- Decision dock: lower-center, immediately above the hand --- */
@@ -783,19 +815,25 @@ body.tabletop-active #play-view {
 }
 
 /*
-  V2e.4: a hand card Forge currently allows as a priority action — a clear but restrained
-  affordance (accent border + one soft ring), never an "excessive glow". Non-playable cards are
-  completely untouched. Only ever set by the frontend from Forge's own legal-actions list (see
-  hand-action-mapping.ts) — never guessed from card metadata.
+  V2e.4/V2f.1: any card (hand, battlefield, commander, land) Forge currently maps to an exact legal
+  choice for the CURRENT decision — a clear but restrained warm amber/gold affordance (soft border +
+  one controlled outer glow), never an "excessive glow", flashing animation, or full-card overlay.
+  Deliberately a distinct hue from `.table-card--selected`'s pale accent outline (V2f.1 §6: playable
+  and inspected/selected must never look like the same state, even though both live in the same
+  warm-tone family on this table). Non-playable cards are completely untouched. Only ever set by the
+  frontend from Forge's own legal-actions list (see hand-action-mapping.ts) — never guessed from
+  card metadata. See table-scene.css for the Obsidian Table's own final values (loaded after this
+  file, so its rule is the one actually in effect there).
 */
 .table-card--playable {
   cursor: pointer;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(139, 124, 246, 0.22);
+  border-color: #e2a542;
+  box-shadow: 0 0 0 3px rgba(226, 165, 66, 0.35), 0 0 16px 2px rgba(226, 165, 66, 0.25);
 }
 
 .table-card--playable:hover {
-  border-color: var(--accent-hover);
+  border-color: #f2c26b;
+  box-shadow: 0 0 0 3px rgba(242, 194, 107, 0.45), 0 0 20px 4px rgba(242, 194, 107, 0.3);
 }
 
 /* --- Hand action menu: a small contextual menu anchored above a hand card with >1 legal action --- */
