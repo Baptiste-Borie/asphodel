@@ -12,9 +12,11 @@ import type { DecisionOwner } from "./human-vs-agent-runner.js";
 import { runHumanVsAgentMatch } from "./human-vs-agent-runner.js";
 import { WebHumanDecisionProvider } from "./web-human-decision-provider.js";
 import { DecisionRecorder } from "./decision-recorder.js";
-import { describeAgentAction, describeDecision, type DecisionPrompt } from "./human-decision-render.js";
+import { describeAgentAction, describeDecision, describePhysicalDeclare, type DecisionPrompt } from "./human-decision-render.js";
 import { sanitizeAgentObservation, type PublicGameFrame } from "./public-game-frame.js";
-import { writePlaytestReport, type PlaytestReportResult } from "./playtest-report.js";
+import { writePlaytestReport, type PlaytestReportResult, type RecordedPhysicalDeclaration } from "./playtest-report.js";
+import { ManualPhysicalCardProvider } from "../physical/physical-card-provider.js";
+import { deckCompositionFrom, PhysicalLedger } from "../physical/physical-ledger.js";
 
 /** The only two things the manager needs from a running bridge process — real or faked in tests. */
 export interface PlaytestBridge {
@@ -43,10 +45,19 @@ export interface PublicGameEvent {
   text: string;
 }
 
+/**
+ * V2g §1: the playtest session's presentation/input-mode. Both modes drive the exact same Forge
+ * match — this never forks game semantics, only which side supplies hidden-zone card identities
+ * and how the frontend renders the human seat (see `TableSeatPresentation` on the frontend).
+ */
+export type PlayMode = "digital" | "physical";
+
 export interface StartPlaytestRequest {
   humanDeck: DeckInput;
   asphodelDeck: DeckInput;
   seed?: number;
+  /** Defaults to "digital" — omitting it never changes existing behavior. */
+  playMode?: PlayMode;
 }
 
 export interface WebPendingDecisionDTO {
@@ -67,6 +78,7 @@ export interface WebPendingDecisionDTO {
 export interface WebPlaytestStateDTO {
   sessionId: string;
   status: WebPlaytestStatus;
+  playMode: PlayMode;
   humanDeckName: string;
   asphodelDeckName: string;
   /** The HUMAN's own observation only — never Asphodel's. Null when it is not currently the human's turn. */
@@ -103,10 +115,19 @@ interface Session {
   humanDeckName: string;
   agentDeckName: string;
   seed: number;
+  playMode: PlayMode;
   startedAt: Date;
   bridge: PlaytestBridge;
   client: AgentMatchTransport;
   provider: WebHumanDecisionProvider;
+  /** Non-null only in physical mode — see `PlayMode`. */
+  physicalProvider: ManualPhysicalCardProvider | null;
+  physicalLedger: PhysicalLedger | null;
+  physicalDeclarations: RecordedPhysicalDeclaration[];
+  /** Last observation genuinely captured for the human seat — kept fresh across a pending physical
+   *  declaration too (which carries no observation of its own in `getState()`'s DTO otherwise),
+   *  so the compact human board mirror never goes blank while a declaration is pending. */
+  lastObservation: AgentObservation | null;
   recorder: DecisionRecorder;
   events: PublicGameEvent[];
   frames: PublicGameFrame[];
@@ -161,10 +182,18 @@ export class PlaytestSessionManager {
     await bridge.start();
     const client = this.createClient(bridge);
 
+    const playMode: PlayMode = request.playMode ?? "digital";
     const session: Session = {
       id: randomUUID(), humanDeckName: humanDeck.name, agentDeckName: agentDeck.name,
-      seed: request.seed ?? 42, startedAt: new Date(), bridge, client,
-      provider: new WebHumanDecisionProvider(), recorder: new DecisionRecorder(), events: [],
+      seed: request.seed ?? 42, playMode, startedAt: new Date(), bridge, client,
+      provider: new WebHumanDecisionProvider(),
+      // V2g: only the physical seat ever gets a provider/ledger; digital mode leaves both null and
+      // is otherwise byte-for-byte the same session shape as before this milestone.
+      physicalProvider: playMode === "physical" ? new ManualPhysicalCardProvider() : null,
+      physicalLedger: playMode === "physical" ? new PhysicalLedger(deckCompositionFrom(humanDeck)) : null,
+      physicalDeclarations: [],
+      lastObservation: null,
+      recorder: new DecisionRecorder(), events: [],
       frames: [], lastHumanHand: [], pendingFrameEvent: null, pendingFrameOwner: null, lastFrameObservationKey: null,
       phase: "starting", result: null, errorMessage: null, reportResult: null,
       runPromise: Promise.resolve(),
@@ -184,6 +213,14 @@ export class PlaytestSessionManager {
         {
           seed: session.seed,
           endRequested: session.provider.endRequested,
+          ...(session.physicalProvider ? { physicalCardProvider: session.physicalProvider } : {}),
+          onPhysicalDeclaration: (decision, declaredNames) => {
+            session.physicalLedger?.observe(decision);
+            session.physicalDeclarations.push({
+              decisionId: decision.decisionId, turn: decision.context.turn, phase: decision.context.phase,
+              eventKind: decision.eventKind, count: decision.count, declaredNames,
+            });
+          },
           // `observation` here is always the state that LED TO `decision` — i.e. the state Asphodel's
           // previous action (if any) actually produced. So a frame representing the PREVIOUS agent
           // decision's result is captured here, one iteration later, using THIS decision's incoming
@@ -209,6 +246,7 @@ export class PlaytestSessionManager {
             if (owner === "human") {
               const self = observation.players.find(p => p.role === "self");
               if (self) session.lastHumanHand = self.hand;
+              session.lastObservation = observation;
               session.pendingFrameEvent = null;
               session.pendingFrameOwner = "human";
               return;
@@ -229,6 +267,7 @@ export class PlaytestSessionManager {
         humanDeckName: session.humanDeckName, agentDeckName: session.agentDeckName,
         humanPlayerId: HUMAN_PLAYER_ID, agentPlayerId: AGENT_PLAYER_ID,
         endedByHuman: run.endedByHuman, snapshot: run.snapshot, decisions: session.recorder.all(),
+        playMode: session.playMode, physicalDeclarations: session.physicalDeclarations,
         ...(this.reportsRoot === undefined ? {} : { reportsRoot: this.reportsRoot }),
       });
       session.phase = run.endedByHuman ? "ended_by_human" : "completed";
@@ -242,7 +281,9 @@ export class PlaytestSessionManager {
 
   private statusOf(session: Session): WebPlaytestStatus {
     if (session.phase === "starting") return "starting";
-    if (session.phase === "in_progress") return session.provider.current() ? "waiting_for_human" : "running";
+    if (session.phase === "in_progress") {
+      return (session.provider.current() || session.physicalProvider?.current()) ? "waiting_for_human" : "running";
+    }
     return session.phase;
   }
 
@@ -256,12 +297,20 @@ export class PlaytestSessionManager {
   /** The human's own observation and a ready-to-render decision — Asphodel's hand/observation is never reachable through this manager. */
   getState(sessionId: string): WebPlaytestStateDTO {
     const session = this.requireSession(sessionId);
+    // V2g: a physical declaration always takes priority when pending — the two channels are never
+    // simultaneously pending in practice (see human-vs-agent-runner.ts's dispatch), but preferring
+    // the physical one here is the defensive, well-defined choice either way.
+    const physicalPending = session.physicalProvider?.current();
     const pending = session.provider.current();
     return {
-      sessionId: session.id, status: this.statusOf(session),
+      sessionId: session.id, status: this.statusOf(session), playMode: session.playMode,
       humanDeckName: session.humanDeckName, asphodelDeckName: session.agentDeckName,
-      observation: pending?.observation ?? null,
-      pendingDecision: pending ? {
+      observation: physicalPending ? (physicalPending.observation ?? session.lastObservation ?? null) : (pending?.observation ?? null),
+      pendingDecision: physicalPending ? {
+        decisionId: physicalPending.request.decisionId, type: "physical_identity_declare", context: physicalPending.request.context,
+        rendered: describePhysicalDeclare(physicalPending.request),
+        selectedCardRefs: null,
+      } : pending ? {
         decisionId: pending.decision.decisionId, type: pending.decision.type, context: pending.decision.context,
         rendered: describeDecision(pending.observation, pending.decision),
         selectedCardRefs: (pending.decision.type === "attackers_selection" || pending.decision.type === "blockers_selection")
@@ -288,7 +337,19 @@ export class PlaytestSessionManager {
 
   submitChoice(sessionId: string, choice: AgentChoice): void {
     const session = this.requireSession(sessionId);
-    if (session.phase !== "in_progress" || !session.provider.current()) {
+    if (session.phase !== "in_progress") {
+      throw new PlaytestSessionError("NOT_WAITING_FOR_HUMAN", "The playtest is not currently waiting for a human decision.");
+    }
+    // V2g: the SAME generic `/choice` route carries a physical declaration too — routed by choice
+    // kind, never a separate endpoint (spec §7's manual-entry UX still posts through one channel).
+    if (choice.kind === "physical_identity") {
+      if (!session.physicalProvider?.current()) {
+        throw new PlaytestSessionError("NOT_WAITING_FOR_HUMAN", "The playtest is not currently waiting for a physical declaration.");
+      }
+      session.physicalProvider.submit(choice.decisionId, choice.declaredNames);
+      return;
+    }
+    if (!session.provider.current()) {
       throw new PlaytestSessionError("NOT_WAITING_FOR_HUMAN", "The playtest is not currently waiting for a human decision.");
     }
     session.provider.submit(choice);
@@ -299,6 +360,7 @@ export class PlaytestSessionManager {
     const session = this.requireSession(sessionId);
     if (session.phase !== "starting" && session.phase !== "in_progress") return this.getState(sessionId);
     session.provider.requestEnd();
+    session.physicalProvider?.requestEnd();
     await session.runPromise;
     return this.getState(sessionId);
   }

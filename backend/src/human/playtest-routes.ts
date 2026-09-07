@@ -5,6 +5,7 @@ import { ArchidektDeckSourceError } from "../decks/archidekt-deck-source.js";
 import { ForgeDeckAdapterError } from "../forge/forge-deck-adapter.js";
 import { PlaytestSessionError, PlaytestSessionManager } from "./playtest-session-manager.js";
 import { WebHumanDecisionError } from "./web-human-decision-provider.js";
+import { ManualPhysicalCardProviderError } from "../physical/physical-card-provider.js";
 
 interface DeckInputBody {
   type: "fixture" | "library" | "archidekt";
@@ -14,6 +15,8 @@ interface StartPlaytestBody {
   humanDeck: DeckInputBody;
   asphodelDeck: DeckInputBody;
   seed?: number;
+  /** V2g §1 — omitted defaults to "digital" in the manager. */
+  playMode?: "digital" | "physical";
 }
 interface SessionParams {
   sessionId: string;
@@ -37,6 +40,7 @@ const startPlaytestBodySchema = {
     humanDeck: deckInputSchema,
     asphodelDeck: deckInputSchema,
     seed: { type: "integer" },
+    playMode: { enum: ["digital", "physical"] },
   },
 } as const;
 
@@ -68,11 +72,14 @@ const STATUS_BY_CODE: Record<string, number> = {
   INVALID_FORGE_DECK: 400, UNSUPPORTED_COMMANDER_CONFIGURATION: 400,
   PLAYTEST_ALREADY_RUNNING: 409, SESSION_NOT_FOUND: 404, NOT_WAITING_FOR_HUMAN: 409, REPORT_NOT_READY: 409,
   NO_PENDING_DECISION: 409, STALE_DECISION: 409,
+  // V2g Physical Companion: ManualPhysicalCardProviderError codes (physical-card-provider.ts).
+  NO_PENDING_REQUEST: 409, STALE_REQUEST: 409, DECLARED_COUNT_MISMATCH: 400, DECLARED_NAME_NOT_FOUND: 400,
 };
 
 function sendPlaytestError(reply: FastifyReply, error: unknown): FastifyReply {
   const code = error instanceof PlaytestSessionError || error instanceof WebHumanDecisionError
     || error instanceof ArchidektDeckSourceError || error instanceof ForgeDeckAdapterError || error instanceof PlaytestValidationError
+    || error instanceof ManualPhysicalCardProviderError
     ? error.code : null;
   const message = error instanceof Error ? error.message : "Unexpected playtest error.";
   const status = code ? (STATUS_BY_CODE[code] ?? 400) : 500;
@@ -90,6 +97,7 @@ export function registerPlaytestRoutes(app: FastifyInstance, manager: PlaytestSe
           humanDeck: toDeckInput(request.body.humanDeck),
           asphodelDeck: toDeckInput(request.body.asphodelDeck),
           ...(request.body.seed === undefined ? {} : { seed: request.body.seed }),
+          ...(request.body.playMode === undefined ? {} : { playMode: request.body.playMode }),
         });
         return reply.code(201).send(result);
       } catch (error) {

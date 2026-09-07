@@ -3,6 +3,13 @@ import type { AgentCardObservation, AgentObservation, ForgePendingExternalDecisi
 export type AgentChoice = { decisionId: string; reason: string } & (
   | { kind: "action" | "target" | "mode" | "optional_cost" | "object" | "mana"; choice: string }
   | { kind: "value"; choice: number }
+  /**
+   * V2g Physical Companion: answers a `physical_identity_declare` decision. Unlike every other
+   * kind, there is no single `choice` id — Forge's candidates are grouped by name/remaining count,
+   * not individual opaque objects, since exposing per-object ids would imply a digital identity the
+   * physical human never has. `declaredNames.length` must equal the decision's `count`.
+   */
+  | { kind: "physical_identity"; declaredNames: string[] }
 );
 export interface AsphodelAgent {
   choose(observation: AgentObservation, decision: Decision): AgentChoice;
@@ -51,7 +58,7 @@ export class BaselineAsphodelAgent implements AsphodelAgent {
   choose(observation: AgentObservation, d: Decision): AgentChoice {
     if (d.playerId !== observation.selfPlayerId) throw new Error("agent_player_mismatch");
     const c = context(observation);
-    const pick = (kind: Exclude<AgentChoice["kind"], "value">, choice: string, reason: string): AgentChoice =>
+    const pick = (kind: Exclude<AgentChoice["kind"], "value" | "physical_identity">, choice: string, reason: string): AgentChoice =>
       ({ decisionId: d.decisionId, kind, choice, reason });
     switch (d.type) {
       case "priority_action": {
@@ -175,6 +182,10 @@ export class BaselineAsphodelAgent implements AsphodelAgent {
         if (finish) return pick("object", finish.objectId, "finish_selection");
         throw new Error("agent_no_legal_options");
       }
+      case "physical_identity_declare":
+        // V2g: only the human seat is ever configured as the physical player (spec §30, no AI
+        // policy change) — Asphodel must never be asked to answer one of these.
+        throw new Error("agent_cannot_answer_physical_identity_declare");
     }
   }
 }
@@ -193,6 +204,9 @@ export function validateChoice(d: Decision, choice: AgentChoice): void {
     case "cost_object_selection": kind = "object"; options = [...d.options.map(o => o.objectId), ...(d.canFinish ? [d.finishChoiceId] : [])]; break;
     case "value_selection":
       if (choice.kind !== "value" || !Number.isInteger(choice.choice) || choice.choice < d.minValue || choice.choice > d.maxValue) throw new Error("agent_invalid_choice");
+      return;
+    case "physical_identity_declare":
+      if (choice.kind !== "physical_identity" || choice.declaredNames.length !== d.count) throw new Error("agent_invalid_choice");
       return;
     default: kind = "object"; options = d.options.map(o => o.objectId);
   }

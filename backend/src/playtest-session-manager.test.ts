@@ -17,6 +17,7 @@ import type {
   ForgeExternalMatchSnapshot,
   ForgePendingCombatDecision,
   ForgePendingExternalDecision as Decision,
+  ForgePendingPhysicalIdentityDecision,
 } from "./forge/forge-protocol.js";
 
 const progress: ForgeExternalMatchProgress = {
@@ -24,6 +25,7 @@ const progress: ForgeExternalMatchProgress = {
   targetDecisionsRequested: 0, targetDecisionsSubmitted: 0, targetsSelected: 0, modeDecisionsRequested: 0, modeDecisionsSubmitted: 0, modesSelected: 0,
   valueDecisionsRequested: 0, valueDecisionsSubmitted: 0, optionalCostDecisionsRequested: 0, optionalCostsSelected: 0, costObjectDecisionsRequested: 0, costObjectsSelected: 0,
   manaPaymentDecisionsRequested: 0, manaPaymentDecisionsSubmitted: 0, manaOptionsSelected: 0, manaPaymentsFallbackToAi: 0,
+  physicalIdentityDecisionsRequested: 0, physicalIdentityDecisionsSubmitted: 0,
 };
 const HUMAN_HAND_CARD = "Human Secret Card Name";
 const AGENT_HAND_CARD = "Asphodel Secret Card Name";
@@ -58,6 +60,16 @@ function priorityDecision(playerId: string, id: string): Extract<Decision, { typ
     ] };
 }
 
+/** V2g: a physical_identity_declare decision for the human seat — mirrors priorityDecision's
+ * context shape exactly (see ForgePendingPhysicalIdentityDecision.context). */
+function physicalDecision(id: string, turn = 1, count = 1, candidates = [{ name: "Mountain", remaining: 2 }]): ForgePendingPhysicalIdentityDecision {
+  return {
+    decisionId: id, type: "physical_identity_declare", playerId: "player-1",
+    context: { turn, phase: "main1", activePlayerId: "player-1", priorityPlayerId: "player-1", stackSize: 0 },
+    eventKind: "draw", count, candidates,
+  };
+}
+
 function fakeBridge(): PlaytestBridge {
   return { start: async () => {}, stop: async () => {} };
 }
@@ -79,6 +91,7 @@ function scriptedTransport(steps: (() => ForgeExternalMatchSnapshot)[]): { clien
       cancel: async () => { cancelCount++; return { sessionId: "s", status: "cancelled" as const, cancelled: true as const }; },
       submitDecision: submit, submitTarget: submit, submitMode: submit, submitValue: submit,
       submitOptionalCost: submit, submitManaOption: submit, submitCostObject: submit, submitSelection: submit,
+      submitPhysicalIdentity: submit,
     },
   };
 }
@@ -374,5 +387,123 @@ it("getActiveState() is null again once the playtest reaches a terminal status",
     }
     await manager.end(started.sessionId);
     assert.equal(manager.getActiveState(), null, "a terminal (ended-by-human) playtest is no longer \"active\"");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// V2g Physical Companion
+// ---------------------------------------------------------------------------------------------
+
+it("V2g: playMode reporting — 'physical' when requested, 'digital' when omitted (regression: digital is unaffected)", async () => {
+  await withTempReports(async reportsRoot => {
+    const { client: physicalClient } = scriptedTransport([
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: humanObservation(1), pendingDecision: physicalDecision("phys-mode-1") }),
+    ]);
+    const physicalManager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => physicalClient, createAgent: () => new FakeAgent(), reportsRoot });
+    const startedPhysical = await physicalManager.start({ humanDeck: { type: "fixture" }, asphodelDeck: { type: "fixture" }, playMode: "physical" });
+    assert.equal(physicalManager.getState(startedPhysical.sessionId).playMode, "physical");
+
+    const { client: digitalClient } = scriptedTransport([
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: humanObservation(1), pendingDecision: priorityDecision("player-1", "d-mode-1") }),
+    ]);
+    const digitalManager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => digitalClient, createAgent: () => new FakeAgent(), reportsRoot });
+    const startedDigitalExplicit = await digitalManager.start({ humanDeck: { type: "fixture" }, asphodelDeck: { type: "fixture" }, playMode: "digital" });
+    assert.equal(digitalManager.getState(startedDigitalExplicit.sessionId).playMode, "digital");
+
+    const { client: omittedClient } = scriptedTransport([
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: humanObservation(1), pendingDecision: priorityDecision("player-1", "d-mode-2") }),
+    ]);
+    const omittedManager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => omittedClient, createAgent: () => new FakeAgent(), reportsRoot });
+    const startedOmitted = await omittedManager.start({ humanDeck: { type: "fixture" }, asphodelDeck: { type: "fixture" } });
+    assert.equal(omittedManager.getState(startedOmitted.sessionId).playMode, "digital", "omitting playMode must default to digital");
+  });
+});
+
+it("V2g: a physical_identity_declare pending decision renders via describePhysicalDeclare (kind 'physical_declare'), and submitChoice({kind:'physical_identity'}) is accepted and unblocks the match", async () => {
+  await withTempReports(async reportsRoot => {
+    const { client } = scriptedTransport([
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: humanObservation(1), pendingDecision: physicalDecision("phys-1", 1, 1, [{ name: "Mountain", remaining: 2 }]) }),
+      () => ({
+        sessionId: "s", status: "completed", progress, forgeAiStrategicFallbacks: [],
+        result: { gameId: "g", format: "commander", seed: 42, players: [], winnerId: "player-1", turns: 1, gameOver: true, draw: false, terminalReason: "AllOpponentsLost", commanderRulesActive: true },
+      }),
+    ]);
+    const manager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => client, createAgent: () => new FakeAgent(), reportsRoot, });
+    const started = await manager.start({ humanDeck: { type: "fixture" }, asphodelDeck: { type: "fixture" }, playMode: "physical" });
+
+    let state = manager.getState(started.sessionId);
+    for (let i = 0; i < 50 && state.pendingDecision === null; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      state = manager.getState(started.sessionId);
+    }
+    assert.equal(state.status, "waiting_for_human");
+    assert.equal(state.playMode, "physical");
+    assert.equal(state.pendingDecision!.decisionId, "phys-1");
+    assert.equal(state.pendingDecision!.type, "physical_identity_declare");
+    assert.equal(state.pendingDecision!.rendered.kind, "physical_declare");
+    // describeDecision() (the ordinary session.provider render path) actively throws on
+    // "physical_identity_declare" (see human-decision-render.ts) — getState() only produced a
+    // valid physical_declare-kind DTO here because it took the physicalProvider branch, never
+    // session.provider's.
+    assert.ok(state.observation, "the compact human observation mirror must still be present");
+    assert.equal(state.observation!.selfPlayerId, "player-1");
+
+    manager.submitChoice(started.sessionId, { decisionId: "phys-1", kind: "physical_identity", declaredNames: ["Mountain"], reason: "human_choice" });
+
+    for (let i = 0; i < 200 && manager.getState(started.sessionId).status !== "completed"; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    const final = manager.getState(started.sessionId);
+    assert.equal(final.status, "completed", "the physical declaration must unblock the match to its natural completion");
+    assert.equal(final.result?.winnerId, "player-1");
+  });
+});
+
+it("V2g: getActiveState() (browser resume-after-refresh) preserves playMode 'physical' and the pending physical declaration exactly — a refresh never silently resumes a physical session as digital", async () => {
+  await withTempReports(async reportsRoot => {
+    const { client } = scriptedTransport([
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: humanObservation(1), pendingDecision: physicalDecision("phys-resume-1") }),
+    ]);
+    const manager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => client, createAgent: () => new FakeAgent(), reportsRoot });
+    const started = await manager.start({ humanDeck: { type: "fixture" }, asphodelDeck: { type: "fixture" }, playMode: "physical" });
+
+    let active = manager.getActiveState();
+    for (let i = 0; i < 50 && active?.pendingDecision === null; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      active = manager.getActiveState();
+    }
+    assert.ok(active, "an active session must be reported while the physical playtest is running");
+    assert.equal(active!.sessionId, started.sessionId);
+    assert.equal(active!.playMode, "physical", "a refreshed browser must still see this session as physical, never silently digital");
+    assert.equal(active!.status, "waiting_for_human");
+    assert.equal(active!.pendingDecision!.decisionId, "phys-resume-1");
+    assert.equal(active!.pendingDecision!.type, "physical_identity_declare");
+    assert.equal(active!.pendingDecision!.rendered.kind, "physical_declare");
+  });
+});
+
+it("V2g: end() while a physical declaration is pending resolves cleanly (mirrors the digital voluntary-end behavior for the physical channel)", async () => {
+  await withTempReports(async reportsRoot => {
+    const { client, cancelCount } = scriptedTransport([
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: humanObservation(1), pendingDecision: physicalDecision("phys-end-1") }),
+    ]);
+    const manager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => client, createAgent: () => new FakeAgent(), reportsRoot });
+    const started = await manager.start({ humanDeck: { type: "fixture" }, asphodelDeck: { type: "fixture" }, playMode: "physical" });
+
+    let state = manager.getState(started.sessionId);
+    for (let i = 0; i < 50 && state.pendingDecision === null; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      state = manager.getState(started.sessionId);
+    }
+    assert.equal(state.pendingDecision!.type, "physical_identity_declare");
+
+    const ended = await manager.end(started.sessionId);
+    assert.equal(ended.status, "ended_by_human");
+    assert.equal(ended.endedByHuman, true);
+    assert.equal(ended.playMode, "physical");
+    assert.equal(cancelCount(), 1);
+
+    const report = manager.getReport(started.sessionId);
+    assert.ok(report.summaryPath.startsWith(reportsRoot));
   });
 });

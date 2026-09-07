@@ -34,6 +34,8 @@ final class ForgeStrategicSelections {
             List<String> labels = remaining.stream().map(value -> label(value, player, revealed)).toList();
             List<String> refs = remaining.stream().map(ForgeStrategicSelections::ref).toList();
             boolean canFinish = result.size() >= required || (optional && result.isEmpty());
+            // V2g: must run before build() -- see AsphodelDecisionBroker#ensurePhysicalReconciled.
+            broker.ensurePhysicalReconciled(player.getGame());
             int index = broker.requestSelection(player.getGame(), player, type, kind,
                     AgentObservationBuilder.shortText(prompt), source, remaining, labels, refs,
                     selected, required, max, canFinish, observations.build(player.getGame(), player));

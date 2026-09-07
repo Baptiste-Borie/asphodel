@@ -8,7 +8,7 @@ import { VisualTransitions } from "./visual-transitions.js";
 import { apiRequest } from "../api/api-client.js";
 import { endPlaytest, getActivePlaytest, getPlaytestReport, getPlaytestState, startPlaytest, submitPlaytestChoice } from "../api/playtest-api.js";
 import { element } from "../dom.js";
-import { collectVisibleCardNames, commandZoneCards, formatHudPhase, opponentPlayer, renderBattlefieldHalf, renderCommanderDock, renderHand, renderLandZone, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
+import { collectVisibleCardNames, commandZoneCards, formatHudPhase, opponentPlayer, renderBattlefieldHalf, renderCommanderDock, renderCompactHand, renderHand, renderLandZone, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
 import { createCardPreviewPanel } from "./card-preview.js";
 import { CardPresentationStore } from "./card-presentation-store.js";
 import { combatSelectedCardRefs } from "./combat-selection.js";
@@ -19,6 +19,9 @@ import { decideCardAction, mapActionsToCards, splitCardActionMapByHand, type Car
 import { computePreviewAction } from "./preview-action.js";
 import { groupManaPaymentOptions, type ManaPaymentGroups } from "./mana-payment-mapping.js";
 import { createManaPaymentOverlay } from "./mana-payment-overlay.js";
+import { renderPhysicalDeclare } from "./physical-declare.js";
+import { computeSeatPresentations } from "./seat-presentation.js";
+import "../styles/physical-companion.css";
 import type { AgentCardObservation, AgentChoice, AgentObservation, AgentSelfPlayerObservation, DeckInput, MenuItem, PublicGameEvent, StartPlaytestRequest, WebPendingDecisionDTO, WebPlaytestStateDTO } from "./types.js";
 
 const POLL_INTERVAL_MS = 300;
@@ -85,6 +88,67 @@ function createDeckPicker(labelText: string): { element: HTMLElement; getValue: 
       return { type: "fixture" };
     },
   };
+}
+
+/**
+ * V2g "Physical Companion": a first-class Play Mode choice on the setup screen — Digital (today's
+ * fully symmetric Obsidian Table, still the default/pre-selected option so nothing changes for
+ * someone who doesn't notice this control) or Physical Companion (the human plays a real deck;
+ * Asphodel's board dominates and the human's own half becomes a compact synchronized mirror).
+ */
+function createPlayModePicker(): { element: HTMLElement; getValue: () => "digital" | "physical" } {
+  const wrap = document.createElement("div");
+  wrap.className = "play-mode-picker";
+
+  const heading = document.createElement("h3");
+  heading.className = "deck-picker-heading";
+  heading.textContent = "Play Mode";
+  wrap.append(heading);
+
+  const options = document.createElement("div");
+  options.className = "play-mode-options";
+  wrap.append(options);
+
+  let value: "digital" | "physical" = "digital";
+
+  function buildOption(mode: "digital" | "physical", title: string, description: string): HTMLLabelElement {
+    const label = document.createElement("label");
+    label.className = "play-mode-option";
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "play-mode";
+    input.value = mode;
+    input.checked = mode === "digital";
+    input.addEventListener("change", () => {
+      if (!input.checked) return;
+      value = mode;
+      refresh();
+    });
+    const titleEl = document.createElement("span");
+    titleEl.className = "play-mode-option-title";
+    titleEl.textContent = title;
+    const descriptionEl = document.createElement("span");
+    descriptionEl.className = "play-mode-option-description";
+    descriptionEl.textContent = description;
+    label.append(input, titleEl, descriptionEl);
+    return label;
+  }
+
+  const digitalOption = buildOption("digital", "Digital", "Both boards fully digital, side by side — the Obsidian Table.");
+  const physicalOption = buildOption(
+    "physical",
+    "Physical Companion",
+    "Play your real deck on the table. Asphodel's board takes center stage; declare your draws, mills and scry reveals as you go.",
+  );
+  options.append(digitalOption, physicalOption);
+
+  function refresh(): void {
+    digitalOption.classList.toggle("play-mode-option--selected", value === "digital");
+    physicalOption.classList.toggle("play-mode-option--selected", value === "physical");
+  }
+  refresh();
+
+  return { element: wrap, getValue: () => value };
 }
 
 /** Any in-flight `.table-life-delta` indicator (see showLifeDelta) is preserved across a rebuild — it manages its own removal via its own timer, independent of how often this gets called. */
@@ -161,6 +225,11 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   let candidateDecisionId: string | null = null;
   let playedEvents: PublicGameEvent[] = [];
   let latestState: WebPlaytestStateDTO | null = null;
+  // V2g "Physical Companion": set once per game (at buildGameScreen time) from the chosen
+  // StartPlaytestRequest.playMode, or from the resumed/polled WebPlaytestStateDTO.playMode — never
+  // re-derived. Digital mode reads this closure variable but it is always "digital" there, so every
+  // branch on it below is a genuinely additive no-op for Digital.
+  let currentPlayMode: "digital" | "physical" = "digital";
 
   // Persistent game-screen elements, built once per game — never torn down by a poll, so the
   // pinned preview, menu state and any hover survive polling. Each section only re-renders when
@@ -194,6 +263,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     lastDecisionKey = "";
     playedEvents = [];
     latestState = null;
+    currentPlayMode = "digital";
     transitions.reset();
     zoneInspector.close();
     document.body.classList.remove("tabletop-active");
@@ -245,6 +315,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       const result = await getActivePlaytest();
       if ("sessionId" in result && !TERMINAL_STATUSES.has(result.status)) {
         sessionId = result.sessionId;
+        currentPlayMode = result.playMode;
         buildGameScreen(result.humanDeckName, result.asphodelDeckName);
         showGameScreen();
         frameQueue = new FramePlaybackQueue();
@@ -282,6 +353,9 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     columns.append(humanPicker.element, agentPicker.element);
     setupSection.append(columns);
 
+    const playModePicker = createPlayModePicker();
+    setupSection.append(playModePicker.element);
+
     const seedRow = document.createElement("div");
     seedRow.className = "playtest-setup-seed";
     const seedLabel = document.createElement("label");
@@ -309,6 +383,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       const request: StartPlaytestRequest = {
         humanDeck: humanPicker.getValue(),
         asphodelDeck: agentPicker.getValue(),
+        playMode: playModePicker.getValue(),
         ...(Number.isSafeInteger(seed) ? { seed } : {}),
       };
       void startGame(request, startButton, feedback);
@@ -330,6 +405,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     try {
       const started = await startPlaytest(request);
       sessionId = started.sessionId;
+      currentPlayMode = request.playMode ?? "digital";
       buildGameScreen(null, null);
       showGameScreen();
       pollTimer = setInterval(() => void poll(), POLL_INTERVAL_MS);
@@ -350,12 +426,20 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     zoneInspector.close();
     gameSection.replaceChildren();
     gameSection.className = "table-root";
+    // V2g: the ONE branch point for seat presentation (see seat-presentation.ts) — every rendering
+    // function below stays exactly as seat-agnostic as before. Digital always resolves both seats to
+    // "primary", and a "primary" seat's className is left byte-for-byte identical to before V2g
+    // (no class added/removed) — only a non-"primary" (i.e. "compact", Physical mode's human seat)
+    // emphasis ever appends an extra class.
+    gameSection.classList.toggle("table-root--physical", currentPlayMode === "physical");
+    const seatPresentations = computeSeatPresentations(currentPlayMode, "human", "agent");
+    const emphasisClass = (emphasis: string) => (emphasis === "primary" ? "" : ` table-battlefield-half--${emphasis}`);
 
     const battlefield = document.createElement("div");
     battlefield.className = "table-battlefield";
 
     asphodelHalfEl = document.createElement("div");
-    asphodelHalfEl.className = "table-battlefield-half table-battlefield-half--asphodel";
+    asphodelHalfEl.className = `table-battlefield-half table-battlefield-half--asphodel${emphasisClass(seatPresentations.opponent.emphasis)}`;
     asphodelCommanderDock = document.createElement("div");
     asphodelCommanderDock.className = "table-commander-dock";
     asphodelBattlefieldCards = document.createElement("div");
@@ -365,7 +449,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     asphodelHalfEl.append(asphodelCommanderDock, asphodelBattlefieldCards, asphodelLandZone);
 
     humanHalfEl = document.createElement("div");
-    humanHalfEl.className = "table-battlefield-half table-battlefield-half--human";
+    humanHalfEl.className = `table-battlefield-half table-battlefield-half--human${emphasisClass(seatPresentations.human.emphasis)}`;
     humanCommanderDock = document.createElement("div");
     humanCommanderDock.className = "table-commander-dock";
     humanBattlefieldCards = document.createElement("div");
@@ -547,7 +631,13 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       renderCommanderDock(humanCommanderDock, self, boardCallbacksForThisRender, expand);
       renderBattlefieldHalf(humanBattlefieldCards, self, boardCallbacksForThisRender, expand);
       renderLandZone(humanLandZone, self, boardCallbacksForThisRender, expand);
-      if (self.role === "self") renderHand(handContainer, self.hand, (name) => cardStore.get(name), handActions);
+      // V2g: the human has real physical cards, so their own hand is never a clickable digital
+      // surface in Physical mode — a compact "HAND · N" indicator (+ collapsible verifier) instead.
+      // Digital mode's `renderHand` call is untouched.
+      if (self.role === "self") {
+        if (currentPlayMode === "physical") renderCompactHand(handContainer, self.hand);
+        else renderHand(handContainer, self.hand, (name) => cardStore.get(name), handActions);
+      }
     }
     });
     // Also refresh outside of a fresh click — e.g. the same card stays previewed across a poll
@@ -692,6 +782,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       const state = await getPlaytestState(sessionId);
       if (sessionId !== pollingSession) return;
       latestState = state;
+      currentPlayMode = state.playMode; // V2g: static for a session's lifetime, but always kept in sync with the backend's own DTO rather than trusted-once.
       if (state.humanDeckName && state.asphodelDeckName) setDeckInfo(state.humanDeckName, state.asphodelDeckName);
       frameQueue.enqueue(state.frames);
 
@@ -780,6 +871,16 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     if (prompt?.kind==='card_picker' || prompt?.kind==='opening_hand') {
       decisionDock.replaceChildren(); decisionDock.classList.remove('table-decision-dock--complex'); decisionDock.classList.add('table-decision-dock--cards');
       renderDecisionCards(decisionDock,prompt,state.observation,(name)=>prompt.kind==='card_picker'?decisionCardStore.get(name):cardStore.get(name),(choice)=>void submitChoice(choice));
+      return;
+    }
+
+    // V2g "Physical Companion": the human declares which real card(s) correspond to a hidden-zone
+    // event Forge just reported — completely unrelated to opening_hand's Keep/Mulligan decision
+    // above (both can occur back-to-back: physical_declare -> opening_hand -> possibly
+    // physical_declare again on a mulligan redraw -> opening_hand again, …).
+    if (prompt?.kind === 'physical_declare') {
+      decisionDock.replaceChildren(); decisionDock.classList.remove('table-decision-dock--complex'); decisionDock.classList.add('table-decision-dock--cards');
+      renderPhysicalDeclare(decisionDock, prompt, (choice) => void submitChoice(choice));
       return;
     }
 

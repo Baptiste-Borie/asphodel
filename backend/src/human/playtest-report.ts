@@ -10,6 +10,20 @@ import type { RecordedDecision } from "./decision-recorder.js";
 const DEFAULT_REPORTS_ROOT = fileURLToPath(new URL("../../playtest-reports/", import.meta.url));
 const MAX_LISTED_OPTIONS = 15;
 
+/**
+ * V2g Physical Companion diagnostic (spec §26): what physical event was requested, what identity
+ * the human declared, in order. Never written into any Asphodel agent-decision observation —
+ * purely a post-game debugging record, entirely separate from `decisions` (Asphodel's own choices).
+ */
+export interface RecordedPhysicalDeclaration {
+  decisionId: string;
+  turn: number;
+  phase: string;
+  eventKind: string;
+  count: number;
+  declaredNames: string[];
+}
+
 export interface PlaytestReportInput {
   startedAt: Date;
   sessionId: string;
@@ -21,6 +35,9 @@ export interface PlaytestReportInput {
   endedByHuman: boolean;
   snapshot: ForgeExternalMatchSnapshot;
   decisions: readonly RecordedDecision[];
+  /** V2g: "digital" when omitted, for every report written before this field existed. */
+  playMode?: "digital" | "physical";
+  physicalDeclarations?: readonly RecordedPhysicalDeclaration[];
   /** Override for tests; defaults to backend/playtest-reports/. */
   reportsRoot?: string;
 }
@@ -62,8 +79,13 @@ function telemetryLines(label: string, telemetry: ForgePublicPlayerTelemetry | u
 
 /** Reuses `describeDecision` (human-decision-render.ts) instead of a second decision-rendering system. */
 function describeRecordedDecision(observation: AgentObservation, decision: ForgePendingExternalDecision, choice: AgentChoice): { chosenLabel: string; legalOptions: string[] } {
+  // V2g: recorded decisions are always Asphodel's own — DecisionRecorder never records the
+  // human/physical seat (spec §26: physical declarations are diagnosed separately, never folded
+  // into the agent-decision report) — so this never actually fires, only satisfies the type.
+  if (choice.kind === "physical_identity") return { chosenLabel: choice.declaredNames.join(", "), legalOptions: [] };
   const prompt = describeDecision(observation, decision);
   if (prompt.kind === "value") return { chosenLabel: String(choice.choice), legalOptions: [`Any integer from ${prompt.min} to ${prompt.max}`] };
+  if (prompt.kind === "physical_declare") return { chosenLabel: String(choice.choice), legalOptions: prompt.candidates.map(c => c.name) };
   const chosen = prompt.items.find(item => item.choice.kind === choice.kind && item.choice.choice === choice.choice);
   return { chosenLabel: chosen?.label ?? String(choice.choice), legalOptions: prompt.items.map(item => item.label) };
 }
@@ -77,6 +99,7 @@ function renderSummaryMarkdown(input: PlaytestReportInput): string {
     `Seed: ${input.seed}`, "",
     `Human deck: ${input.humanDeckName}`,
     `Asphodel deck: ${input.agentDeckName}`, "",
+    `Play mode: ${input.playMode ?? "digital"}`,
     `Status: ${status}`,
     `Turn reached: ${turnReached(input.snapshot) ?? "unknown"}`, "",
     `Asphodel decisions: ${input.decisions.length}`, "",
@@ -111,6 +134,13 @@ function renderSummaryMarkdown(input: PlaytestReportInput): string {
     if (described.legalOptions.length > MAX_LISTED_OPTIONS) lines.push(`- ... and ${described.legalOptions.length - MAX_LISTED_OPTIONS} more (see decisions.json for the complete list)`);
     lines.push("");
   }
+  if (input.physicalDeclarations?.length) {
+    lines.push("## Physical declarations", "");
+    for (const declared of input.physicalDeclarations) {
+      lines.push(`- Turn ${declared.turn} / ${formatPhase(declared.phase)} — ${declared.eventKind} (${declared.count}): ${declared.declaredNames.join(", ")}`);
+    }
+    lines.push("");
+  }
   return lines.join("\n");
 }
 
@@ -125,8 +155,10 @@ function renderDecisionsJson(input: PlaytestReportInput) {
       status: input.endedByHuman ? "ended_by_human" : "completed",
       humanDeck: input.humanDeckName,
       asphodelDeck: input.agentDeckName,
+      playMode: input.playMode ?? "digital",
     },
     decisions: input.decisions.map(({ reportId, timestamp, observation, decision, choice }) => ({ reportId, timestamp, observation, decision, choice })),
+    physicalDeclarations: input.physicalDeclarations ?? [],
   };
 }
 

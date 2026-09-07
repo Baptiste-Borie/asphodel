@@ -39,6 +39,12 @@ final class AsphodelCostDecision extends AiCostDecision {
         this.observations = observations;
     }
 
+    /** V2g: see AsphodelDecisionBroker#ensurePhysicalReconciled — must run before build(). */
+    private AgentObservation freshObservation() {
+        decisions.ensurePhysicalReconciled(game);
+        return observations.build(game, player);
+    }
+
     @Override
     public PaymentDecision visit(CostSacrifice cost) {
         List<ForgeCostObjectChoiceEnumerator.Candidate> candidates = objects.sacrifice(
@@ -58,7 +64,7 @@ final class AsphodelCostDecision extends AiCostDecision {
                         "sacrifice",
                         cost.toString(),
                         candidates,
-                        observations.build(game, player)
+                        freshObservation()
                 );
         return PaymentDecision.card(selected.card());
     }
@@ -82,7 +88,7 @@ final class AsphodelCostDecision extends AiCostDecision {
                         "discard",
                         cost.toString(),
                         candidates,
-                        observations.build(game, player)
+                        freshObservation()
                 );
         return PaymentDecision.card(selected.card());
     }

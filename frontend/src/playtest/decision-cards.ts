@@ -26,7 +26,10 @@ export function renderDecisionCards(container: HTMLElement, prompt: Extract<Deci
   }
   for(const item of prompt.items) {
     if(prompt.kind==='card_picker' && item.cardRef) {
-      const node=face(item.label,item.presentationName,item.choice); node.dataset.choiceId=String(item.choice.choice); node.dataset.candidateRef=item.cardRef; row.append(node);
+      // A card_picker item's choice is always backend-sourced (action/target/object/…), never the
+      // frontend-only "physical_identity" kind (V2g) — the `in` check is just to satisfy the wider
+      // AgentChoice union's type, not a real runtime possibility here.
+      const node=face(item.label,item.presentationName,item.choice); node.dataset.choiceId=String('choice' in item.choice ? item.choice.choice : ''); node.dataset.candidateRef=item.cardRef; row.append(node);
     } else {
       const button=document.createElement('button'); button.type='button'; button.className='decision-option'; button.textContent=item.label; button.onclick=()=>choose(item.choice); actions.append(button);
     }

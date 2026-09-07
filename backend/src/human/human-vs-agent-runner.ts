@@ -2,10 +2,11 @@ import { validateHumanChoice } from "./validate-human-choice.js";
 import type { AgentMatchTransport, AgentTraceEntry } from "../agent/agent-runner.js";
 import { AgentRunError, gameMetrics, submitExternalChoice } from "../agent/agent-runner.js";
 import { validateChoice, type AgentChoice, type AsphodelAgent } from "../agent/baseline-agent.js";
-import type { AgentObservation, ForgeDeckSpec, ForgeExternalMatchSnapshot, ForgePendingExternalDecision } from "../forge/forge-protocol.js";
+import type { AgentObservation, ForgeDeckSpec, ForgeExternalMatchSnapshot, ForgePendingExternalDecision, ForgePendingPhysicalIdentityDecision } from "../forge/forge-protocol.js";
 import { AgentCastLoopGuard } from "./agent-loop-guard.js";
 import { HumanEndMatchError, type HumanDecisionProvider } from "./human-decision-provider.js";
 import { autoPassChoice } from "./priority-auto-pass.js";
+import { isPhysicalEndMatchError, type PhysicalCardProvider } from "../physical/physical-card-provider.js";
 
 export type DecisionOwner = "human" | "agent";
 
@@ -35,6 +36,15 @@ export interface HumanVsAgentOptions {
   endRequested?: () => boolean;
   /** Read-only hook after an accepted submission; never routing/policy input for either side. */
   onDecision?: (owner: DecisionOwner, observation: AgentObservation, decision: ForgePendingExternalDecision, choice: AgentChoice) => void;
+  /**
+   * V2g Physical Companion. When set, `humanPlayerId`'s hidden-zone events are externalized as
+   * `physical_identity_declare` decisions (see forge-protocol.ts) and answered through this
+   * narrow, transport-agnostic seam instead of `human`'s ordinary `choose()` — see
+   * `physicalCardProvider` dispatch below. Undefined keeps digital mode exactly as before.
+   */
+  physicalCardProvider?: PhysicalCardProvider;
+  /** Read-only diagnostic hook: every physical declaration actually submitted, in order. */
+  onPhysicalDeclaration?: (decision: ForgePendingPhysicalIdentityDecision, declaredNames: string[]) => void;
 }
 
 /**
@@ -61,7 +71,12 @@ export async function runHumanVsAgentMatch(
   if (![timeoutMs, maxDecisions, maxIdlePolls].every(n => Number.isSafeInteger(n) && n > 0)
       || !Number.isSafeInteger(pollIntervalMs) || pollIntervalMs < 0) throw new Error("human_vs_agent_invalid_run_limits");
   options.signal?.throwIfAborted();
-  const { sessionId } = await client.startSpecs(...decks, { ...(options.seed === undefined ? {} : { seed: options.seed }), seats: ["external", "external"], mulliganPlayerId: humanPlayerId });
+  const { sessionId } = await client.startSpecs(...decks, {
+    ...(options.seed === undefined ? {} : { seed: options.seed }),
+    seats: ["external", "external"],
+    mulliganPlayerId: humanPlayerId,
+    ...(options.physicalCardProvider ? { physicalPlayerId: humanPlayerId } : {}),
+  });
   const started = Date.now();
   const trace: AgentTraceEntry[] = [];
   const seen = new Set<string>();
@@ -94,10 +109,16 @@ export async function runHumanVsAgentMatch(
         // A sole forced pass (no other legal priority action) never reaches the human at all —
         // Forge's own rendered options decide this, never a guess about strategic usefulness.
         const forcedPass = owner === "human" ? autoPassChoice(d) : null;
-        const choice = forcedPass ?? (owner === "human" ? await human.choose(observation, d)
-          : d.type === "priority_action"
-            ? agentCastLoopGuard.wrapPriorityDecision(observation, d, (filtered) => agent.choose(observation, filtered))
-            : agent.choose(observation, d));
+        // V2g: a physical_identity_declare always belongs to humanPlayerId (only the physical seat
+        // ever produces one), and is answered through the narrow PhysicalCardProvider seam instead
+        // of the human's ordinary decision channel — never both, never a guess about which applies.
+        const choice = forcedPass ?? (
+          owner === "human" && d.type === "physical_identity_declare" && options.physicalCardProvider
+            ? await answerPhysicalDeclaration(options.physicalCardProvider, d, observation, options.onPhysicalDeclaration)
+            : owner === "human" ? await human.choose(observation, d)
+            : d.type === "priority_action"
+              ? agentCastLoopGuard.wrapPriorityDecision(observation, d, (filtered) => agent.choose(observation, filtered))
+              : agent.choose(observation, d));
         if (owner === "human") validateHumanChoice(d, choice);
         else validateChoice(d, choice);
         options.signal?.throwIfAborted();
@@ -110,7 +131,7 @@ export async function runHumanVsAgentMatch(
       await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
     }
   } catch (cause) {
-    if (cause instanceof HumanEndMatchError && latest) {
+    if ((cause instanceof HumanEndMatchError || isPhysicalEndMatchError(cause)) && latest) {
       // A deliberate "end"/"quit" is not a failure: cancel Forge cleanly (best-effort — a
       // secondary cancellation problem must not turn an intentional end into an error) and
       // return normally with the last snapshot and every already-recorded decision intact.
@@ -122,4 +143,28 @@ export async function runHumanVsAgentMatch(
     throw new AgentRunError(cause instanceof Error ? cause.message : "human_vs_agent_run_failed", sessionId,
       trace.slice(-20), latest, { cause: cancellationError ? new AggregateError([cause, cancellationError], "run_and_cancel_failed") : cause });
   }
+}
+
+/**
+ * V2g: converts one `physical_identity_declare` decision into the narrow `PhysicalCardRequest`,
+ * awaits a `PhysicalCardSelection` through the transport-agnostic `PhysicalCardProvider` seam, and
+ * wraps the result back into an ordinary `AgentChoice` so the rest of the loop (validation,
+ * submission, tracing) never needs to know this decision was answered differently.
+ */
+async function answerPhysicalDeclaration(
+  provider: PhysicalCardProvider,
+  decision: ForgePendingPhysicalIdentityDecision,
+  observation: AgentObservation,
+  onPhysicalDeclaration: HumanVsAgentOptions["onPhysicalDeclaration"],
+): Promise<AgentChoice> {
+  const selection = await provider.chooseCard({
+    decisionId: decision.decisionId,
+    playerId: decision.playerId,
+    context: decision.context,
+    eventKind: decision.eventKind,
+    count: decision.count,
+    candidates: decision.candidates,
+  }, observation);
+  onPhysicalDeclaration?.(decision, selection.declaredNames);
+  return { decisionId: decision.decisionId, kind: "physical_identity", declaredNames: selection.declaredNames, reason: "physical_declaration" };
 }

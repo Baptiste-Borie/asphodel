@@ -43,7 +43,12 @@ export class TerminalHumanDecisionProvider implements HumanDecisionProvider {
     this.print(renderHeader(observation));
     this.print(renderBoard(observation));
     const prompt = describeDecision(observation, d);
-    return prompt.kind === "value" ? this.chooseValue(prompt) : this.chooseMenu(observation, { kind: "menu", title: prompt.title, items: prompt.items });
+    if (prompt.kind === "value") return this.chooseValue(prompt);
+    // V2g Physical Companion is a browser-only experience (see human-vs-agent-runner.ts's
+    // physicalCardProvider option) — the CLI never sets physicalPlayerId, so Forge never actually
+    // produces this decision for a CLI-driven match.
+    if (prompt.kind === "physical_declare") throw new Error("Physical Companion mode is not supported by the terminal provider.");
+    return this.chooseMenu(observation, { kind: "menu", title: prompt.title, items: prompt.items });
   }
 
   private print(lines: string[]): void {

@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import { AgentCastLoopGuard } from "./agent-loop-guard.js";
+import type { AgentChoice } from "../agent/baseline-agent.js";
 import type {
   AgentObservation,
   AgentSelfPlayerObservation,
   ForgeExternalAction,
   ForgePendingDecision,
 } from "../forge/forge-protocol.js";
+
+// The guard is scoped to `priority_action`/`cast_spell` decisions only, and `pick`/`pickPass` below
+// never construct a `physical_identity` choice, so every choice returned here carries `.choice`.
+type NonPhysicalChoice = Exclude<AgentChoice, { kind: "physical_identity" }>;
 
 function observation(turn: number, hand: AgentSelfPlayerObservation["hand"]): AgentObservation {
   const context = { turn, phase: "main1", activePlayerId: "agent-1", priorityPlayerId: "agent-1" };
@@ -70,20 +75,20 @@ it("V2e.6.1 §§9-11: a repeated failed cast is excluded from the next same-stat
 
   const d1 = decision(5, "1");
   const c1 = guard.wrapPriorityDecision(obsS1, d1, pick);
-  assert.equal(c1.choice, "cast-card-x-1", "nothing failed yet: X is offered and chosen first");
+  assert.equal((c1 as NonPhysicalChoice).choice, "cast-card-x-1", "nothing failed yet: X is offered and chosen first");
 
   // Forge regenerates ids for the SAME priority state — X is still uncast (the mana payment
   // rolled the cast back), so it is offered again; the guard must exclude it this time.
   const d2 = decision(5, "2");
   const c2 = guard.wrapPriorityDecision(obsS1, d2, pick);
   assert.deepEqual(seenActions[1], ["pass", "card-y"], "X must be filtered out of the view handed to the policy");
-  assert.equal(c2.choice, "cast-card-y-2", "the policy naturally falls through to Y");
+  assert.equal((c2 as NonPhysicalChoice).choice, "cast-card-y-2", "the policy naturally falls through to Y");
 
   // Y also fails to complete from the exact same state.
   const d3 = decision(5, "3");
   const c3 = guard.wrapPriorityDecision(obsS1, d3, pick);
   assert.deepEqual(seenActions[2], ["pass"], "both X and Y are now excluded — only Pass remains");
-  assert.equal(c3.choice, "pass");
+  assert.equal((c3 as NonPhysicalChoice).choice, "pass");
 
   // A genuinely new state (turn advanced): the failure memory must not leak forward, so X is a
   // real option again if Forge legally offers it.
@@ -91,7 +96,7 @@ it("V2e.6.1 §§9-11: a repeated failed cast is excluded from the next same-stat
   const d4 = decision(6, "4");
   const c4 = guard.wrapPriorityDecision(obsS2, d4, pick);
   assert.deepEqual(seenActions[3], ["pass", "card-x", "card-y"], "a new state clears the guard's memory");
-  assert.equal(c4.choice, "cast-card-x-4");
+  assert.equal((c4 as NonPhysicalChoice).choice, "cast-card-x-4");
 });
 
 it("V2e.6.1 §11: Pass is never remembered as a failed cast", () => {

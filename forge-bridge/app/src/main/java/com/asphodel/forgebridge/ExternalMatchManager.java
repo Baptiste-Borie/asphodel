@@ -20,7 +20,8 @@ final class ExternalMatchManager {
             Deck playerDeck,
             Deck aiDeck,
             List<String> seats,
-            String mulliganPlayerId
+            String mulliganPlayerId,
+            String physicalPlayerId
     ) {
         ensureMatchSlotAvailable();
         ExternalMatchSession created = new ExternalMatchSession(
@@ -30,7 +31,8 @@ final class ExternalMatchManager {
                 playerDeck,
                 aiDeck,
                 seats,
-                mulliganPlayerId
+                mulliganPlayerId,
+                physicalPlayerId
         );
         session = created;
         try {
@@ -68,6 +70,16 @@ final class ExternalMatchManager {
     ) {
         ExternalMatchSession current = requireSession(sessionId);
         current.submitValue(decisionId, value);
+        return Map.of("accepted", true);
+    }
+
+    synchronized Map<String, Object> submitPhysicalIdentity(
+            String sessionId,
+            String decisionId,
+            List<String> declaredNames
+    ) {
+        ExternalMatchSession current = requireSession(sessionId);
+        current.submitPhysicalIdentity(decisionId, declaredNames);
         return Map.of("accepted", true);
     }
 

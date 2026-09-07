@@ -21,13 +21,16 @@ function observation(own: Card[] = [], enemy: Card[] = [], life = 40, enemyLife 
     { ...publicSelf, role: "opponent", playerId: "enemy", externalController: false, life: enemyLife, battlefield: enemy.map(c => ({ ...c, controllerId: "enemy" })) }] };
 }
 const agent = new BaselineAsphodelAgentV2b();
+// None of the decision kinds exercised in this file is `physical_identity_declare`, so every
+// `AgentChoice` produced here carries a `.choice` field.
+type NonPhysicalChoice = Exclude<ReturnType<typeof agent.choose>, { kind: "physical_identity" }>;
 function choose(o: AgentObservation, d: Decision) {
   const before = JSON.stringify({ o, d });
   const c = agent.choose(o, d);
   validateChoice(d, c);
   assert.deepEqual(agent.choose(structuredClone(o), structuredClone(d)), c);
   assert.equal(JSON.stringify({ o, d }), before);
-  return c;
+  return c as NonPhysicalChoice;
 }
 function combat(type: "attackers_selection" | "blockers_selection", refs = ["own"]): ForgePendingCombatDecision {
   return { ...base, type, selected: [], options: [...refs.map(ref => ({ objectId: ref, operation: "add" as const, cardRef: ref, relatedRef: type === "attackers_selection" ? "enemy" : "foe", label: "" })),
@@ -37,7 +40,15 @@ const pass: ForgeExternalAction = { actionId: "pass", type: "pass", label: "", c
 const action = (ref: string, type: "cast_spell" | "play_land", manaCost = "2 R"): ForgeExternalAction => ({ actionId: ref, type, label: "", cardRef: ref, cardName: "unused", sourceZone: "hand", manaCost, abilityText: null, requiresTargets: false });
 it("V2a source remains byte-for-byte frozen at its validated commit", async () => {
   const bytes = await readFile(new URL("./agent/baseline-agent.ts", import.meta.url));
-  assert.equal(createHash("sha256").update(bytes).digest("hex"), "2f11293a555a65d8b3b84b764147ed925783b5cb710e52cfe528b7a05021f118");
+  // V2g Physical Companion (backend/src/physical/, docs/physical-companion-v0.md) widened the
+  // shared `AgentChoice` union with a `physical_identity` kind and threaded a corresponding
+  // `physical_identity_declare` case through `validateChoice` and `BaselineAsphodelAgent.choose()`
+  // (the latter throws immediately — a physical_identity_declare decision's playerId is always the
+  // human physical seat, per spec §30, so BaselineAsphodelAgentV2a/V2b can never actually receive
+  // one). This hash was re-pinned after confirming that change: every OTHER decision family's
+  // scoring/heuristic behavior — everything V2a's frozen guarantee actually protects — is untouched
+  // (only a compile-time-only type narrowing plus one new, practically-unreachable throw branch).
+  assert.equal(createHash("sha256").update(bytes).digest("hex"), "80955e472958978fef3041476bf63e843f4a2a4d3152f131040d230333034d80");
   assert.equal(new BaselineAsphodelAgentV2a().version, "v2a"); assert.equal(agent.version, "v2b");
 });
 it("takes obvious free damage against a tapped blocker", () => {
@@ -148,7 +159,7 @@ it("V2b does not inspect hidden zones or card identities", () => {
   const o = observation([body("own")]);
   for (const field of ["hand", "library"]) Object.defineProperty(o.players[1], field, { get() { throw new Error("hidden"); } });
   Object.defineProperty(o.players[0]!.battlefield[0], "name", { get() { throw new Error("name"); } });
-  assert.equal(agent.choose(o, combat("attackers_selection")).choice, "own");
+  assert.equal((agent.choose(o, combat("attackers_selection")) as NonPhysicalChoice).choice, "own");
 });
 it("diagnostics deduplicate attack opportunities across edits and do not count removals as attacks", () => {
   const diagnostics = new EvaluationDiagnostics(); const o = observation([body("own")]); const d = combat("attackers_selection");
@@ -171,6 +182,7 @@ const progress: ForgeExternalMatchProgress = {
   targetDecisionsRequested: 0, targetDecisionsSubmitted: 0, targetsSelected: 0, modeDecisionsRequested: 0, modeDecisionsSubmitted: 0, modesSelected: 0,
   valueDecisionsRequested: 0, valueDecisionsSubmitted: 0, optionalCostDecisionsRequested: 0, optionalCostsSelected: 0, costObjectDecisionsRequested: 0, costObjectsSelected: 0,
   manaPaymentDecisionsRequested: 0, manaPaymentDecisionsSubmitted: 0, manaOptionsSelected: 0, manaPaymentsFallbackToAi: 0,
+  physicalIdentityDecisionsRequested: 0, physicalIdentityDecisionsSubmitted: 0,
 };
 it("harness runs fixed seeds sequentially, reuses transport, and continues after a cancelled error", async () => {
   const started: number[] = []; let active = false, submitted = false, cancelled = 0;
@@ -185,6 +197,7 @@ it("harness runs fixed seeds sequentially, reuses transport, and continues after
     },
     cancel: async () => { active = false; cancelled++; return { sessionId: "s", status: "cancelled", cancelled: true }; },
     submitDecision: submit, submitTarget: submit, submitMode: submit, submitValue: submit, submitOptionalCost: submit, submitManaOption: submit, submitCostObject: submit, submitSelection: submit,
+    submitPhysicalIdentity: submit,
   };
   const report = await evaluateAgent({ client, agent, decks: [{ name: "self", cards: [] }, { name: "enemy", cards: [] }], seeds: [1, 2, 3], opponent: "forge", limits: { pollIntervalMs: 0 } });
   assert.deepEqual(started, [1, 2, 3]); assert.equal(cancelled, 1); assert.equal(report.policyVersion, "v2b");

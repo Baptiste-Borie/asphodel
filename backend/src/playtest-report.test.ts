@@ -12,6 +12,7 @@ const progress: ForgeExternalMatchProgress = {
   targetDecisionsRequested: 0, targetDecisionsSubmitted: 0, targetsSelected: 0, modeDecisionsRequested: 0, modeDecisionsSubmitted: 0, modesSelected: 0,
   valueDecisionsRequested: 0, valueDecisionsSubmitted: 0, optionalCostDecisionsRequested: 0, optionalCostsSelected: 0, costObjectDecisionsRequested: 0, costObjectsSelected: 0,
   manaPaymentDecisionsRequested: 0, manaPaymentDecisionsSubmitted: 0, manaOptionsSelected: 0, manaPaymentsFallbackToAi: 0,
+  physicalIdentityDecisionsRequested: 0, physicalIdentityDecisionsSubmitted: 0,
 };
 
 function agentObservation(hand: AgentSelfPlayerObservation["hand"] = []): AgentObservation {
@@ -118,6 +119,51 @@ it("reports a natural completion with a winner, turn count and terminal reason",
     assert.match(summary, /Turns: 12/);
     assert.match(summary, /Terminal reason: AllOpponentsLost/);
     assert.match(summary, /combat damage assignment: 1/);
+  });
+});
+
+it("V2g: a digital-mode report (playMode omitted) defaults to 'digital' in both summary.md and decisions.json", async () => {
+  await withTempDir(async reportsRoot => {
+    const recorder = new DecisionRecorder();
+    const result = await writePlaytestReport({
+      startedAt: new Date("2026-09-05T22:30:00.000Z"), sessionId: "match-digital", seed: 1,
+      humanDeckName: "Human Deck", agentDeckName: "Asphodel Deck",
+      humanPlayerId: "player-1", agentPlayerId: "player-2",
+      endedByHuman: true, snapshot: snapshot(), decisions: recorder.all(), reportsRoot,
+    });
+    const summary = await readFile(result.summaryPath, "utf8");
+    const decisionsJson = JSON.parse(await readFile(result.decisionsPath, "utf8"));
+    assert.match(summary, /Play mode: digital/);
+    assert.ok(!/## Physical declarations/.test(summary), "no physical declarations section when there are none");
+    assert.equal(decisionsJson.match.playMode, "digital");
+    assert.deepEqual(decisionsJson.physicalDeclarations, []);
+  });
+});
+
+it("V2g: playMode 'physical' with non-empty physicalDeclarations renders a 'Play mode: physical' line, a '## Physical declarations' section, and both fields in decisions.json", async () => {
+  await withTempDir(async reportsRoot => {
+    const recorder = new DecisionRecorder();
+    const physicalDeclarations = [
+      { decisionId: "phys-1", turn: 1, phase: "main1", eventKind: "draw", count: 7, declaredNames: ["Mountain", "Mountain", "Sol Ring", "Forest", "Forest", "Forest", "Lightning Bolt"] },
+      { decisionId: "phys-2", turn: 3, phase: "upkeep", eventKind: "scry_reveal", count: 1, declaredNames: ["Island"] },
+    ];
+    const result = await writePlaytestReport({
+      startedAt: new Date("2026-09-05T22:30:00.000Z"), sessionId: "match-physical", seed: 2,
+      humanDeckName: "Human Deck", agentDeckName: "Asphodel Deck",
+      humanPlayerId: "player-1", agentPlayerId: "player-2",
+      endedByHuman: true, snapshot: snapshot(), decisions: recorder.all(), reportsRoot,
+      playMode: "physical", physicalDeclarations,
+    });
+    const summary = await readFile(result.summaryPath, "utf8");
+    const decisionsJson = JSON.parse(await readFile(result.decisionsPath, "utf8"));
+
+    assert.match(summary, /Play mode: physical/);
+    assert.match(summary, /## Physical declarations/);
+    assert.match(summary, /Turn 1 \/ Main1 — draw \(7\): Mountain, Mountain, Sol Ring, Forest, Forest, Forest, Lightning Bolt/);
+    assert.match(summary, /Turn 3 \/ Upkeep — scry_reveal \(1\): Island/);
+
+    assert.equal(decisionsJson.match.playMode, "physical");
+    assert.deepEqual(decisionsJson.physicalDeclarations, physicalDeclarations);
   });
 });
 

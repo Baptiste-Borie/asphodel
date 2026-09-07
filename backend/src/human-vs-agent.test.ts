@@ -20,6 +20,7 @@ const progress: ForgeExternalMatchProgress = {
   targetDecisionsRequested: 0, targetDecisionsSubmitted: 0, targetsSelected: 0, modeDecisionsRequested: 0, modeDecisionsSubmitted: 0, modesSelected: 0,
   valueDecisionsRequested: 0, valueDecisionsSubmitted: 0, optionalCostDecisionsRequested: 0, optionalCostsSelected: 0, costObjectDecisionsRequested: 0, costObjectsSelected: 0,
   manaPaymentDecisionsRequested: 0, manaPaymentDecisionsSubmitted: 0, manaOptionsSelected: 0, manaPaymentsFallbackToAi: 0,
+  physicalIdentityDecisionsRequested: 0, physicalIdentityDecisionsSubmitted: 0,
 };
 
 function observation(selfId: string, opponentId: string, turn: number, hand: AgentSelfPlayerObservation["hand"] = []): AgentObservation {
@@ -77,7 +78,7 @@ it("routes a decision for the human to the human provider exactly once, and for 
     cancel: async () => { cancelled++; return { sessionId: "s", status: "cancelled", cancelled: true }; },
     submitDecision: async () => ({ accepted: true }), submitTarget: async () => ({ accepted: true }), submitMode: async () => ({ accepted: true }),
     submitValue: async () => ({ accepted: true }), submitOptionalCost: async () => ({ accepted: true }), submitManaOption: async () => ({ accepted: true }),
-    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }),
+    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }), submitPhysicalIdentity: async () => ({ accepted: true }),
   };
   const owners: string[] = [];
   const run = await runHumanVsAgentMatch(client, human, agent, [{ name: "h", cards: [] }, { name: "a", cards: [] }], "player-1", "player-2",
@@ -98,7 +99,7 @@ it("fails hard on a decision for an unrecognized playerId instead of guessing an
     cancel: async () => { cancelled++; return { sessionId: "s", status: "cancelled", cancelled: true }; },
     submitDecision: async () => ({ accepted: true }), submitTarget: async () => ({ accepted: true }), submitMode: async () => ({ accepted: true }),
     submitValue: async () => ({ accepted: true }), submitOptionalCost: async () => ({ accepted: true }), submitManaOption: async () => ({ accepted: true }),
-    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }),
+    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }), submitPhysicalIdentity: async () => ({ accepted: true }),
   };
   await assert.rejects(
     runHumanVsAgentMatch(client, human, agent, [{ name: "h", cards: [] }, { name: "a", cards: [] }], "player-1", "player-2", { pollIntervalMs: 0 }),
@@ -123,7 +124,7 @@ it("a stale re-poll of the same decisionId is not re-submitted to the chooser", 
     cancel: async () => ({ sessionId: "s", status: "cancelled", cancelled: true }),
     submitDecision: async () => ({ accepted: true }), submitTarget: async () => ({ accepted: true }), submitMode: async () => ({ accepted: true }),
     submitValue: async () => ({ accepted: true }), submitOptionalCost: async () => ({ accepted: true }), submitManaOption: async () => ({ accepted: true }),
-    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }),
+    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }), submitPhysicalIdentity: async () => ({ accepted: true }),
   };
   await runHumanVsAgentMatch(client, human, agent, [{ name: "h", cards: [] }, { name: "a", cards: [] }], "player-1", "player-2", { pollIntervalMs: 0 });
   assert.equal(human.calls, 1, "the second identical poll must not call the human provider again");
@@ -144,7 +145,7 @@ it("cancellation on a mid-flight abort clears the broker's pending state via cli
     cancel: async () => { cancelled++; return { sessionId: "s", status: "cancelled", cancelled: true }; },
     submitDecision: async () => ({ accepted: true }), submitTarget: async () => ({ accepted: true }), submitMode: async () => ({ accepted: true }),
     submitValue: async () => ({ accepted: true }), submitOptionalCost: async () => ({ accepted: true }), submitManaOption: async () => ({ accepted: true }),
-    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }),
+    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }), submitPhysicalIdentity: async () => ({ accepted: true }),
   };
   await assert.rejects(runHumanVsAgentMatch(client, human, agent, [{ name: "h", cards: [] }, { name: "a", cards: [] }], "player-1", "player-2", { pollIntervalMs: 0, signal: abort.signal }));
   assert.equal(cancelled, 1, "the session must be cancelled once it exists, even when the abort lands mid-decision");
@@ -183,7 +184,8 @@ it("TerminalHumanDecisionProvider retries locally on invalid input and never ret
   const choice = await promise;
   provider.close();
   validateChoice(priorityDecision("player-1", 1), choice);
-  assert.equal(choice.choice, "pass");
+  // TerminalHumanDecisionProvider never produces a physical_identity choice.
+  assert.equal((choice as Exclude<AgentChoice, { kind: "physical_identity" }>).choice, "pass");
   assert.match(out, /Invalid choice/);
 });
 
@@ -211,7 +213,7 @@ it("a human-requested end is not an error: returns endedByHuman with the last sn
     cancel: async () => { cancelled++; return { sessionId: "s", status: "cancelled", cancelled: true }; },
     submitDecision: async () => ({ accepted: true }), submitTarget: async () => ({ accepted: true }), submitMode: async () => ({ accepted: true }),
     submitValue: async () => ({ accepted: true }), submitOptionalCost: async () => ({ accepted: true }), submitManaOption: async () => ({ accepted: true }),
-    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }),
+    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }), submitPhysicalIdentity: async () => ({ accepted: true }),
   };
   const run = await runHumanVsAgentMatch(client, human, agent, [{ name: "h", cards: [] }, { name: "a", cards: [] }], "player-1", "player-2",
     { pollIntervalMs: 0, onDecision: (owner) => { if (owner === "agent") agentDecisions.push("recorded"); } });
@@ -234,7 +236,7 @@ it("a human-requested end never submits the ending prompt's decision to Forge an
     cancel: async () => ({ sessionId: "s", status: "cancelled", cancelled: true }),
     submitDecision: async () => { submitted++; return { accepted: true }; }, submitTarget: async () => ({ accepted: true }), submitMode: async () => ({ accepted: true }),
     submitValue: async () => ({ accepted: true }), submitOptionalCost: async () => ({ accepted: true }), submitManaOption: async () => ({ accepted: true }),
-    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }),
+    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }), submitPhysicalIdentity: async () => ({ accepted: true }),
   };
   const run = await runHumanVsAgentMatch(client, human, agent, [{ name: "h", cards: [] }, { name: "a", cards: [] }], "player-1", "player-2", { pollIntervalMs: 0 });
   assert.equal(run.endedByHuman, true);
@@ -272,7 +274,7 @@ it("a sole forced pass never reaches the human provider: the orchestrator auto-s
     submitDecision: async (_s, decisionId) => { submittedDecisionIds.push(decisionId); return { accepted: true }; },
     submitTarget: async () => ({ accepted: true }), submitMode: async () => ({ accepted: true }), submitValue: async () => ({ accepted: true }),
     submitOptionalCost: async () => ({ accepted: true }), submitManaOption: async () => ({ accepted: true }),
-    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }),
+    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }), submitPhysicalIdentity: async () => ({ accepted: true }),
   };
   const owners: string[] = [];
   const run = await runHumanVsAgentMatch(client, human, agent, [{ name: "h", cards: [] }, { name: "a", cards: [] }], "player-1", "player-2",
@@ -333,7 +335,7 @@ it("V2e.6.1 §17: the agent loop guard (wired into runHumanVsAgentMatch) exclude
     cancel: async () => ({ sessionId: "s", status: "cancelled", cancelled: true }),
     submitDecision: async () => ({ accepted: true }), submitTarget: async () => ({ accepted: true }), submitMode: async () => ({ accepted: true }),
     submitValue: async () => ({ accepted: true }), submitOptionalCost: async () => ({ accepted: true }), submitManaOption: async () => ({ accepted: true }),
-    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }),
+    submitCostObject: async () => ({ accepted: true }), submitSelection: async () => ({ accepted: true }), submitPhysicalIdentity: async () => ({ accepted: true }),
   };
   const run = await runHumanVsAgentMatch(client, human, agent, [{ name: "h", cards: [] }, { name: "a", cards: [] }], "player-1", "player-2", { pollIntervalMs: 0 });
   assert.equal(agent.seenCardRefs.length, 4, "the policy is invoked exactly once per Asphodel decision — never thousands of times");

@@ -18,13 +18,16 @@ function observation(own: AgentCardObservation[] = [], enemy: AgentCardObservati
     { ...publicSelf, playerId: "enemy", role: "opponent", battlefield: enemy, commanders: [], externalController: false }] };
 }
 const agent = new BaselineAsphodelAgent();
+// None of the decision kinds exercised in this file is `physical_identity_declare` (the agent throws
+// on that kind, see baseline-agent.ts), so every `AgentChoice` produced here carries a `.choice` field.
+type NonPhysicalChoice = Exclude<ReturnType<typeof agent.choose>, { kind: "physical_identity" }>;
 function choose(d: Decision, o = observation()) {
   const before = JSON.stringify({ o, d });
   const result = agent.choose(o, d);
   validateChoice(d, result);
   assert.deepEqual(agent.choose(structuredClone(o), structuredClone(d)), result);
   assert.equal(JSON.stringify({ o, d }), before);
-  return result.choice;
+  return (result as NonPhysicalChoice).choice;
 }
 const action = (id: string, type: "cast_spell" | "play_land" | "activate_ability", extra: Partial<Extract<ForgeExternalAction, { cardRef: string }>> = {}): ForgeExternalAction => ({ actionId: id, type, label: "irrelevant", cardRef: id, cardName: "irrelevant", sourceZone: "hand", abilityText: null, manaCost: null, requiresTargets: false, ...extra });
 const pass: ForgeExternalAction = { actionId: "pass", type: "pass", label: "Pass", cardRef: null, cardName: null, sourceZone: null, abilityText: null, manaCost: null, requiresTargets: false };
@@ -106,7 +109,7 @@ it("does not read opponent hidden zones or use card names", () => {
   Object.defineProperty(o.players[1], "hand", { get() { throw new Error("hidden hand accessed"); } });
   Object.defineProperty(o.players[1], "library", { get() { throw new Error("hidden library accessed"); } });
   Object.defineProperty(o.players[0]!.battlefield[0], "name", { get() { throw new Error("name accessed"); } });
-  assert.equal(agent.choose(o, { ...base, type: "priority_action", actions: [pass, action("own", "cast_spell")] }).choice, "own");
+  assert.equal((agent.choose(o, { ...base, type: "priority_action", actions: [pass, action("own", "cast_spell")] }) as NonPhysicalChoice).choice, "own");
 });
 it("rejects wrong IDs, selector families, players, out-of-bounds and fractional X", () => {
   const d: Decision = { ...base, type: "priority_action", actions: [pass] };

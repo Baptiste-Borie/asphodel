@@ -10,6 +10,8 @@ import type {
 export interface ForgeExternalMatchStartOptions {
   seed?: number;
   mulliganPlayerId?: string;
+  /** V2g Physical Companion: see `ForgeRequestMap["start_external_match"]`. */
+  physicalPlayerId?: string;
   /** Defaults to ["external", "forge_ai"] — the historical single-external-seat match. */
   seats?: [ForgeMatchSeatController, ForgeMatchSeatController];
 }
@@ -43,6 +45,7 @@ export class ForgeExternalMatchClient {
       ...(options.seed === undefined ? {} : { seed: options.seed }),
       ...(options.seats === undefined ? {} : { seats: options.seats }),
       ...(options.mulliganPlayerId ? { mulliganPlayerId: options.mulliganPlayerId } : {}),
+      ...(options.physicalPlayerId ? { physicalPlayerId: options.physicalPlayerId } : {}),
       decks: [playerDeck, aiDeck],
     });
   }
@@ -123,6 +126,15 @@ export class ForgeExternalMatchClient {
       sessionId,
       decisionId,
       manaOptionId,
+    });
+  }
+
+  submitPhysicalIdentity(sessionId: string, decisionId: string, declaredNames: string[]) {
+    return this.bridge.request({
+      type: "submit_external_decision",
+      sessionId,
+      decisionId,
+      declaredNames,
     });
   }
 

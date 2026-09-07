@@ -26,16 +26,20 @@ export class EvaluationDiagnostics {
     const cards = o.players.flatMap(p => [...p.battlefield, ...p.graveyard, ...p.exile, ...p.command,
       ...(p.role === "self" ? p.hand : [])]);
     const cardLabel = (ref: string | null) => cards.find(c => c.cardRef === ref)?.name ?? (ref === o.selfPlayerId ? "self" : o.players.some(p => p.playerId === ref) ? "opponent" : null);
+    // V2g: a physical_identity_declare never carries a single opaque `choice` id (see AgentChoice) —
+    // it never reaches Asphodel's own decisions anyway (spec §30), so it is simply out of scope for
+    // every branch below, which all key off Forge decision *families* Asphodel actually answers.
+    const rawChoice: string | number | null = choice.kind === "physical_identity" ? null : choice.choice;
     let semanticChoice: unknown = choice.kind === "value" ? choice.choice : choice.reason;
     if (d.type === "priority_action") {
-      const chosen = d.actions.find(a => a.actionId === choice.choice);
+      const chosen = d.actions.find(a => a.actionId === rawChoice);
       semanticChoice = chosen ? [chosen.type, chosen.cardName, chosen.abilityText] : choice.reason;
       if (d.actions.some(a => a.type === "cast_spell")) { this.legalCastDecisions++; this.castTurns.add(d.context.turn); }
       const commanders = new Set(self?.commanders.map(c => c.cardRef));
       const offered = d.actions.filter(a => a.type === "cast_spell" && commanders.has(a.cardRef!));
       if (offered.length) {
         this.commanderOffered++;
-        if (!offered.some(a => a.actionId === choice.choice)) this.commanderNotCast++;
+        if (!offered.some(a => a.actionId === rawChoice)) this.commanderNotCast++;
       }
       if (chosen?.type === "pass" && d.actions.some(a => a.type !== "pass")) { this.passesWithAction++; this.passTurns.add(d.context.turn); }
     }
@@ -44,13 +48,13 @@ export class EvaluationDiagnostics {
       let window = this.attackWindows.get(this.windowKey);
       if (!window) { window = { offered: new Set(), taken: new Set() }; this.attackWindows.set(this.windowKey, window); }
       for (const option of d.options) if (option.operation === "add" && option.cardRef) window.offered.add(option.cardRef);
-      const selected = d.options.find(x => x.objectId === choice.choice);
+      const selected = d.options.find(x => x.objectId === rawChoice);
       if (selected?.operation === "add" && selected.cardRef) window.taken.add(selected.cardRef);
       if (selected?.operation === "remove" && selected.cardRef) window.taken.delete(selected.cardRef);
       if (selected?.operation === "finish") this.windowKey = undefined;
     }
     if (d.type === "attackers_selection" || d.type === "blockers_selection" || d.type === "combat_order_selection") {
-      const selected = d.options.find(x => x.objectId === choice.choice);
+      const selected = d.options.find(x => x.objectId === rawChoice);
       semanticChoice = selected ? [selected.operation, cardLabel(selected.cardRef), cardLabel(selected.relatedRef)] : choice.reason;
       if (this.keepCombatSamples && this.combatSamples.length < 150) this.combatSamples.push(structuredClone({ turn: d.context.turn, phase: d.context.phase, choice, decision: d, observation: o }));
     }

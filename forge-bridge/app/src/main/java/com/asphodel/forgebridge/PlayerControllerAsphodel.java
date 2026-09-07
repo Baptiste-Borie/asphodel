@@ -54,6 +54,13 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
     ) {
         super(game, player, lobbyPlayer, decisions);
         this.decisions = decisions;
+        // V2g Physical Companion: attach the reconciliation coordinator for whichever seat matches
+        // decisions.physicalPlayerId. A no-op in digital mode (physicalPlayerId is null) or for the
+        // non-physical seat of a physical match.
+        if (decisions.physicalPlayerId != null
+                && AgentObservationBuilder.playerId(player).equals(decisions.physicalPlayerId)) {
+            decisions.attachPhysicalCoordinator(new PhysicalIdentityCoordinator(player));
+        }
     }
 
     private final ForgeStrategicSelections selections = new ForgeStrategicSelections();
@@ -205,6 +212,10 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
     }
 
     private ImmutablePair<CardCollection, CardCollection> arrangeTop(CardCollection cards, String kind) {
+        // V2g: for the physical seat, reconcile these Forge-arbitrary top-of-library cards against
+        // a real physical declaration first, so the identities the existing flow below reveals are
+        // the true physical ones -- unchanged otherwise (digital mode, or the non-physical seat).
+        cards = decisions.reconcilePhysicalLibraryPeek(getGame(), getPlayer(), kind, cards);
         // Forge has explicitly supplied these cards for the player to look at.
         CardCollection top = new CardCollection(selections.selectVisible(decisions, observations, getPlayer(),
                 "object_selection", kind + "_top", "Choose cards to keep on top", null,
@@ -260,7 +271,12 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
     }
 
     @Override
-    public CardCollectionView cheatShuffle(CardCollectionView cards) { return cards; }
+    public CardCollectionView cheatShuffle(CardCollectionView cards) {
+        // V2g: signal-only. The order Forge produced is never altered here; this purely invalidates
+        // any physical "known upcoming library order" assumption for the physical seat (spec §12).
+        decisions.recordPhysicalShuffleIfSelf(getPlayer());
+        return cards;
+    }
 
     @Override
     public SpellAbility getAbilityToPlay(Card host, List<SpellAbility> abilities, forge.util.ITriggerEvent event) {
@@ -342,7 +358,7 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
                 getGame(),
                 getPlayer(),
                 candidates,
-                observations.build(getGame(), getPlayer())
+                freshObservation()
         );
     }
 
@@ -392,7 +408,7 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
                     candidates,
                     selectedTargetIds,
                     canFinish,
-                    observations.build(getGame(), getPlayer())
+                    freshObservation()
             );
             if (answer.finish()) {
                 return ability.isTargetNumberValid();
@@ -426,7 +442,7 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
                 modeChoices.enumerate(possible),
                 min,
                 max,
-                observations.build(getGame(), getPlayer())
+                freshObservation()
         );
         AbilitySub mode = chosen.mode();
         mode.setActivatingPlayer(ability.getActivatingPlayer());
@@ -456,7 +472,7 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
                 ability,
                 sourceActionId(),
                 decision,
-                observations.build(getGame(), getPlayer())
+                freshObservation()
         );
     }
 
@@ -475,7 +491,7 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
                 ability,
                 sourceActionId(),
                 optionalCosts.enumerate(costs),
-                observations.build(getGame(), getPlayer())
+                freshObservation()
         );
     }
 
@@ -590,7 +606,7 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
                                 toPay,
                                 candidates,
                                 manaPayments,
-                                observations.build(getGame(), getPlayer())
+                                freshObservation()
                         );
                 // Declining native payment returns through PlaySpellAbility's own rollback:
                 // costs and mana are refunded by Forge, never reconstructed by the client.
@@ -687,5 +703,15 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
         return executingPrimaryAbility == null
                 ? null
                 : decisions.acceptedActionId(executingPrimaryAbility);
+    }
+
+    /**
+     * V2g: every observation built for a decision must reflect the physical seat's zones AFTER any
+     * pending reconciliation, never before -- see AsphodelDecisionBroker#ensurePhysicalReconciled.
+     * A no-op call in digital mode or for the non-physical seat.
+     */
+    private AgentObservation freshObservation() {
+        decisions.ensurePhysicalReconciled(getGame());
+        return observations.build(getGame(), getPlayer());
     }
 }

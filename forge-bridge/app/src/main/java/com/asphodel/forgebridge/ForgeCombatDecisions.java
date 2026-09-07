@@ -101,6 +101,8 @@ final class ForgeCombatDecisions {
             boolean valid = attack ? CombatUtil.validateAttackers(combat) : CombatUtil.validateBlocks(combat, player) == null;
             if (valid) choices.add(new Choice("finish", null, null, "Confirm declaration"));
             if (choices.isEmpty()) throw new IllegalStateException("Forge declaration has no edit or legal finish");
+            // V2g: must run before build() -- see AsphodelDecisionBroker#ensurePhysicalReconciled.
+            broker.ensurePhysicalReconciled(player.getGame());
             Choice chosen = broker.requestCombatDecision(player.getGame(), player,
                     attack ? "attackers_selection" : "blockers_selection", choices, selected,
                     observations.build(player.getGame(), player));
@@ -122,6 +124,8 @@ final class ForgeCombatDecisions {
             List<Choice> options = remaining.stream().map(card -> new Choice("order", card, source, "Order " + ref(card))).toList();
             List<AsphodelDecisionBroker.CombatAssignment> selected = ordered.stream()
                     .map(card -> new AsphodelDecisionBroker.CombatAssignment(ref(card), ref(source))).toList();
+            // V2g: must run before build() -- see AsphodelDecisionBroker#ensurePhysicalReconciled.
+            broker.ensurePhysicalReconciled(player.getGame());
             Choice chosen = broker.requestCombatDecision(player.getGame(), player, "combat_order_selection",
                     options, selected, observations.build(player.getGame(), player));
             remaining.remove(chosen.card());

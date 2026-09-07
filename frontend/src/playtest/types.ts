@@ -95,6 +95,8 @@ export interface AgentObservation {
 export type AgentChoice = { decisionId: string; reason: string } & (
   | { kind: "action" | "target" | "mode" | "optional_cost" | "object" | "mana"; choice: string }
   | { kind: "value"; choice: number }
+  /** V2g: the human declares which real physical card(s) correspond to a hidden-zone event (draw, mill, scry reveal, …) — see `physical_declare`/`PhysicalDeclareCandidate` below. */
+  | { kind: "physical_identity"; declaredNames: string[] }
 );
 
 export interface MenuItem {
@@ -111,12 +113,38 @@ export interface MenuItem {
   cardRef?: string | null;
 }
 
+/**
+ * V2g "Physical Companion": one candidate real card the human might be declaring (name +
+ * remaining count still unaccounted for in the physical deck/zone this decision is about) — never
+ * a rules input, purely what the backend's `ManualPhysicalCardProvider` currently considers legal.
+ */
+export interface PhysicalDeclareCandidate {
+  name: string;
+  remaining: number;
+}
+
 export type DecisionPrompt =
   | { kind: "opening_hand"; title: string; items: MenuItem[] }
   | { kind: "card_picker"; title: string; items: MenuItem[]; selected: string[]; minSelections: number; maxSelections: number }
 
   | { kind: "menu"; title: string; items: MenuItem[] }
-  | { kind: "value"; title: string; decisionId: string; min: number; max: number; suggested: number[] };
+  | { kind: "value"; title: string; decisionId: string; min: number; max: number; suggested: number[] }
+  /**
+   * V2g: the human declares which real card(s) correspond to a hidden-zone event — draw (including
+   * the very first opening hand, which is simply `eventKind: "draw"`, `count: 7` the first time it
+   * appears; there is no separate opening-hand decision kind), mill, exile-from-library,
+   * library-to-battlefield/command, a generic library event, or a scry/surveil reveal. `title` is
+   * already a fully-formed human string from the backend (e.g. "Declare your opening hand") — never
+   * re-derive a title from `eventKind` in the UI.
+   */
+  | {
+      kind: "physical_declare";
+      title: string;
+      decisionId: string;
+      eventKind: "draw" | "mill" | "exile_from_library" | "library_to_battlefield" | "library_to_command" | "library_event" | "scry_reveal" | "surveil_reveal";
+      count: number;
+      candidates: PhysicalDeclareCandidate[];
+    };
 
 export interface WebPendingDecisionDTO {
   decisionId: string;
@@ -173,6 +201,8 @@ export interface WebPlaytestStateDTO {
   endedByHuman: boolean;
   result: ForgeGameResult | null;
   error: string | null;
+  /** V2g: always present — "digital" (today's symmetric Obsidian Table) or "physical" (compact human mirror, see seat-presentation.ts). */
+  playMode: "digital" | "physical";
 }
 
 export type DeckInput =
@@ -184,6 +214,8 @@ export interface StartPlaytestRequest {
   humanDeck: DeckInput;
   asphodelDeck: DeckInput;
   seed?: number;
+  /** V2g: "digital" (default, today's Obsidian Table) or "physical" (Physical Companion — the human plays a real deck). Omitted is treated as "digital" by the backend. */
+  playMode?: "digital" | "physical";
 }
 
 export interface PlaytestReportDTO {

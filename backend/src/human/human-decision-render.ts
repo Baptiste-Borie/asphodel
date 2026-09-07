@@ -39,7 +39,17 @@ export type DecisionPrompt =
   | { kind: "card_picker"; title: string; items: MenuItem[]; selected: string[]; minSelections: number; maxSelections: number }
 
   | { kind: "menu"; title: string; items: MenuItem[] }
-  | { kind: "value"; title: string; decisionId: string; min: number; max: number; suggested: number[] };
+  | { kind: "value"; title: string; decisionId: string; min: number; max: number; suggested: number[] }
+  /**
+   * V2g Physical Companion: declare which real physical card(s) correspond to a hidden-zone event
+   * Forge just resolved internally (draw, mill, scry reveal, ...). `candidates` is Forge's own
+   * authoritative remaining-library composition (name + count), never a Node-side guess. Rendered
+   * by `describePhysicalDeclare`, from a `PhysicalCardRequest` — deliberately NOT by
+   * `describeDecision`, since a physical declaration never reaches `WebHumanDecisionProvider` (see
+   * `human-vs-agent-runner.ts`'s `physicalCardProvider` interception).
+   */
+  | { kind: "physical_declare"; title: string; decisionId: string; eventKind: string; count: number;
+      candidates: { name: string; remaining: number }[] };
 
 function cardMap(observation: AgentObservation): Map<string, AgentCardObservation> {
   const map = new Map<string, AgentCardObservation>();
@@ -214,7 +224,37 @@ export function describeDecision(observation: AgentObservation, d: ForgePendingE
       }
       return { kind: "menu", title: d.prompt, items };
     }
+    case "physical_identity_declare":
+      // Never reaches this function — see the DecisionPrompt "physical_declare" doc comment.
+      throw new Error("physical_identity_declare is rendered via describePhysicalDeclare, never describeDecision");
   }
+}
+
+/**
+ * V2g Physical Companion: renders a `PhysicalCardRequest` (see `physical/physical-card-provider.ts`)
+ * as a `DecisionPrompt` — deliberately independent of `describeDecision`/`ForgePendingExternalDecision`
+ * so this stays meaningful for a future non-Forge input source too. `title` is derived only from
+ * `eventKind`/`count`, since that is all a physical request ever carries.
+ */
+export function describePhysicalDeclare(request: {
+  decisionId: string;
+  eventKind: string;
+  count: number;
+  candidates: { name: string; remaining: number }[];
+}): DecisionPrompt {
+  const titles: Record<string, (count: number) => string> = {
+    draw: (count) => count > 1 ? `Declare your ${count === 7 ? "opening hand" : `${count} drawn cards`}` : "Which card did you draw?",
+    mill: (count) => `Which ${count > 1 ? `${count} cards were` : "card was"} milled?`,
+    exile_from_library: (count) => `Which ${count > 1 ? `${count} cards` : "card"} left your library face down/exiled?`,
+    library_to_battlefield: (count) => `Which ${count > 1 ? `${count} cards` : "card"} entered the battlefield from your library?`,
+    library_to_command: () => "Which card entered the command zone from your library?",
+    scry_reveal: (count) => `Which ${count > 1 ? `${count} cards are` : "card is"} on top of your library (scry)?`,
+    surveil_reveal: (count) => `Which ${count > 1 ? `${count} cards are` : "card is"} on top of your library (surveil)?`,
+    library_event: () => "Declare the card identity Forge needs",
+  };
+  const title = (titles[request.eventKind] ?? titles.library_event)!(request.count);
+  return { kind: "physical_declare", title, decisionId: request.decisionId, eventKind: request.eventKind,
+    count: request.count, candidates: request.candidates };
 }
 
 function finishItem(decisionId: string, objectId: string, kind: "object"): MenuItem {
@@ -245,6 +285,8 @@ export function renderEventDelta(previous: AgentObservation | null, next: AgentO
 
 /** Concise, hand-free public description of an accepted Asphodel action for the human to read. */
 export function describeAgentAction(observation: AgentObservation, d: ForgePendingExternalDecision, choice: AgentChoice): string | null {
+  // V2g: Asphodel never answers a physical_identity_declare (spec §30) — nothing to narrate.
+  if (choice.kind === "physical_identity") return null;
   if (d.type === "priority_action") {
     const action = d.actions.find(a => a.actionId === choice.choice);
     if (!action || action.type === "pass") return null;

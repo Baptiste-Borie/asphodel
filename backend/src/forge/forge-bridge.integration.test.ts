@@ -28,9 +28,21 @@ import type {
   ForgePendingModeDecision,
   ForgePendingManaPaymentDecision,
   ForgePendingOptionalCostDecision,
+  ForgePendingPhysicalIdentityDecision,
   ForgePendingTargetDecision,
   ForgePendingValueDecision,
 } from "./forge-protocol.js";
+
+function declareGreedy(decision: ForgePendingPhysicalIdentityDecision): string[] {
+  const remaining = new Map(decision.candidates.map((c) => [c.name, c.remaining]));
+  const declared: string[] = [];
+  for (let i = 0; i < decision.count; i += 1) {
+    const [name] = [...remaining.entries()].find(([, left]) => left > 0)!;
+    declared.push(name);
+    remaining.set(name, remaining.get(name)! - 1);
+  }
+  return declared;
+}
 
 const jarPath = process.env.FORGE_BRIDGE_JAR;
 const clients: ForgeBridgeClient[] = [];
@@ -452,6 +464,12 @@ async function submitDeterministicSecondary(
     await external.submitSelection(sessionId, decision.decisionId, option.objectId);
     return;
   }
+  if (decision.type === "physical_identity_declare") {
+    // Greedy deterministic auto-declare for tests that don't care about the exact identities
+    // (a dedicated test drives this decision explicitly to prove real reconciliation).
+    await external.submitPhysicalIdentity(sessionId, decision.decisionId, declareGreedy(decision));
+    return;
+  }
   if (decision.type !== "cost_object_selection") throw new Error("Unhandled decision family");
   const objectId = decision.options[0]?.objectId ?? decision.finishChoiceId;
   assert.ok(objectId);
@@ -853,6 +871,154 @@ describe("ForgeBridgeClient integration", () => {
     state=await next();
     assert.deepEqual(observedPlayers(state.observation!).self.hand.map(c=>c.cardRef).sort(),keptHand.sort());
     await external.cancel(sessionId);
+  });
+
+  it("V2g Physical Companion: reconciles opening hand, a shuffle-invalidated redraw, and a normal draw to exactly the declared identities", { timeout: 60_000 }, async () => {
+    const client = createClient(); await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const deck: ForgeDeckSpec = { name: "Physical opening hand fixture", cards: [
+      { name: "Krenko, Tin Street Kingpin", quantity: 1, section: "commander" },
+      { name: "Mountain", quantity: 10, section: "mainboard" },
+      { name: "Lightning Bolt", quantity: 5, section: "mainboard" },
+      { name: "Goblin Piker", quantity: 5, section: "mainboard" },
+    ] };
+    const { sessionId } = await external.startSpecs(deck, greenDeck(), {
+      seed: 777,
+      mulliganPlayerId: "player-1",
+      physicalPlayerId: "player-1",
+    });
+
+    // 1. Opening hand: Forge silently dealt 7 digitally-arbitrary cards from its own shuffle.
+    // Declare a SPECIFIC multiset and verify Forge's real hand ends up holding exactly those
+    // identities — not merely the right count.
+    let state = await waitForExternalSnapshot(external, sessionId, (s) => Boolean(s.pendingDecision));
+    let decision = state.pendingDecision!;
+    assert.equal(decision.type, "physical_identity_declare");
+    if (decision.type !== "physical_identity_declare") throw new Error("expected physical declare");
+    assert.equal(decision.eventKind, "draw");
+    assert.equal(decision.count, 7);
+    // 20-card mainboard minus the 7 already dealt into hand before this checkpoint ever runs.
+    assert.equal(decision.candidates.reduce((sum, c) => sum + c.remaining, 0), 13);
+    const openingHand = ["Goblin Piker", "Lightning Bolt", "Lightning Bolt", "Mountain", "Mountain", "Mountain", "Mountain"];
+    await external.submitPhysicalIdentity(sessionId, decision.decisionId, openingHand);
+    state = await waitForExternalSnapshot(external, sessionId, (s) => Boolean(s.pendingDecision));
+    assert.deepEqual(observedPlayers(state.observation!).self.hand.map((c) => c.name).sort(), [...openingHand].sort());
+
+    // 2. Decline Keep: Forge shuffles the hand back into the library (cheatShuffle fires) and
+    // draws a fresh 7. This must produce a NEW physical_identity_declare totalling exactly 7 — if
+    // shuffle invalidation were broken, the coordinator would wrongly treat the redraw as already
+    // known, and this section would time out instead of silently passing.
+    decision = state.pendingDecision!;
+    assert.equal(decision.type, "yes_no");
+    if (decision.type !== "yes_no") throw new Error("expected mulligan_keep");
+    assert.equal(decision.selectionKind, "mulligan_keep");
+    await external.submitSelection(sessionId, decision.decisionId, decision.options.find((o) => o.label === "No")!.objectId);
+
+    let redrawCount = 0;
+    for (let i = 0; i < 20; i += 1) {
+      state = await waitForExternalSnapshot(external, sessionId, (s) => Boolean(s.pendingDecision));
+      decision = state.pendingDecision!;
+      if (decision.type === "physical_identity_declare") {
+        redrawCount += decision.count;
+        await external.submitPhysicalIdentity(sessionId, decision.decisionId, declareGreedy(decision));
+        continue;
+      }
+      if (decision.type === "yes_no" && decision.selectionKind === "mulligan_keep") break;
+      if (decision.type === "priority_action") throw new Error("unexpected priority_action during mulligan");
+      await submitDeterministicSecondary(external, sessionId, decision);
+    }
+    assert.equal(redrawCount, 7, "the post-shuffle redraw was reconciled exactly once, proving shuffle invalidation");
+    assert.equal(decision.type, "yes_no");
+    if (decision.type !== "yes_no") throw new Error("expected mulligan_keep");
+    await external.submitSelection(sessionId, decision.decisionId, decision.options.find((o) => o.label === "Yes")!.objectId);
+
+    // Drain any remaining mulligan bottoming (or leftover physical declares) generically until
+    // real gameplay begins.
+    state = await waitForExternalSnapshot(external, sessionId, (s) => Boolean(s.pendingDecision));
+    decision = state.pendingDecision!;
+    for (let i = 0; i < 20 && decision.type !== "priority_action"; i += 1) {
+      await submitDeterministicSecondary(external, sessionId, decision);
+      state = await waitForExternalSnapshot(external, sessionId, (s) => Boolean(s.pendingDecision));
+      decision = state.pendingDecision!;
+    }
+    assert.equal(decision.type, "priority_action", "mulligan flow resolved into normal gameplay");
+
+    // 3. A normal turn draw during real gameplay: pass priority until Forge silently draws for the
+    // physical seat again, declare one SPECIFIC remaining name, and verify the resulting hand card
+    // carries exactly that declared identity.
+    let declaredDraw: string | undefined;
+    for (let step = 0; step < 200 && !declaredDraw; step += 1) {
+      if (decision.type === "physical_identity_declare" && decision.eventKind === "draw") {
+        declaredDraw = decision.candidates.find((c) => c.remaining > 0)!.name;
+        await external.submitPhysicalIdentity(sessionId, decision.decisionId, [declaredDraw]);
+      } else if (decision.type === "priority_action") {
+        const pass = decision.actions.find((a) => a.type === "pass")!;
+        await external.submitDecision(sessionId, decision.decisionId, pass.actionId);
+      } else {
+        await submitDeterministicSecondary(external, sessionId, decision);
+      }
+      state = await waitForExternalSnapshot(external, sessionId, (s) => Boolean(s.pendingDecision));
+      decision = state.pendingDecision!;
+    }
+    assert.ok(declaredDraw, "a normal turn draw was reconciled");
+    assert.ok(observedPlayers(state.observation!).self.hand.some((c) => c.name === declaredDraw));
+
+    const snapshot = await external.get(sessionId);
+    assert.ok(snapshot.progress.physicalIdentityDecisionsRequested >= 3);
+    assert.equal(snapshot.progress.physicalIdentityDecisionsRequested, snapshot.progress.physicalIdentityDecisionsSubmitted);
+
+    await external.cancel(sessionId);
+  });
+
+  it("V2g Physical Companion: reconciles a scry pile to the exact declared identities before Forge's real keep/bottom ordering", { timeout: 60_000 }, async () => {
+    const client = createClient(); await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const deck: ForgeDeckSpec = { name: "Physical scry fixture", cards: [
+      { name: "Talrand, Sky Summoner", quantity: 1, section: "commander" },
+      { name: "Island", quantity: 30, section: "mainboard" },
+      { name: "Opt", quantity: 30, section: "mainboard" },
+    ] };
+    const { sessionId } = await external.startSpecs(deck, ashlingDeck(), { seed: 12345, physicalPlayerId: "player-1" });
+    let declaredScry: string | undefined;
+    for (let step = 0; step < 400; step += 1) {
+      const s = await waitForExternalSnapshot(external, sessionId, (s) => Boolean(s.pendingDecision));
+      const d = s.pendingDecision!;
+      const self = observedPlayers(s.observation!).self;
+      if (declaredScry && d.type === "priority_action") {
+        assert.ok(self.hand.some((c) => c.name === declaredScry));
+        await external.cancel(sessionId);
+        return;
+      }
+      if (d.type === "physical_identity_declare" && d.eventKind === "scry_reveal") {
+        declaredScry = d.candidates.find((c) => c.remaining > 0)!.name;
+        await external.submitPhysicalIdentity(sessionId, d.decisionId, [declaredScry]);
+        continue;
+      }
+      // Opt's own "draw a card" resolves right after the scry keeps it on top: the physical draw
+      // that follows must reconcile to the SAME declared card, proving the scry reconciliation
+      // actually placed that real object at the position Forge then draws from.
+      if (declaredScry && d.type === "physical_identity_declare" && d.eventKind === "draw") {
+        await external.submitPhysicalIdentity(sessionId, d.decisionId, [declaredScry]);
+        continue;
+      }
+      if (d.type === "object_selection" && d.selectionKind === "scry_top") {
+        const card = d.options.find((o) => !o.finish)!;
+        // The reveal now carries the physically-declared identity, not Forge's original arbitrary one.
+        assert.equal(card.label, declaredScry);
+        await external.submitSelection(sessionId, d.decisionId, card.objectId);
+        continue;
+      }
+      if (d.type === "priority_action") {
+        const action = d.actions.find((a) => a.type === "play_land")
+          ?? d.actions.find((a) => a.type === "cast_spell" && a.cardName === "Opt")
+          ?? d.actions.find((a) => a.type === "pass");
+        assert.ok(action);
+        await external.submitDecision(sessionId, d.decisionId, action.actionId);
+        continue;
+      }
+      await submitDeterministicSecondary(external, sessionId, d);
+    }
+    assert.fail("Physical scry reconciliation proof not reached");
   });
 
   it("V2e.8 pays Uurg with each exact Strangled Cemetery color and keeps library search options private", async () => {

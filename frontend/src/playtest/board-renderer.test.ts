@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { collectVisibleCardNames, commandZoneCards, formatHudPhase, formatPhase } from "./board-renderer.js";
+import { collectVisibleCardNames, commandZoneCards, formatCompactHandLabel, formatHudPhase, formatPhase } from "./board-renderer.js";
 import type { AgentObservation, AgentSelfPlayerObservation } from "./types.js";
 
 it("formats phase identifiers into readable labels", () => {
@@ -20,6 +20,11 @@ it("formatHudPhase falls back to the general phase humanization for anything not
   assert.equal(formatHudPhase("main1"), "Main 1");
   assert.equal(formatHudPhase("main2"), "Main 2");
   assert.equal(formatHudPhase("upkeep"), "Upkeep");
+});
+
+it("formatCompactHandLabel (V2g Physical Companion): a plain \"HAND · N\" count, never card names", () => {
+  assert.equal(formatCompactHandLabel(0), "HAND · 0");
+  assert.equal(formatCompactHandLabel(7), "HAND · 7");
 });
 
 function card(name: string | null, hidden = false) {

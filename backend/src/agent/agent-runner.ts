@@ -2,7 +2,7 @@ import type { ForgeExternalMatchClient } from "../forge/forge-external-match-cli
 import type { AgentObservation, ForgeDeckSpec, ForgeExternalMatchSnapshot, ForgePendingExternalDecision } from "../forge/forge-protocol.js";
 import { validateChoice, type AgentChoice, type AsphodelAgent } from "./baseline-agent.js";
 
-export type AgentMatchTransport = Pick<ForgeExternalMatchClient, "startSpecs" | "get" | "cancel" | "submitDecision" | "submitTarget" | "submitMode" | "submitValue" | "submitOptionalCost" | "submitCostObject" | "submitManaOption" | "submitSelection">;
+export type AgentMatchTransport = Pick<ForgeExternalMatchClient, "startSpecs" | "get" | "cancel" | "submitDecision" | "submitTarget" | "submitMode" | "submitValue" | "submitOptionalCost" | "submitCostObject" | "submitManaOption" | "submitSelection" | "submitPhysicalIdentity">;
 export interface AgentTraceEntry {
   turn: number;
   phase: string;
@@ -32,6 +32,9 @@ export async function submitExternalChoice(client: AgentMatchTransport, sessionI
     case "object":
       if (d.type === "cost_object_selection") await client.submitCostObject(sessionId, d.decisionId, choice.choice);
       else await client.submitSelection(sessionId, d.decisionId, choice.choice);
+      break;
+    case "physical_identity":
+      await client.submitPhysicalIdentity(sessionId, d.decisionId, choice.declaredNames);
   }
 }
 

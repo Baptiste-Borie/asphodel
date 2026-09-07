@@ -1,0 +1,176 @@
+/*
+  V2g "Physical Companion" — additive only. Digital mode never receives any of the classes styled
+  here (`table-battlefield-half--compact`, `table-root--physical`, `.play-mode-*`,
+  `.table-compact-hand-*`, `.physical-declare-*`), so this file changes nothing about Digital's
+  existing rendered DOM/CSS. See seat-presentation.ts for the one branch point that assigns these
+  classes.
+
+  The compact human seat reuses the EXACT SAME rendering functions as Digital (renderPublicZones,
+  renderBattlefieldHalf, renderCommanderDock, renderLandZone) — only its on-screen footprint shrinks,
+  via a single `transform: scale()` on the whole seat, so Asphodel's own seat (still "--primary",
+  unchanged) gets the remaining vertical space and visually dominates the table.
+*/
+
+.table-battlefield-half--compact {
+  flex: 0 0 230px;
+  min-height: 0;
+  transform: scale(0.6);
+  transform-origin: bottom center;
+}
+
+.table-root--physical .table-battlefield::after {
+  top: auto;
+  bottom: 236px;
+}
+
+/* --- Compact hand indicator (Physical mode only — replaces the full interactive hand) --- */
+
+.table-compact-hand-summary {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.table-compact-hand-verify {
+  max-width: 320px;
+  margin: 6px auto 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.table-compact-hand-verify summary {
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.table-compact-hand-verify summary:hover {
+  color: #d7d7dc;
+}
+
+.table-compact-hand-list {
+  max-height: 140px;
+  margin: 8px 0 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  text-align: left;
+}
+
+.table-compact-hand-list li {
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: #d7d7dc;
+  font-size: 0.82rem;
+}
+
+/* --- Play Mode picker (setup screen) --- */
+
+.play-mode-picker {
+  margin-bottom: var(--space-6);
+}
+
+.play-mode-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.play-mode-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.play-mode-option:hover {
+  border-color: var(--accent);
+}
+
+.play-mode-option--selected {
+  border-color: var(--accent);
+  background: rgba(139, 124, 246, 0.1);
+}
+
+.play-mode-option input {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+}
+
+.play-mode-option-title {
+  color: #f7f7f8;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.play-mode-option-description {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+/* --- Physical declaration surface (physical-declare.ts) --- */
+
+.physical-declare-slots {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.physical-declare-slot {
+  display: flex;
+  min-width: 64px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.physical-declare-slot--filled {
+  justify-content: space-between;
+  border-color: var(--accent);
+  border-style: solid;
+  color: #f7f7f8;
+}
+
+.physical-declare-slot-remove {
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.physical-declare-slot-remove:hover {
+  color: #f87171;
+}
+
+.physical-declare-search {
+  margin: 10px 0;
+}
+
+@media (max-width: 760px) {
+  .play-mode-options {
+    grid-template-columns: 1fr;
+  }
+}

@@ -258,7 +258,8 @@ public final class BridgeMain {
                 playerDeck,
                 aiDeck,
                 seats,
-                request.has("mulliganPlayerId") ? request.get("mulliganPlayerId").getAsString() : null
+                request.has("mulliganPlayerId") ? request.get("mulliganPlayerId").getAsString() : null,
+                request.has("physicalPlayerId") ? request.get("physicalPlayerId").getAsString() : null
         );
         return success(requestId, "start_external_match", started);
     }
@@ -310,6 +311,7 @@ public final class BridgeMain {
         String objectId = getString(request, "objectId");
         String manaOptionId = getString(request, "manaOptionId");
         JsonElement rawValue = request.get("value");
+        JsonElement rawDeclaredNames = request.get("declaredNames");
         boolean hasActionId = actionId != null && !actionId.isBlank();
         boolean hasTargetId = targetId != null && !targetId.isBlank();
         boolean hasModeId = modeId != null && !modeId.isBlank();
@@ -317,17 +319,42 @@ public final class BridgeMain {
         boolean hasObjectId = objectId != null && !objectId.isBlank();
         boolean hasManaOptionId = manaOptionId != null && !manaOptionId.isBlank();
         boolean hasValue = rawValue != null && !rawValue.isJsonNull();
+        boolean hasDeclaredNames = rawDeclaredNames != null && !rawDeclaredNames.isJsonNull();
         int selectorCount = (hasActionId ? 1 : 0)
                 + (hasTargetId ? 1 : 0)
                 + (hasModeId ? 1 : 0)
                 + (hasCostId ? 1 : 0)
                 + (hasObjectId ? 1 : 0)
                 + (hasManaOptionId ? 1 : 0)
-                + (hasValue ? 1 : 0);
+                + (hasValue ? 1 : 0)
+                + (hasDeclaredNames ? 1 : 0);
         if (selectorCount != 1) {
             throw new IllegalArgumentException(
                     "submit_external_decision requires exactly one selector: actionId, "
-                            + "targetId, modeId, value, costId, objectId, or manaOptionId."
+                            + "targetId, modeId, value, costId, objectId, manaOptionId, or declaredNames."
+            );
+        }
+        if (hasDeclaredNames) {
+            if (!rawDeclaredNames.isJsonArray()) {
+                throw new ExternalMatchException(
+                        "DECLARED_NAMES_REQUIRED",
+                        "declaredNames must be an array of strings."
+                );
+            }
+            List<String> declaredNames = new ArrayList<>();
+            for (JsonElement entry : rawDeclaredNames.getAsJsonArray()) {
+                if (!entry.isJsonPrimitive() || !entry.getAsJsonPrimitive().isString()) {
+                    throw new ExternalMatchException(
+                            "DECLARED_NAMES_REQUIRED",
+                            "declaredNames must be an array of strings."
+                    );
+                }
+                declaredNames.add(entry.getAsString());
+            }
+            return success(
+                    requestId,
+                    "submit_external_decision",
+                    EXTERNAL_MATCHES.submitPhysicalIdentity(sessionId, decisionId, declaredNames)
             );
         }
         if (hasValue) {

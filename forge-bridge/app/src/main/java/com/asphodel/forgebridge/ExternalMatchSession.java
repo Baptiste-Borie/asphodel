@@ -40,7 +40,8 @@ final class ExternalMatchSession {
             Deck playerDeck,
             Deck aiDeck,
             List<String> seats,
-            String mulliganPlayerId
+            String mulliganPlayerId,
+            String physicalPlayerId
     ) {
         this.sessionId = sessionId;
         this.format = format;
@@ -54,6 +55,8 @@ final class ExternalMatchSession {
         // still tagged with the actual owning Player, so there is no cross-seat routing ambiguity.
         this.decisions = new AsphodelDecisionBroker(this::decisionWaitingChanged);
         this.decisions.mulliganPlayerId = mulliganPlayerId;
+        // V2g Physical Companion: null in digital mode, unchanged behavior.
+        this.decisions.physicalPlayerId = physicalPlayerId;
         this.executor = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "asphodel-external-match-" + sessionId);
             thread.setDaemon(true);
@@ -128,6 +131,17 @@ final class ExternalMatchSession {
             );
         }
         decisions.submitValue(decisionId, value);
+    }
+
+    void submitPhysicalIdentity(String decisionId, List<String> declaredNames) {
+        Status current = status;
+        if (current.isTerminal()) {
+            throw new ExternalMatchException(
+                    "MATCH_COMPLETED",
+                    "The external match is already terminal."
+            );
+        }
+        decisions.submitPhysicalIdentity(decisionId, declaredNames);
     }
 
     Map<String, Object> cancel() {

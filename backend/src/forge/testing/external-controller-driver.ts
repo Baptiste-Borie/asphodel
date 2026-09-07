@@ -82,6 +82,10 @@ export async function submitBaselineChoice(
       assert.ok(chosen);
       await client.submitSelection(sessionId, decision.decisionId, chosen);
       break;
+    case "physical_identity_declare":
+      // V2g: this test-only baseline driver never enables Physical Companion mode (no fixture here
+      // ever sets `physicalPlayerId`), so this decision type should never actually be reached.
+      throw new Error("submitBaselineChoice does not support physical_identity_declare");
     default: {
       const exhaustive: never = decision;
       throw new Error(`Unhandled decision: ${JSON.stringify(exhaustive)}`);

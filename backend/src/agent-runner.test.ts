@@ -11,6 +11,7 @@ const progress: ForgeExternalMatchProgress = {
   modeDecisionsRequested: 0, modeDecisionsSubmitted: 0, modesSelected: 0, valueDecisionsRequested: 0, valueDecisionsSubmitted: 0,
   optionalCostDecisionsRequested: 0, optionalCostsSelected: 0, costObjectDecisionsRequested: 0, costObjectsSelected: 0,
   manaPaymentDecisionsRequested: 0, manaPaymentDecisionsSubmitted: 0, manaOptionsSelected: 0, manaPaymentsFallbackToAi: 0,
+  physicalIdentityDecisionsRequested: 0, physicalIdentityDecisionsSubmitted: 0,
 };
 function paused(): ForgeExternalMatchSnapshot {
   return { sessionId: "session", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [],
@@ -26,6 +27,7 @@ function transport(snapshot = paused()) {
     cancel: async () => { cancelled++; return { sessionId: "session", status: "cancelled", cancelled: true }; },
     submitDecision: submit, submitTarget: submit, submitMode: submit, submitValue: submit,
     submitOptionalCost: submit, submitCostObject: submit, submitManaOption: submit, submitSelection: submit,
+    submitPhysicalIdentity: submit,
   };
   return { client, stats: () => ({ submissions, cancelled, polls, starts }) };
 }

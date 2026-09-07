@@ -48,6 +48,12 @@ export interface ForgeRequestMap {
     decks: [ForgeDeckSpec, ForgeDeckSpec];
     seats?: [ForgeMatchSeatController, ForgeMatchSeatController];
     mulliganPlayerId?: string;
+    /**
+     * V2g Physical Companion: the seat whose hidden-zone events (opening hand, draw, mill, scry,
+     * surveil, ...) require a physical card-identity declaration before Forge's own internally
+     * chosen object is allowed to stand. Absent/undefined keeps digital mode exactly as before.
+     */
+    physicalPlayerId?: string;
   };
   get_external_match: {
     type: "get_external_match";
@@ -95,6 +101,12 @@ export interface ForgeRequestMap {
         sessionId: string;
         decisionId: string;
         manaOptionId: string;
+      }
+    | {
+        type: "submit_external_decision";
+        sessionId: string;
+        decisionId: string;
+        declaredNames: string[];
       };
   cancel_external_match: {
     type: "cancel_external_match";
@@ -417,6 +429,41 @@ export interface ForgePendingSelectionDecision {
   canFinish: boolean;
 }
 
+/**
+ * V2g Physical Companion: one remaining-composition candidate, authoritative from Forge's own real
+ * library contents for the physical seat — never a Node-side guess. `remaining` already accounts
+ * for every copy already placed elsewhere (hand/battlefield/graveyard/exile/command).
+ */
+export interface ForgePhysicalCandidate {
+  name: string;
+  remaining: number;
+}
+
+/**
+ * V2g Physical Companion: Forge silently placed `count` real cards into one of the physical
+ * player's zones (a draw, a mill, an opening hand, a scry/surveil reveal, ...) using its own
+ * internally-shuffled library order, which does not correspond to the physical deck the human
+ * actually shuffled. This decision must be answered with exactly `count` names, each drawn from
+ * `candidates`, before the match continues — see docs/physical-companion-v0.md.
+ */
+export interface ForgePendingPhysicalIdentityDecision {
+  decisionId: string;
+  type: "physical_identity_declare";
+  playerId: string;
+  context: ForgePendingDecision["context"];
+  eventKind:
+    | "draw"
+    | "mill"
+    | "exile_from_library"
+    | "library_to_battlefield"
+    | "library_to_command"
+    | "library_event"
+    | "scry_reveal"
+    | "surveil_reveal";
+  count: number;
+  candidates: ForgePhysicalCandidate[];
+}
+
 export type ForgePendingExternalDecision =
   | ForgePendingDecision
   | ForgePendingTargetDecision
@@ -426,7 +473,8 @@ export type ForgePendingExternalDecision =
   | ForgePendingCostObjectDecision
   | ForgePendingManaPaymentDecision
   | ForgePendingCombatDecision
-  | ForgePendingSelectionDecision;
+  | ForgePendingSelectionDecision
+  | ForgePendingPhysicalIdentityDecision;
 
 export type ForgeExternalMatchStatus =
   | "starting"
@@ -461,6 +509,8 @@ export interface ForgeExternalMatchProgress {
   manaPaymentDecisionsSubmitted: number;
   manaOptionsSelected: number;
   manaPaymentsFallbackToAi: number;
+  physicalIdentityDecisionsRequested: number;
+  physicalIdentityDecisionsSubmitted: number;
 }
 
 export type AgentCardZone =

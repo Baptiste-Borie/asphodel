@@ -4,6 +4,8 @@ import forge.game.Game;
 import forge.game.GameObject;
 import forge.card.MagicColor;
 import forge.card.mana.ManaCostShard;
+import forge.game.card.Card;
+import forge.game.card.CardCollection;
 import forge.game.mana.Mana;
 import forge.game.mana.ManaCostBeingPaid;
 import forge.game.phase.PhaseHandler;
@@ -28,6 +30,11 @@ import java.util.function.Consumer;
 
 final class AsphodelDecisionBroker {
     String mulliganPlayerId;
+    /** V2g Physical Companion: the seat whose hidden-zone events require a physical declaration
+     *  before Forge's own choice is allowed to stand. Null (the default) means no seat is
+     *  physical -- digital mode is behaviorally unchanged. */
+    String physicalPlayerId;
+    private PhysicalIdentityCoordinator physicalCoordinator;
     private final AtomicLong decisionIds = new AtomicLong();
     private final AtomicLong actionIds = new AtomicLong();
     private final AtomicLong targetIds = new AtomicLong();
@@ -66,6 +73,8 @@ final class AsphodelDecisionBroker {
     private long manaPaymentDecisionsSubmitted;
     private long manaOptionsSelected;
     private long manaPaymentsFallbackToAi;
+    private long physicalIdentityDecisionsRequested;
+    private long physicalIdentityDecisionsSubmitted;
     private final List<StrategicFallback> strategicFallbacks = new ArrayList<>();
 
     synchronized void recordStrategicFallback(String family, String method, String sourceCardRef, String reason) {
@@ -147,6 +156,194 @@ final class AsphodelDecisionBroker {
 
     AsphodelDecisionBroker(Consumer<Boolean> waitingListener) {
         this.waitingListener = waitingListener;
+    }
+
+    /** V2g: attaches the physical-identity coordinator for whichever player matches
+     *  {@code physicalPlayerId}. A no-op call site (digital mode, or the non-physical seat in a
+     *  physical match) simply never calls this, and every physical-only code path below is a
+     *  no-op while {@code physicalCoordinator} is null. */
+    void attachPhysicalCoordinator(PhysicalIdentityCoordinator coordinator) {
+        this.physicalCoordinator = coordinator;
+    }
+
+    /** V2g: {@code cheatShuffle} is Forge's one real hook fired on every shuffle of this player's
+     *  library (see PlayerController#cheatShuffle). It is used here purely as a shuffle signal --
+     *  the returned order is never altered -- to invalidate any physical "known upcoming order"
+     *  assumption (spec §12). */
+    void recordPhysicalShuffleIfSelf(Player player) {
+        if (physicalCoordinator != null && physicalCoordinator.isFor(player)) {
+            physicalCoordinator.recordShuffle();
+        }
+    }
+
+    /**
+     * V2g reactive reconciliation checkpoint (spec §10/§11): draw and mill never call a
+     * PlayerController hook in vendor Forge (identity is read directly off the internally-shuffled
+     * library), so there is no seam to intercept them proactively. Instead, EVERY call site that is
+     * about to build an {@code AgentObservation} -- for either seat, since a mill/draw can happen on
+     * either player's turn -- calls this first: it checks whether the physical seat's
+     * Hand/Battlefield/Graveyard/Exile/Command zones grew since the last checkpoint. Any such growth
+     * means Forge silently placed a digitally-arbitrary card there; this blocks (on the same paused
+     * game thread) for a physical_identity_declare round before the original decision -- or its
+     * observation -- is ever built, and reconciles Forge's object for that slot to match.
+     *
+     * <p>This MUST run strictly before the caller's own {@code AgentObservationBuilder.build(...)}
+     * call, never after: the observation attached to the decision that follows a reconciliation has
+     * to already reflect the reconciled zones, not the stale pre-reconciliation state.
+     */
+    void ensurePhysicalReconciled(Game game) {
+        if (physicalCoordinator == null) {
+            return;
+        }
+        while (true) {
+            Map<String, List<Card>> freshByZone = physicalCoordinator.unreconciledNewCardsByZone();
+            if (freshByZone.isEmpty()) {
+                return;
+            }
+            for (Map.Entry<String, List<Card>> entry : freshByZone.entrySet()) {
+                List<Card> fresh = entry.getValue();
+                List<String> declared = requestPhysicalIdentityDecision(
+                        game,
+                        physicalCoordinator.player(),
+                        entry.getKey(),
+                        fresh.size(),
+                        physicalCoordinator.libraryComposition(),
+                        new AgentObservationBuilder().build(game, physicalCoordinator.player())
+                );
+                List<Card> reconciled = physicalCoordinator.reconcile(fresh, declared);
+                physicalCoordinator.confirm(reconciled);
+            }
+        }
+    }
+
+    /**
+     * V2g proactive reconciliation (spec §14): scry/surveil already call a real PlayerController
+     * hook with the exact real cards Forge is about to reveal. For the physical seat, those cards
+     * are still digitally arbitrary relative to the real shuffled deck, so this asks for a physical
+     * declaration for exactly this many cards BEFORE delegating to the existing scry/surveil
+     * selection flow, and reconciles Forge's objects first -- the existing flow then reveals the
+     * true physical identities it already always revealed, unchanged. A no-op (returns
+     * {@code cards} verbatim) for the non-physical seat or in digital mode.
+     */
+    CardCollection reconcilePhysicalLibraryPeek(Game game, Player player, String kind, CardCollection cards) {
+        if (physicalCoordinator == null || !physicalCoordinator.isFor(player) || cards.isEmpty()) {
+            return cards;
+        }
+        // Defensive: catch up on any unrelated pending reconciliation first (e.g. a triggered draw
+        // that happened just before this scry/surveil), so it is never mistakenly folded into this
+        // peek's own declaration round.
+        ensurePhysicalReconciled(game);
+        List<Card> wrongCards = new ArrayList<>(cards);
+        List<String> declared = requestPhysicalIdentityDecision(
+                game,
+                player,
+                kind + "_reveal",
+                wrongCards.size(),
+                physicalCoordinator.libraryComposition(),
+                new AgentObservationBuilder().build(game, player)
+        );
+        List<Card> reconciled = physicalCoordinator.reconcile(wrongCards, declared);
+        return new CardCollection(reconciled);
+    }
+
+    record PhysicalCandidate(String name, int remaining) {}
+
+    record PendingPhysicalIdentityDecision(
+            String decisionId,
+            String type,
+            String playerId,
+            DecisionContext context,
+            String eventKind,
+            int count,
+            List<PhysicalCandidate> candidates
+    ) implements DecisionSnapshot {}
+
+    private record PhysicalIdentityChoice(List<String> declaredNames) implements DecisionChoice {}
+
+    List<String> requestPhysicalIdentityDecision(
+            Game game,
+            Player player,
+            String eventKind,
+            int count,
+            List<PhysicalCandidate> candidates,
+            AgentObservation observation
+    ) {
+        PendingInternal decision;
+        synchronized (this) {
+            ensureCanRequest();
+            String decisionId = "decision-" + decisionIds.incrementAndGet();
+            PendingPhysicalIdentityDecision snapshot = new PendingPhysicalIdentityDecision(
+                    decisionId,
+                    "physical_identity_declare",
+                    playerId(player),
+                    context(game, game.getPhaseHandler()),
+                    eventKind,
+                    count,
+                    List.copyOf(candidates)
+            );
+            decision = new PendingInternal(snapshot, observation, new LinkedHashMap<>());
+            pending = decision;
+            physicalIdentityDecisionsRequested++;
+        }
+        PhysicalIdentityChoice answer = (PhysicalIdentityChoice) await(decision);
+        return answer.declaredNames();
+    }
+
+    void submitPhysicalIdentity(String decisionId, List<String> declaredNames) {
+        PendingInternal decision;
+        synchronized (this) {
+            if (consumedDecisionIds.contains(decisionId)) {
+                throw new ExternalMatchException(
+                        "STALE_DECISION",
+                        "The decision has already been answered."
+                );
+            }
+            decision = pending;
+            if (decision == null) {
+                throw new ExternalMatchException(
+                        "MATCH_NOT_WAITING",
+                        "The external match is not waiting for a decision."
+                );
+            }
+            if (!decision.snapshot().decisionId().equals(decisionId)) {
+                throw new ExternalMatchException(
+                        "DECISION_NOT_FOUND",
+                        "The pending decision does not match decisionId."
+                );
+            }
+            if (!(decision.snapshot() instanceof PendingPhysicalIdentityDecision physical)) {
+                SubmissionKind expected = submissionKind(decision.snapshot());
+                throw new ExternalMatchException(
+                        expected.requiredCode(),
+                        expected.selectorName() + " is required for this decision."
+                );
+            }
+            if (declaredNames == null || declaredNames.size() != physical.count()) {
+                throw new ExternalMatchException(
+                        "DECLARED_COUNT_MISMATCH",
+                        "declaredNames must contain exactly " + physical.count() + " entries."
+                );
+            }
+            Map<String, Integer> remaining = new LinkedHashMap<>();
+            for (PhysicalCandidate candidate : physical.candidates()) {
+                remaining.put(candidate.name(), candidate.remaining());
+            }
+            for (String name : declaredNames) {
+                Integer left = remaining.get(name);
+                if (left == null || left <= 0) {
+                    throw new ExternalMatchException(
+                            "DECLARED_NAME_NOT_FOUND",
+                            "\"" + name + "\" is not a legal remaining candidate for this declaration."
+                    );
+                }
+                remaining.put(name, left - 1);
+            }
+            consumedDecisionIds.add(decisionId);
+            pending = null;
+            physicalIdentityDecisionsSubmitted++;
+        }
+        waitingListener.accept(false);
+        decision.answer().complete(new PhysicalIdentityChoice(List.copyOf(declaredNames)));
     }
 
     List<SpellAbility> requestPriorityDecision(
@@ -754,7 +951,9 @@ final class AsphodelDecisionBroker {
                 manaPaymentDecisionsRequested,
                 manaPaymentDecisionsSubmitted,
                 manaOptionsSelected,
-                manaPaymentsFallbackToAi
+                manaPaymentsFallbackToAi,
+                physicalIdentityDecisionsRequested,
+                physicalIdentityDecisionsSubmitted
         );
     }
 
@@ -924,6 +1123,9 @@ final class AsphodelDecisionBroker {
         if (snapshot instanceof PendingManaPaymentDecision) {
             return SubmissionKind.MANA;
         }
+        if (snapshot instanceof PendingPhysicalIdentityDecision) {
+            return SubmissionKind.PHYSICAL_IDENTITY;
+        }
         return SubmissionKind.ACTION;
     }
 
@@ -934,7 +1136,8 @@ final class AsphodelDecisionBroker {
         VALUE("value", "VALUE_REQUIRED", "VALUE_OUT_OF_RANGE"),
         COST("costId", "COST_ID_REQUIRED", "COST_NOT_FOUND"),
         OBJECT("objectId", "OBJECT_ID_REQUIRED", "OBJECT_NOT_FOUND"),
-        MANA("manaOptionId", "MANA_OPTION_ID_REQUIRED", "MANA_OPTION_NOT_FOUND");
+        MANA("manaOptionId", "MANA_OPTION_ID_REQUIRED", "MANA_OPTION_NOT_FOUND"),
+        PHYSICAL_IDENTITY("declaredNames", "DECLARED_NAMES_REQUIRED", "DECLARED_NAME_NOT_FOUND");
 
         private final String selectorName;
         private final String requiredCode;
@@ -961,7 +1164,8 @@ final class AsphodelDecisionBroker {
 
     sealed interface DecisionSnapshot permits PendingDecision, PendingTargetDecision,
             PendingModeDecision, PendingValueDecision, PendingOptionalCostDecision,
-            PendingCostObjectDecision, PendingManaPaymentDecision, PendingCombatDecision, PendingSelectionDecision {
+            PendingCostObjectDecision, PendingManaPaymentDecision, PendingCombatDecision,
+            PendingSelectionDecision, PendingPhysicalIdentityDecision {
         String decisionId();
     }
 
@@ -1171,7 +1375,9 @@ final class AsphodelDecisionBroker {
             long manaPaymentDecisionsRequested,
             long manaPaymentDecisionsSubmitted,
             long manaOptionsSelected,
-            long manaPaymentsFallbackToAi
+            long manaPaymentsFallbackToAi,
+            long physicalIdentityDecisionsRequested,
+            long physicalIdentityDecisionsSubmitted
     ) {
     }
 
@@ -1179,7 +1385,8 @@ final class AsphodelDecisionBroker {
     }
 
     private sealed interface DecisionChoice permits PrimaryActionChoice, TargetChoice,
-            ModeChoice, ValueChoice, OptionalCostChoice, CostObjectChoice, ManaChoice, CombatChoice, SelectionChoice {
+            ModeChoice, ValueChoice, OptionalCostChoice, CostObjectChoice, ManaChoice, CombatChoice,
+            SelectionChoice, PhysicalIdentityChoice {
     }
 
     private record PrimaryActionChoice(

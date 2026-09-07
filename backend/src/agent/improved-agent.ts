@@ -64,7 +64,7 @@ export class BaselineAsphodelAgentV2b implements VersionedAsphodelAgent {
   choose(o: AgentObservation, d: Decision): AgentChoice {
     if (o.selfPlayerId !== d.playerId) throw new Error("agent_player_mismatch");
     const v = visible(o);
-    const pick = (kind: Exclude<AgentChoice["kind"], "value">, choice: string, reason: string): AgentChoice => ({ decisionId: d.decisionId, kind, choice, reason });
+    const pick = (kind: Exclude<AgentChoice["kind"], "value" | "physical_identity">, choice: string, reason: string): AgentChoice => ({ decisionId: d.decisionId, kind, choice, reason });
     switch (d.type) {
       case "priority_action": {
         const ranked = d.actions.map(a => {

@@ -57,6 +57,19 @@ export class ScriptedHumanDecisionProvider implements HumanDecisionProvider {
         const first = d.options.find(o => !o.finish) ?? d.options.find(o => o.finish) ?? d.options[0]!;
         return { decisionId: d.decisionId, kind: "object", choice: first.objectId, reason };
       }
+      case "physical_identity_declare": {
+        // Greedy deterministic declare: whichever remaining candidate comes first, repeated up to
+        // its own count, until `count` names are declared — mirrors the Forge integration suite's
+        // own test-only auto-declare policy (see forge-bridge.integration.test.ts's declareGreedy).
+        const remaining = new Map(d.candidates.map(c => [c.name, c.remaining]));
+        const declaredNames: string[] = [];
+        for (let i = 0; i < d.count; i++) {
+          const [name] = [...remaining.entries()].find(([, left]) => left > 0)!;
+          declaredNames.push(name);
+          remaining.set(name, remaining.get(name)! - 1);
+        }
+        return { decisionId: d.decisionId, kind: "physical_identity", declaredNames, reason };
+      }
     }
   }
 }

@@ -1,8 +1,17 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import { validateHumanChoice as validateChoice } from "./validate-human-choice.js";
-import { describeDecision } from "./human-decision-render.js";
+import { describeDecision, describePhysicalDeclare } from "./human-decision-render.js";
+import type { AgentChoice } from "../agent/baseline-agent.js";
 import type { AgentObservation, AgentSelfPlayerObservation, ForgePendingCombatDecision, ForgePendingExternalDecision as Decision, ForgePendingManaPaymentDecision } from "../forge/forge-protocol.js";
+
+// MenuItem.choice is typed broadly as AgentChoice, but describeDecision (unlike
+// describePhysicalDeclare) never constructs a physical_identity menu item, so every `.choice`
+// read off a rendered menu item in this file is safe to narrow.
+function asClickable(choice: AgentChoice): Exclude<AgentChoice, { kind: "physical_identity" }> {
+  if (choice.kind === "physical_identity") throw new Error("unexpected physical_identity choice in menu item");
+  return choice;
+}
 
 function observation(): AgentObservation {
   const self: AgentSelfPlayerObservation = {
@@ -54,7 +63,7 @@ it("target_selection (V2e.5): a card target carries its cardRef, a player target
   const prompt = describeDecision(observation(), targetDecision);
   assert.equal(prompt.kind, "menu");
   if (prompt.kind !== "menu") return;
-  const byTargetId = new Map(prompt.items.map(i => [i.choice.choice, i.cardRef]));
+  const byTargetId = new Map(prompt.items.map(i => [asClickable(i.choice).choice, i.cardRef]));
   assert.equal(byTargetId.get("t-1"), null, "a player target has no card to click");
   assert.equal(byTargetId.get("t-2"), "sol-ring-1", "a card target carries its own cardRef");
 });
@@ -75,11 +84,11 @@ it("V2f.1 §8: a player-type target shows a human-readable label, never Forge's 
   const prompt = describeDecision(observation(), targetDecision);
   assert.equal(prompt.kind, "menu");
   if (prompt.kind !== "menu") return;
-  const byTargetId = new Map(prompt.items.map(i => [i.choice.choice, i.label]));
+  const byTargetId = new Map(prompt.items.map(i => [asClickable(i.choice).choice, i.label]));
   assert.equal(byTargetId.get("t-you"), "YOU · 40 LIFE");
   assert.equal(byTargetId.get("t-opponent"), "ASPHODEL · 40 LIFE");
   assert.ok(![...byTargetId.values()].some(label => /External Player/i.test(label)), "must never show Forge's raw engine player name");
-  const byTargetIdChoice = new Map(prompt.items.map(i => [i.label, i.choice.choice]));
+  const byTargetIdChoice = new Map(prompt.items.map(i => [i.label, asClickable(i.choice).choice]));
   assert.equal(byTargetIdChoice.get("YOU · 40 LIFE"), "t-you", "the exact Forge targetId is preserved regardless of label");
 });
 
@@ -112,7 +121,7 @@ it("attackers_selection (V2e.5): an add/remove option carries its cardRef; finis
   const prompt = describeDecision(observation(), combatDecision);
   assert.equal(prompt.kind, "menu");
   if (prompt.kind !== "menu") return;
-  const byObjectId = new Map(prompt.items.map(i => [i.choice.choice, i.cardRef]));
+  const byObjectId = new Map(prompt.items.map(i => [asClickable(i.choice).choice, i.cardRef]));
   assert.equal(byObjectId.get("o-1"), "krenko-1");
   assert.equal(byObjectId.get("o-2"), null);
 });
@@ -213,7 +222,7 @@ it("mana_payment (V2e.5.1): a multi-color source (e.g. Command Tower) preserves 
   if (prompt.kind !== "menu") return;
   const sameSource = prompt.items.filter(i => i.cardRef === "tower-1");
   assert.equal(sameSource.length, 2, "both color options for the same source must both be preserved, not collapsed into one");
-  assert.deepEqual(sameSource.map(i => i.choice.choice), ["opt-w", "opt-u"]);
+  assert.deepEqual(sameSource.map(i => asClickable(i.choice).choice), ["opt-w", "opt-u"]);
 });
 
 it("exposes and validates cancellation only when the pending Forge payment supplies it", () => {
@@ -224,7 +233,7 @@ it("exposes and validates cancellation only when the pending Forge payment suppl
   const prompt = describeDecision(observation(), decision);
   assert.equal(prompt.kind, 'menu');
   if (prompt.kind !== 'menu') return;
-  assert.deepEqual(prompt.items.map(i => [i.control, i.choice.choice, i.cardRef]), [['cancel','cancel-exact',null]]);
+  assert.deepEqual(prompt.items.map(i => [i.control, asClickable(i.choice).choice, i.cardRef]), [['cancel','cancel-exact',null]]);
   assert.doesNotThrow(() => validateChoice(decision, cancel));
   assert.throws(() => validateChoice(decision, {...cancel, choice: 'invented'}));
   assert.throws(() => validateChoice(decision, {...cancel, decisionId: 'stale'}));
@@ -239,9 +248,40 @@ it('library picker uses only current explicit option labels, exact ids and Forge
   const obs=observation(), original=structuredClone(obs); const p=describeDecision(obs,d);
   assert.equal(p.kind,'card_picker'); if(p.kind!=='card_picker') return;
   assert.equal(p.items[0]!.label,'Forest'); assert.equal(p.items[0]!.presentationName,'Forest');
-  assert.deepEqual(p.items.map(i=>i.choice.choice),['one','two','done']);
+  assert.deepEqual(p.items.map(i=>asClickable(i.choice).choice),['one','two','done']);
   assert.deepEqual(p.selected,['card-47']); assert.equal(p.maxSelections,2);
   assert.deepEqual(obs,original);
   d.selectionKind='other_card_choice'; const menu=describeDecision(obs,d); assert.equal(menu.kind,'menu');
   if(menu.kind==='menu') assert.equal(menu.items[0]!.label,'Forest');
+});
+
+it("describePhysicalDeclare (V2g): draw of 7 titles as the opening hand", () => {
+  const prompt = describePhysicalDeclare({ decisionId: "d-p1", eventKind: "draw", count: 7, candidates: [{ name: "Mountain", remaining: 20 }] });
+  assert.match(prompt.title, /opening hand/);
+});
+
+it("describePhysicalDeclare (V2g): a single draw asks which card was drawn", () => {
+  const prompt = describePhysicalDeclare({ decisionId: "d-p2", eventKind: "draw", count: 1, candidates: [{ name: "Mountain", remaining: 20 }] });
+  assert.equal(prompt.title, "Which card did you draw?");
+});
+
+it("describePhysicalDeclare (V2g): mill mentions 'milled'", () => {
+  const prompt = describePhysicalDeclare({ decisionId: "d-p3", eventKind: "mill", count: 3, candidates: [{ name: "Mountain", remaining: 20 }] });
+  assert.match(prompt.title, /milled/);
+});
+
+it("describePhysicalDeclare (V2g): scry_reveal mentions 'scry'", () => {
+  const prompt = describePhysicalDeclare({ decisionId: "d-p4", eventKind: "scry_reveal", count: 1, candidates: [{ name: "Mountain", remaining: 20 }] });
+  assert.match(prompt.title, /scry/);
+});
+
+it("describePhysicalDeclare (V2g): result always carries kind 'physical_declare' and passes decisionId/eventKind/count/candidates through unchanged", () => {
+  const candidates = [{ name: "Mountain", remaining: 20 }, { name: "Sol Ring", remaining: 1 }];
+  const prompt = describePhysicalDeclare({ decisionId: "d-p5", eventKind: "surveil_reveal", count: 2, candidates });
+  assert.equal(prompt.kind, "physical_declare");
+  if (prompt.kind !== "physical_declare") return;
+  assert.equal(prompt.decisionId, "d-p5");
+  assert.equal(prompt.eventKind, "surveil_reveal");
+  assert.equal(prompt.count, 2);
+  assert.deepEqual(prompt.candidates, candidates);
 });

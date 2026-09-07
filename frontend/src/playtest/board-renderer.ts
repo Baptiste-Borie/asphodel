@@ -209,3 +209,39 @@ export function renderHand(
   container.classList.toggle("table-hand--crowded", hand.length > 12);
   container.replaceChildren(...children);
 }
+
+/** Pure. The compact Physical-mode hand indicator's label — see `renderCompactHand`. */
+export function formatCompactHandLabel(count: number): string {
+  return `HAND · ${count}`;
+}
+
+/**
+ * V2g "Physical Companion": the human has real physical cards, so their own hand is never rendered
+ * as a clickable digital surface in Physical mode — just a compact count, plus a small collapsible
+ * verifier (spec §23 "VERIFY MY STATE") listing what Forge currently believes is in that hand, from
+ * the human's own `AgentObservation.hand` (always legitimately visible to the human themselves,
+ * digital or physical). Never interactive — no card here is ever playable/clickable; playing a real
+ * card is declared through the `physical_declare` surface instead, on Forge's own subsequent prompt.
+ */
+export function renderCompactHand(container: HTMLElement, hand: readonly AgentCardObservation[]): void {
+  container.replaceChildren();
+  const summary = document.createElement("p");
+  summary.className = "table-compact-hand-summary";
+  summary.textContent = formatCompactHandLabel(hand.length);
+  container.append(summary);
+  if (hand.length === 0) return;
+
+  const details = document.createElement("details");
+  details.className = "table-compact-hand-verify";
+  const toggle = document.createElement("summary");
+  toggle.textContent = "What does Forge think is in my hand?";
+  const list = document.createElement("ul");
+  list.className = "table-compact-hand-list";
+  for (const card of hand) {
+    const item = document.createElement("li");
+    item.textContent = card.name ?? "Unknown card";
+    list.append(item);
+  }
+  details.append(toggle, list);
+  container.append(details);
+}
