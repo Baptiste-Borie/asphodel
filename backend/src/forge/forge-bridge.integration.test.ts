@@ -294,6 +294,37 @@ function harmlessOpponentDeck(name = "Harmless filler opponent"): ForgeDeckSpec 
   };
 }
 
+// V2f: a real "Partner with" pair — Frodo, Adventurous Hobbit ({W}{B}) and Sam, Loyal Attendant
+// ({1}{G}{W}), each printed naming the other via Forge's own "Partner with:" keyword. WBG identity;
+// plenty of each basic so both commanders are reliably castable without needing duals.
+function frodoAndSamDeck(name = "Frodo and Sam (WBG partners)"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      { name: "Frodo, Adventurous Hobbit", quantity: 1, section: "commander" },
+      { name: "Sam, Loyal Attendant", quantity: 1, section: "commander" },
+      { name: "Plains", quantity: 20, section: "mainboard" },
+      { name: "Swamp", quantity: 20, section: "mainboard" },
+      { name: "Forest", quantity: 19, section: "mainboard" },
+    ],
+  };
+}
+
+// A real, deliberately UNRELATED pair: neither card has any Partner/Partner-with/Friends-forever/
+// Background/Doctor's-companion relationship with the other — Forge itself must reject this, never
+// Asphodel inventing legality for "two legendary creatures".
+function illegalCommanderPairDeck(name = "Illegal pair fixture"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      { name: "Krenko, Tin Street Kingpin", quantity: 1, section: "commander" },
+      { name: "Ayula, Queen Among Bears", quantity: 1, section: "commander" },
+      { name: "Mountain", quantity: 20, section: "mainboard" },
+      { name: "Forest", quantity: 20, section: "mainboard" },
+    ],
+  };
+}
+
 function assertTerminalDeckMatch(
   result: ForgeGameResult,
   controllerClasses = [
@@ -538,6 +569,32 @@ async function waitForManaPaymentDecision(
     observation: AgentObservation;
     pendingDecision: ForgePendingManaPaymentDecision;
   };
+}
+
+/**
+ * Submits mana options (preferring one whose produced color is still a needed shard) until Forge's
+ * payment loop moves on to a DIFFERENT decision entirely — the caller doesn't need to know in
+ * advance how many steps a specific cost takes. Returns that next, non-mana_payment snapshot.
+ */
+async function payFullManaCost(
+  external: ForgeExternalMatchClient,
+  sessionId: string,
+  first: ForgeExternalMatchSnapshot & { pendingDecision: ForgePendingManaPaymentDecision },
+): Promise<ForgeExternalMatchSnapshot> {
+  let payment = first;
+  for (let index = 0; index < 20; index += 1) {
+    const remaining = payment.pendingDecision.remainingCost.shards;
+    const preferred = payment.pendingDecision.options.find(
+      (option) => option.type === "activate_mana_ability" && option.produces.some((color) => remaining.includes(color)),
+    );
+    const chosen = preferred ?? payment.pendingDecision.options[0];
+    if (!chosen) throw new Error("No mana option available to pay the cost.");
+    await external.submitManaOption(sessionId, payment.pendingDecision.decisionId, chosen.manaOptionId);
+    const next = await waitForExternalSnapshot(external, sessionId, (snapshot) => Boolean(snapshot.pendingDecision));
+    if (next.pendingDecision?.type !== "mana_payment") return next;
+    payment = next as ForgeExternalMatchSnapshot & { pendingDecision: ForgePendingManaPaymentDecision };
+  }
+  throw new Error("Mana payment did not resolve within the expected number of steps.");
 }
 
 async function driveSecondaryUntil(
@@ -834,6 +891,90 @@ describe("ForgeBridgeClient integration", () => {
       assert.ok(searched,'real Cultivate search was externalized');
       await external.cancel(sessionId);
     }
+  });
+
+  it("V2f: a real Partner-with pair (Frodo & Sam) loads as two independent commanders, both castable, tax tracked independently", async () => {
+    const client = createClient(); await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const started = await external.startSpecs(frodoAndSamDeck(), harmlessOpponentDeck(), { seed: 24680 });
+
+    const initial = await waitForObservedDecision(external, started.sessionId);
+    const selfStart = observedPlayers(initial.observation).self;
+    assert.deepEqual(
+      selfStart.commanders
+        .map((commander) => ({ name: commander.name, inCommandZone: commander.inCommandZone, castsFromCommand: commander.castsFromCommand }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+      [
+        { name: "Frodo, Adventurous Hobbit", inCommandZone: true, castsFromCommand: 0 },
+        { name: "Sam, Loyal Attendant", inCommandZone: true, castsFromCommand: 0 },
+      ],
+      "both real commanders load into the command zone, independently",
+    );
+    const frodoRef = selfStart.commanders.find((commander) => commander.name === "Frodo, Adventurous Hobbit")!.cardRef;
+    const samRef = selfStart.commanders.find((commander) => commander.name === "Sam, Loyal Attendant")!.cardRef;
+    assert.notEqual(frodoRef, samRef, "each commander keeps its own distinct Forge identity");
+
+    // Cast Frodo ({W}{B}) first — Sam must stay completely untouched.
+    const castFrodo = await driveUntilObservedAction(
+      external, started.sessionId,
+      (o, a) => a.type === "cast_spell" && a.cardName === "Frodo, Adventurous Hobbit"
+        && observedPlayers(o).self.battlefield.some((c) => c.name === "Plains" && !c.tapped)
+        && observedPlayers(o).self.battlefield.some((c) => c.name === "Swamp" && !c.tapped),
+    );
+    await external.submitDecision(started.sessionId, castFrodo.decision.decisionId, castFrodo.action.actionId);
+    const frodoPayment = await waitForManaPaymentDecision(external, started.sessionId);
+    await payFullManaCost(external, started.sessionId, frodoPayment);
+    const afterFrodo = await driveUntilObservation(
+      external, started.sessionId,
+      (o) => observedPlayers(o).self.battlefield.some((c) => c.cardRef === frodoRef),
+    );
+    const selfAfterFrodo = observedPlayers(afterFrodo.observation).self;
+    const frodoAfterFrodo = selfAfterFrodo.commanders.find((c) => c.name === "Frodo, Adventurous Hobbit")!;
+    const samAfterFrodo = selfAfterFrodo.commanders.find((c) => c.name === "Sam, Loyal Attendant")!;
+    assert.equal(frodoAfterFrodo.inCommandZone, false, "Frodo left the command zone onto the battlefield");
+    assert.equal(frodoAfterFrodo.castsFromCommand, 1);
+    assert.equal(samAfterFrodo.inCommandZone, true, "casting Frodo must not move or affect Sam's identity/state");
+    assert.equal(samAfterFrodo.castsFromCommand, 0, "commander tax is tracked independently per commander");
+    assert.equal(samAfterFrodo.cardRef, samRef);
+
+    // Now cast Sam ({1}{G}{W}) too — both end up independently on the battlefield.
+    const castSam = await driveUntilObservedAction(
+      external, started.sessionId,
+      (o, a) => a.type === "cast_spell" && a.cardName === "Sam, Loyal Attendant"
+        && observedPlayers(o).self.battlefield.filter((c) => ["Plains", "Swamp", "Forest"].includes(c.name ?? "") && !c.tapped).length >= 3
+        && observedPlayers(o).self.battlefield.some((c) => c.name === "Forest" && !c.tapped),
+    );
+    await external.submitDecision(started.sessionId, castSam.decision.decisionId, castSam.action.actionId);
+    const samPayment = await waitForManaPaymentDecision(external, started.sessionId);
+    await payFullManaCost(external, started.sessionId, samPayment);
+    const afterSam = await driveUntilObservation(
+      external, started.sessionId,
+      (o) => observedPlayers(o).self.battlefield.some((c) => c.cardRef === samRef),
+    );
+    const selfAfterSam = observedPlayers(afterSam.observation).self;
+    const frodoFinal = selfAfterSam.commanders.find((c) => c.name === "Frodo, Adventurous Hobbit")!;
+    const samFinal = selfAfterSam.commanders.find((c) => c.name === "Sam, Loyal Attendant")!;
+    assert.equal(samFinal.inCommandZone, false);
+    assert.equal(samFinal.castsFromCommand, 1);
+    assert.equal(frodoFinal.inCommandZone, false, "Frodo's own already-settled state is unaffected by casting Sam");
+    assert.equal(frodoFinal.castsFromCommand, 1, "Frodo's tax count did not change just because Sam was cast");
+    assert.ok(selfAfterSam.battlefield.some((c) => c.cardRef === frodoRef));
+    assert.ok(selfAfterSam.battlefield.some((c) => c.cardRef === samRef));
+
+    await external.cancel(started.sessionId);
+  });
+
+  it("V2f: Forge rejects an illegal two-commander pair — Asphodel never invents legality for two unrelated legendary creatures", async () => {
+    const client = createClient(); await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    await assert.rejects(
+      external.startSpecs(illegalCommanderPairDeck(), harmlessOpponentDeck(), { seed: 1 }),
+      (error: unknown) =>
+        error instanceof ForgeBridgeError &&
+        error.code === "ILLEGAL_COMMANDER_PAIR" &&
+        /Krenko, Tin Street Kingpin/.test(error.message) &&
+        /Ayula, Queen Among Bears/.test(error.message),
+    );
   });
 
   it("V2e.7 cancels cycling during mana payment and returns the exact card to hand", async () => {

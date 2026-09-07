@@ -92,6 +92,52 @@ it('imports a public Archidekt spec through shared persistence and can reload th
   } finally { db.close(); }
 });
 
+it("V2f: a real two-commander (Partner) deck stays consistent across every deck path — Archidekt import, Deck Library persistence, and the ForgeDeckSpec the Forge bridge actually receives", async () => {
+  const { ArchidektDeckSource } = await import('./decks/archidekt-deck-source.js');
+  const { ForgeDeckAdapter } = await import('./forge/forge-deck-adapter.js');
+  const db = await createTestDatabase();
+  const payload = { name: 'Frodo and Sam imported', cards: [
+    { quantity: 1, categories: ['Commander'], card: { oracleCard: { name: 'Frodo, Adventurous Hobbit' } } },
+    { quantity: 1, categories: ['Commander'], card: { oracleCard: { name: 'Sam, Loyal Attendant' } } },
+    { quantity: 98, card: { oracleCard: { name: 'Forest' } } },
+  ] };
+  try {
+    const source = new ArchidektDeckSource(async () => ({ ok: true, status: 200, json: async () => payload }));
+    const service = new DeckService(db.db, new FakeCardProvider(), source);
+
+    // Same normalized shape straight out of the Archidekt boundary, before any persistence at all —
+    // this is exactly what "Archidekt direct match" also uses.
+    const directSpec = await source.fetchDeckSpec("https://archidekt.com/decks/456/frodo-and-sam");
+    assert.deepEqual(
+      directSpec.cards.filter((c) => c.section === "commander").map((c) => c.name).sort(),
+      ["Frodo, Adventurous Hobbit", "Sam, Loyal Attendant"],
+    );
+
+    // Archidekt -> Deck Library: both commanders survive persistence, never collapsed to one.
+    const imported = await service.importArchidektDeck("https://archidekt.com/decks/456/frodo-and-sam");
+    assert.equal(imported.totalCards, 100);
+    assert.deepEqual(
+      imported.cards.filter((c) => c.section === "commander").map((c) => c.name).sort(),
+      ["Frodo, Adventurous Hobbit", "Sam, Loyal Attendant"],
+    );
+
+    // The Deck Library's own list view never collapses to a single arbitrary commander either.
+    const [summary] = await service.listDecks();
+    assert.deepEqual(summary!.commanders.map((c) => c.name).sort(), ["Frodo, Adventurous Hobbit", "Sam, Loyal Attendant"]);
+
+    // Deck Library -> ForgeDeckSpec (the exact shape the Forge bridge receives) — same two names,
+    // same structure as the direct-Archidekt path above; never silently collapsed to one commander.
+    const detail = await service.getDeck(imported.id);
+    const forgeSpec = new ForgeDeckAdapter().toForgeDeckSpec(detail);
+    assert.deepEqual(
+      forgeSpec.cards.filter((c) => c.section === "commander").map((c) => c.name).sort(),
+      directSpec.cards.filter((c) => c.section === "commander").map((c) => c.name).sort(),
+    );
+  } finally {
+    db.close();
+  }
+});
+
 it('failed URL imports never persist a partial deck: host, privacy, size, commander and resolution', async () => {
   const { ArchidektDeckSource } = await import('./decks/archidekt-deck-source.js');
   const db = await createTestDatabase();

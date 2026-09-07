@@ -30,7 +30,12 @@ export class ForgeDeckAdapter {
       );
     }
 
-    let commanderCards = 0;
+    // Distinct commander names, not summed quantity: two entries named "Sam, Loyal Attendant"
+    // (or one entry with quantity 2) are the SAME structural problem — a malformed decklist, never
+    // "two commanders". Legality of a specific two-commander PAIR (Partner/Partner with/Friends
+    // forever/Background/Doctor's companion) is never decided here — Forge is the sole authority
+    // for that, checked bridge-side against the resolved cards themselves (V2f).
+    const commanderQuantities = new Map<string, number>();
     let mainboardCards = 0;
 
     for (const card of deck.cards) {
@@ -47,7 +52,7 @@ export class ForgeDeckAdapter {
         );
       }
       if (card.section === "commander") {
-        commanderCards += card.quantity;
+        commanderQuantities.set(card.name, (commanderQuantities.get(card.name) ?? 0) + card.quantity);
       } else if (card.section === "mainboard") {
         mainboardCards += card.quantity;
       } else {
@@ -58,16 +63,22 @@ export class ForgeDeckAdapter {
       }
     }
 
-    if (commanderCards === 0) {
+    if ([...commanderQuantities.values()].some((quantity) => quantity !== 1)) {
       throw new ForgeDeckAdapterError(
         "INVALID_FORGE_DECK",
-        "Commander decks must contain exactly one commander; none was found.",
+        "Each commander must appear exactly once.",
       );
     }
-    if (commanderCards > 1) {
+    if (commanderQuantities.size === 0) {
+      throw new ForgeDeckAdapterError(
+        "INVALID_FORGE_DECK",
+        "Commander decks must contain one or two commanders; none was found.",
+      );
+    }
+    if (commanderQuantities.size > 2) {
       throw new ForgeDeckAdapterError(
         "UNSUPPORTED_COMMANDER_CONFIGURATION",
-        "Asphodel Forge Deck Adapter V1b supports exactly one commander.",
+        `Asphodel supports one or two commanders; found ${commanderQuantities.size}.`,
       );
     }
     if (mainboardCards === 0) {

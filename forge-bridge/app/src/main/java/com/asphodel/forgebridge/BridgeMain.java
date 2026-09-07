@@ -104,6 +104,13 @@ public final class BridgeMain {
                     exception.getMessage(),
                     Map.of("commanderCards", exception.commanderCards())
             );
+        } catch (ForgeDeckFactory.IllegalCommanderPairException exception) {
+            return error(
+                    requestId,
+                    "ILLEGAL_COMMANDER_PAIR",
+                    exception.getMessage(),
+                    Map.of("first", exception.first(), "second", exception.second())
+            );
         } catch (ForgeGameRunner.GameTimeoutException exception) {
             return error(requestId, "GAME_TIMEOUT", exception.getMessage(), null);
         } catch (IllegalArgumentException exception) {

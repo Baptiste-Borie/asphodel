@@ -130,7 +130,7 @@ describe("Deck Library", () => {
     const list = await app.inject({ method: "GET", url: "/decks" });
     assert.equal(list.statusCode, 200);
     assert.equal(list.json().decks.length, 1);
-    assert.equal(list.json().decks[0].commander.name, "Krenko, Tin Street Kingpin");
+    assert.deepEqual(list.json().decks[0].commanders.map((c: { name: string }) => c.name), ["Krenko, Tin Street Kingpin"]);
 
     const rename = await app.inject({
       method: "PATCH",

@@ -27,8 +27,15 @@ final class ForgeDeckFactory {
         return build(spec, true);
     }
 
-    Deck build(DeckSpec spec, boolean requireSingleCommander) {
-        validate(spec, requireSingleCommander);
+    /**
+     * @param requireCommanders false only for the legacy non-Commander engine-test fixture (see
+     *                          {@code BridgeMain.handleRunTestGame}), which legitimately has ZERO
+     *                          commander cards. Every real Commander-format deck always passes
+     *                          {@code true}, and always ends up with exactly one or two commanders
+     *                          — never zero, never three or more (V2f §"DUAL COMMANDERS").
+     */
+    Deck build(DeckSpec spec, boolean requireCommanders) {
+        List<String> commanderNames = validate(spec, requireCommanders);
 
         Map<String, PaperCard> resolved = new LinkedHashMap<>();
         Set<String> missing = new LinkedHashSet<>();
@@ -46,6 +53,18 @@ final class ForgeDeckFactory {
 
         if (!missing.isEmpty()) {
             throw new CardsNotFoundException(new ArrayList<>(missing));
+        }
+
+        // Legality of a SPECIFIC two-commander pair (Partner / Partner with / Friends forever /
+        // Choose a Background / Doctor's companion) is Forge's own call, never Node's or ours to
+        // invent: `CardRules.canBePartnerCommanders` is vendor Forge's own real rules-data method
+        // (forge-core), reading each card's own printed keywords — not a reimplementation.
+        if (commanderNames.size() == 2) {
+            PaperCard first = resolved.get(commanderNames.get(0));
+            PaperCard second = resolved.get(commanderNames.get(1));
+            if (!first.getRules().canBePartnerCommanders(second.getRules())) {
+                throw new IllegalCommanderPairException(first.getName(), second.getName());
+            }
         }
 
         Deck deck = new Deck(spec.name());
@@ -84,7 +103,12 @@ final class ForgeDeckFactory {
         return result;
     }
 
-    private static void validate(DeckSpec spec, boolean requireSingleCommander) {
+    /**
+     * @return the distinct commander card names, in first-seen order (never a summed quantity —
+     *         two entries naming the same card, or one entry with quantity &gt; 1, is a malformed
+     *         decklist, not "two commanders"; see the quantity check below).
+     */
+    private static List<String> validate(DeckSpec spec, boolean requireCommanders) {
         if (spec == null) {
             throw new IllegalArgumentException("deck must be an object.");
         }
@@ -95,7 +119,7 @@ final class ForgeDeckFactory {
             throw new IllegalArgumentException("deck.cards must be an array.");
         }
 
-        long commanderCards = 0;
+        Map<String, Long> commanderQuantities = new LinkedHashMap<>();
         long mainboardCards = 0;
         for (CardSpec card : spec.cards()) {
             if (card == null) {
@@ -115,7 +139,7 @@ final class ForgeDeckFactory {
                 );
             }
             switch (card.section()) {
-                case "commander" -> commanderCards += card.quantity();
+                case "commander" -> commanderQuantities.merge(card.name(), (long) card.quantity(), Long::sum);
                 case "mainboard" -> mainboardCards += card.quantity();
                 default -> throw new IllegalArgumentException(
                         "card.section must be commander or mainboard: " + card.name()
@@ -126,14 +150,18 @@ final class ForgeDeckFactory {
         if (mainboardCards == 0) {
             throw new IllegalArgumentException("Commander decks must contain a non-empty mainboard.");
         }
-        if (requireSingleCommander && commanderCards == 0) {
+        if (commanderQuantities.values().stream().anyMatch(quantity -> quantity != 1)) {
+            throw new IllegalArgumentException("Each commander must appear exactly once.");
+        }
+        if (requireCommanders && commanderQuantities.isEmpty()) {
             throw new IllegalArgumentException(
-                    "Commander decks must contain exactly one commander; none was found."
+                    "Commander decks must contain one or two commanders; none was found."
             );
         }
-        if (requireSingleCommander && commanderCards > 1) {
-            throw new UnsupportedCommanderConfigurationException(commanderCards);
+        if (requireCommanders && commanderQuantities.size() > 2) {
+            throw new UnsupportedCommanderConfigurationException(commanderQuantities.size());
         }
+        return List.copyOf(commanderQuantities.keySet());
     }
 
     record CardSpec(String name, int quantity, String section) {
@@ -159,12 +187,40 @@ final class ForgeDeckFactory {
         private final long commanderCards;
 
         UnsupportedCommanderConfigurationException(long commanderCards) {
-            super("Asphodel Forge Deck Adapter V1b supports exactly one commander.");
+            super("Asphodel supports one or two commanders; found " + commanderCards + ".");
             this.commanderCards = commanderCards;
         }
 
         long commanderCards() {
             return commanderCards;
+        }
+    }
+
+    /**
+     * Thrown when exactly two named commander cards are supplied but Forge's own rules data
+     * (vendor {@code CardRules.canBePartnerCommanders}) says this specific pair cannot share a
+     * command zone — e.g. two unrelated legendary creatures with no Partner/Partner-with/Friends-
+     * forever/Background/Doctor's-companion relationship. Asphodel never invents legality for an
+     * arbitrary pair; this is Forge's own real rules-data check, surfaced as-is.
+     */
+    static final class IllegalCommanderPairException extends RuntimeException {
+        private final String first;
+        private final String second;
+
+        IllegalCommanderPairException(String first, String second) {
+            super("\"" + first + "\" and \"" + second + "\" cannot share a command zone: Forge's own "
+                    + "commander rules (Partner, Partner with, Friends forever, Choose a Background, "
+                    + "Doctor's companion) do not allow this specific pair.");
+            this.first = first;
+            this.second = second;
+        }
+
+        String first() {
+            return first;
+        }
+
+        String second() {
+            return second;
         }
     }
 }

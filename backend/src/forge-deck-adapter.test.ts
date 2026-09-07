@@ -83,10 +83,57 @@ describe("ForgeDeckAdapter", () => {
     );
   });
 
-  it("rejects unsupported multi-commander configurations", () => {
+  it("V2f: accepts a real two-commander (partner) configuration, preserving both entries", () => {
+    const cards = [
+      ...deck().cards,
+      {
+        id: 3,
+        scryfallId: "scryfall-sam",
+        oracleId: "oracle-sam",
+        name: "Sam, Loyal Attendant",
+        manaCost: "{1}{G}{W}",
+        manaValue: 3,
+        typeLine: "Legendary Creature — Halfling Peasant",
+        oracleText: "UI metadata must not cross the bridge.",
+        colors: ["G", "W"],
+        colorIdentity: ["G", "W"],
+        imageUri: "https://cards.example/sam.jpg",
+        quantity: 1,
+        section: "commander" as const,
+      },
+    ];
+    const spec = new ForgeDeckAdapter().toForgeDeckSpec(deck({ cards }));
+    assert.deepEqual(
+      spec.cards.filter((card) => card.section === "commander").map((card) => card.name).sort(),
+      ["Krenko, Tin Street Kingpin", "Sam, Loyal Attendant"],
+    );
+    // Legality of this SPECIFIC pair (Partner/Partner with/Friends forever/Background/Doctor's
+    // companion) is never decided here — only Forge itself validates that (V2f).
+  });
+
+  it("rejects a single commander entry appearing more than once (malformed decklist, not \"two commanders\")", () => {
     const cards = deck().cards.map((card, index) =>
       index === 0 ? { ...card, quantity: 2 } : card,
     );
+    assert.throws(
+      () => new ForgeDeckAdapter().toForgeDeckSpec(deck({ cards })),
+      (error: unknown) =>
+        error instanceof ForgeDeckAdapterError &&
+        error.code === "INVALID_FORGE_DECK" &&
+        /exactly once/.test(error.message),
+    );
+  });
+
+  it("rejects more than two distinct commanders as an unsupported configuration", () => {
+    const cards = [
+      ...deck().cards,
+      { id: 3, scryfallId: "s3", oracleId: "o3", name: "Second Commander", manaCost: null, manaValue: 0,
+        typeLine: "Legendary Creature", oracleText: null, colors: [], colorIdentity: [],
+        imageUri: null, quantity: 1, section: "commander" as const },
+      { id: 4, scryfallId: "s4", oracleId: "o4", name: "Third Commander", manaCost: null, manaValue: 0,
+        typeLine: "Legendary Creature", oracleText: null, colors: [], colorIdentity: [],
+        imageUri: null, quantity: 1, section: "commander" as const },
+    ];
     assert.throws(
       () => new ForgeDeckAdapter().toForgeDeckSpec(deck({ cards })),
       (error: unknown) =>

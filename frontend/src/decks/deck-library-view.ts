@@ -9,10 +9,13 @@ interface DeckSummary {
   createdAt: string;
   updatedAt: string;
   totalCards: number;
-  commander: {
+  // Never a singleton: a real Commander deck can legally have two commanders (Partner, Partner
+  // with, Friends forever, Background, Doctor's companion) — see V2f. Empty only when a deck
+  // somehow has no commander-section card at all.
+  commanders: {
     name: string;
     imageUri: string | null;
-  } | null;
+  }[];
 }
 
 interface DeckCard {
@@ -113,10 +116,11 @@ export function initDeckLibraryView() {
     tile.type = "button";
     tile.addEventListener("click", () => void openDeck(deck.id));
 
+    const [firstCommander] = deck.commanders;
     const visual = document.createElement("div");
     visual.className = "deck-tile-visual";
     visual.append(
-      createCardImage(deck.commander?.name ?? deck.name, deck.commander?.imageUri ?? null, "deck-cover-image"),
+      createCardImage(firstCommander?.name ?? deck.name, firstCommander?.imageUri ?? null, "deck-cover-image"),
     );
 
     const cardCount = document.createElement("span");
@@ -132,7 +136,9 @@ export function initDeckLibraryView() {
 
     const commander = document.createElement("p");
     commander.className = "deck-commander-name";
-    commander.textContent = deck.commander?.name ?? "Commander non renseigné";
+    commander.textContent = deck.commanders.length > 0
+      ? deck.commanders.map((c) => c.name).join(" & ")
+      : "Commander non renseigné";
 
     const date = document.createElement("p");
     date.className = "deck-date";

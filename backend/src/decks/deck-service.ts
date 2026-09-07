@@ -101,7 +101,10 @@ export class DeckService {
         createdAt: string;
         updatedAt: string;
         totalCards: number;
-        commander: { name: string; imageUri: string | null } | null;
+        // Never a singleton: a real Commander deck can legally have two commanders (Partner,
+        // Partner with, Friends forever, Background, Doctor's companion) — see V2f. Order follows
+        // the query's own row order, never re-sorted or arbitrarily collapsed to "the last one".
+        commanders: { name: string; imageUri: string | null }[];
       }
     >();
 
@@ -115,14 +118,14 @@ export class DeckService {
           createdAt: serializeDate(row.createdAt),
           updatedAt: serializeDate(row.updatedAt),
           totalCards: 0,
-          commander: null,
+          commanders: [],
         };
         result.set(row.id, deck);
       }
 
       deck.totalCards += row.quantity ?? 0;
       if (row.section === "commander" && row.cardName) {
-        deck.commander = { name: row.cardName, imageUri: row.imageUri };
+        deck.commanders.push({ name: row.cardName, imageUri: row.imageUri });
       }
     }
 
