@@ -57,12 +57,33 @@ keywords, and P/T the physical card has.
 List<Card> reconcile(List<Card> wrongCards, List<String> declaredNames)
 ```
 
-For each position where `wrongCards[i].getName() != declaredNames[i]`, it finds a real,
-not-yet-claimed `Card` of the declared name still in the library, and swaps it with the wrong card
-using direct `Zone.add`/`Zone.remove` — **never `GameAction.moveTo`**, so no "enters this zone"
-trigger fires a second time for a card that (from Forge's perspective) already silently entered that
-zone once. Zone sizes and rules-legal composition never change; only *which* real object occupies a
-given slot changes.
+Two passes, by design (not by position — Hand/Graveyard/etc. are unordered zones, so there was never
+a real positional correspondence between "the i-th Forge-arbitrary card" and "the i-th declared
+name" to begin with):
+
+1. **Keep by name.** Any wrong card whose name is still needed by the declaration multiset is left
+   completely untouched, wherever it sits in the batch. A batch whose multiset already matches the
+   declaration (Forge's own arbitrary picks happened to already be right, just possibly reordered —
+   very likely in a singleton/near-singleton deck) costs zero card churn.
+2. **Swap the rest from the library.** Whatever is left over is resolved by pulling a same-named real
+   object from the library and ejecting the surplus wrong card there in its place — direct
+   `Zone.add`/`Zone.remove` only, **never `GameAction.moveTo`**, so no "enters this zone" trigger
+   fires a second time for a card that (from Forge's perspective) already silently entered that zone
+   once. Zone sizes and rules-legal composition never change; only *which* real object occupies a
+   given slot changes.
+
+If a still-needed name cannot be found, `reconcile` throws `PhysicalReconciliationException` —
+**never** silently keeps the wrong card or guesses a substitute (see §2.3).
+
+**Candidate pool = library + the batch's own fresh cards, not library alone.** A card Forge already
+(silently, arbitrarily) placed in a zone is no longer physically *in* the library, but its true
+identity is exactly as undeclared as anything still there — and in a singleton/near-singleton deck,
+the ONLY remaining copy of a name can easily be the very card Forge already dealt. `candidates(List<Card> extra)`
+therefore counts `Library ∪ extra`, where `extra` is that batch's own fresh cards for the reactive
+path (draw/mill/…), and `List.of()` for the proactive scry/surveil peek (those cards are still
+genuinely in the library at candidate-computation time — adding them there would double-count). This
+was found and fixed after a real Forge test proved a deck's only copy of a singleton card became
+un-offerable the instant Forge dealt it — see §9.
 
 - **Proactive** (mulligan bottom is already-known hand cards, so only scry/surveil/tutor need this):
   `PlayerControllerAsphodel.arrangeTop` (scry/surveil) calls
@@ -96,7 +117,27 @@ is never touched (it was never derived from order in the first place); only the 
 already known" bookkeeping is reset, so a London-mulligan redraw after a shuffle is correctly treated
 as a brand-new, undeclared event — proven directly by a real Forge integration test (§11).
 
-### 2.3 Known, honest limitation
+### 2.3 Explicit failure, never a silent fallback
+
+`reconcile` never degrades to "keep the wrong card anyway" or invents a substitute. If a still-needed
+declared name cannot be found in the library, it throws `PhysicalReconciliationException` — a plain
+`RuntimeException`, caught by `ExternalMatchSession`'s existing catch-all and surfaced to Node as
+`EXTERNAL_MATCH_FAILED` (class name in the message, full text server-logged). In ordinary operation
+this should never fire at all: candidates always come from `candidates()` (§2.1) directly, so
+`submitPhysicalIdentity`'s own broker-side validation already rejects an illegal name with a
+structured `DECLARED_NAME_NOT_FOUND` *before* `reconcile` is ever called — proven directly by a real
+Forge test (declaring a card that is real, in-deck, but already fully accounted for elsewhere is
+rejected explicitly, decision left pending, nothing consumed; see §9). `reconcile`'s own throw is the
+defensive backstop for a scoping case the broker-level check cannot see in advance: two
+*simultaneous* hidden-zone events in *different* zones within one checkpoint, where the same
+identity is needed by both. Each zone's round is deliberately scoped to `Library ∪ that zone's own
+fresh cards` — never another zone's — because pulling a replacement across zones would risk
+relocating a genuinely-milled/drawn card into the wrong real zone. A name trapped this way is a rare,
+explicitly documented V0 limitation: it fails loudly (`DECLARED_NAME_NOT_FOUND` at the wire level, or
+`PhysicalReconciliationException` if it ever reached `reconcile` directly) rather than ever being
+silently substituted or corrupting state.
+
+### 2.4 Known, honest limitation
 
 A replacement/triggered effect that inspects a drawn/milled card's *specific identity* mid-resolution
 (e.g. "if you drew a nonland card, ...") sees whatever Forge's own shuffle produced, not yet the
@@ -175,12 +216,15 @@ humans debugging their own game, in `playtest-report.ts`'s new `physicalDeclarat
 
 | Event | Mechanism | Status |
 | --- | --- | --- |
-| Opening hand | Reactive (hand 0 -> 7 at game start) | Real Forge integration test |
+| Opening hand | Reactive (hand 0 -> 7 at game start) | Real Forge integration test, incl. a near-singleton 99-card deck stress test |
 | Mulligan redraw | Reactive + shuffle invalidation | Real Forge integration test |
 | Normal draw | Reactive | Real Forge integration test |
+| Singleton/near-singleton draw (already-dealt card still declarable) | Reactive, candidate pool = library + fresh cards (§2.1) | Real Forge integration test (dedicated singleton fixture + 99-card near-singleton fixture) |
 | Scry reveal/keep | Proactive | Real Forge integration test |
 | Surveil reveal | Proactive (same code path as scry) | Integration-tested via shared `arrangeTop` path, not a dedicated fixture |
-| Mill | Reactive (Graveyard growth) | Implemented, exercised only by the generic reconciliation mechanism — no dedicated real-mill Forge fixture test yet |
+| Mill | Reactive (Graveyard growth); Forge mills one real card at a time, each interleaved with its own existing `orderMoveToZoneList` ("order cards moved to Graveyard") decision — confirmed empirically, not assumed | Real Forge integration test |
+| Multi-hidden-zone-event sequence from one spell (draw, then mill) | Reactive, each zone's round independently | Real Forge integration test (Sokka's Haiku: Counter → Draw → order → Mill) |
+| Declaring a name that is real, in-deck, but not a legal candidate for the current round | Broker-level `DECLARED_NAME_NOT_FOUND`, decision left pending, nothing consumed (§2.3) | Real Forge integration test |
 | Tutor/search | No reconciliation needed — Forge's real candidate pool is already correctly named | Already proven by V2e.8's Cultivate fixture; unchanged by V2g |
 | Discard (own hand, any cause) | No reconciliation needed — own hand is always already-known/reconciled | N/A |
 | Exile from library, reveal from library, put on top/bottom, library-to-battlefield/command | Reactive, same generic mechanism (by zone) | Implemented, not covered by a dedicated fixture test |
@@ -188,11 +232,16 @@ humans debugging their own game, in `playtest-report.ts`'s new `physicalDeclarat
 
 ## 7. Unsupported / theoretical
 
-- A replacement/trigger inspecting a drawn/milled card's exact identity mid-resolution (§2.3).
-- Simultaneous multi-zone events in one checkpoint (e.g. a mill AND a draw both resolving before the
-  next decision) are handled by looping one declaration round per zone in a stable order
-  (Hand, Battlefield, Graveyard, Exile, Command) — implemented, not exercised by a dedicated test.
-- Turn-scoped bookkeeping counters possibly double-counting across a reconciliation swap (§2.3).
+- A replacement/trigger inspecting a drawn/milled card's exact identity mid-resolution (§2.4).
+- **True same-instant multi-zone simultaneity** — one checkpoint seeing two zones' fresh cards
+  *before either round is requested* — is architecturally supported (each zone's round is
+  independently scoped, §2.1) but was not observed from a single real card during testing: Forge
+  processes even a compound effect like Sokka's Haiku's "Draw a card, then mill three cards" as a
+  sequence of separate checkpoints (draw declared, then an ordinary `orderMoveToZoneList` decision,
+  then mill declared one real card at a time), never literally simultaneously. A true same-instant
+  case, if it exists, would exercise the same explicit-failure path already proven when a needed
+  identity is scoped out of a round entirely (§2.3) — not a silent one.
+- Turn-scoped bookkeeping counters possibly double-counting across a reconciliation swap (§2.4).
 - No multiplayer (still strictly 1 human vs 1 Asphodel, per spec §29).
 - No camera/vision of any kind (per spec §28) — see §8.
 
@@ -229,11 +278,24 @@ human-vs-agent-runner.ts  ──►  PhysicalCardProvider.chooseCard(request)
 
 ## 9. Tests
 
-- **Forge integration** (`backend/src/forge/forge-bridge.integration.test.ts`, real JVM, no mocks):
-  opening hand + shuffle-invalidated redraw + normal draw all reconcile to exactly the declared
-  multiset (not merely the right count); a real Opt scry pile reveals the declared identity and the
-  following draw reconciles to the same name. Both new tests pass alongside the full pre-existing
-  63-test Forge suite (61 pre-existing + 2 new), zero regression.
+- **Forge integration** (`backend/src/forge/forge-bridge.integration.test.ts`, real JVM, no mocks),
+  5 dedicated V2g tests:
+  1. Opening hand + shuffle-invalidated redraw + normal draw all reconcile to exactly the declared
+     multiset (not merely the right count).
+  2. A real Opt scry pile reveals the declared identity and the following draw reconciles to the
+     same name.
+  3. A deck's only copy of a singleton card, already dealt by Forge into the opening hand, still
+     shows as a legal, declarable candidate (proves §2.1's candidate-pool fix directly).
+  4. A near-singleton 99-card mainboard (92 distinct singleton nonland cards): every one of the 7
+     dealt opening-hand cards remains declarable, and the candidate pool sums to the full 99, not
+     merely what is still physically in the library.
+  5. Sokka's Haiku's real draw-then-mill sequence (Counter → Draw → an ordinary `orderMoveToZoneList`
+     decision → Mill) reconciles correctly across a genuine multi-hidden-zone-event chain
+     interleaved with an existing (non-physical) decision kind; separately, declaring a real,
+     in-deck card that is already fully accounted for elsewhere is rejected explicitly
+     (`DECLARED_NAME_NOT_FOUND`) without consuming the pending decision.
+
+  All 5 pass alongside the full pre-existing 61-test Forge suite (66 total), zero regression.
 - **Backend unit**: `physical-ledger.test.ts`, `physical-card-provider.test.ts`,
   `human-decision-render.test.ts` (`describePhysicalDeclare`), `playtest-session-manager.test.ts`
   (physical-mode session lifecycle, resume, routing), `playtest-report.test.ts` (playMode +

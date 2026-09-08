@@ -1,7 +1,9 @@
 import type { ForgeDeckSpec } from "../forge-protocol.js";
 
 // Printed, singleton creature fixtures. Native Forge supplies every runtime rule.
-const red = [
+// Exported so other tests can build their own near-singleton decks from proven-real card names
+// (e.g. a V2g Physical Companion candidate-pool stress test) without re-verifying resolution.
+export const red = [
   "Balduvian Barbarians", "Barbarian Horde", "Bird Maiden", "Boggart Brute",
   "Borderland Minotaur", "Brazen Scourge", "Breakneck Berserker", "Canyon Minotaur",
   "Cobblebrute", "Cyclops of One-Eyed Pass", "Defiant Khenra", "Deranged Whelp",
@@ -16,7 +18,7 @@ const red = [
   "Nimble Birdsticker", "Ogre Resister", "Ogre Warrior", "Onakke Ogre", "Orazca Raptor",
   "Pensive Minotaur", "Pyromantic Pilgrim", "Raging Bull", "Raging Cougar", "Raging Goblin",
 ];
-const green = [
+export const green = [
   "Alpine Grizzly", "Argothian Swine", "Axebane Beast", "Balduvian Bears", "Barbary Apes",
   "Bear Cub", "Broodhunter Wurm", "Brushstrider", "Canopy Spider", "Centaur Courser",
   "Charging Badger", "Cloudcrown Oak", "Colossadactyl", "Colossodon Yearling", "Cylian Elf",

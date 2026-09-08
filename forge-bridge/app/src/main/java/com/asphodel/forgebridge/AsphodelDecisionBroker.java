@@ -207,7 +207,10 @@ final class AsphodelDecisionBroker {
                         physicalCoordinator.player(),
                         entry.getKey(),
                         fresh.size(),
-                        physicalCoordinator.libraryComposition(),
+                        // V2g: these very cards are the pool addition -- they already left the
+                        // library, but their true identity is exactly as undeclared as anything
+                        // still there (see PhysicalIdentityCoordinator#candidates).
+                        physicalCoordinator.candidates(fresh),
                         new AgentObservationBuilder().build(game, physicalCoordinator.player())
                 );
                 List<Card> reconciled = physicalCoordinator.reconcile(fresh, declared);
@@ -239,7 +242,9 @@ final class AsphodelDecisionBroker {
                 player,
                 kind + "_reveal",
                 wrongCards.size(),
-                physicalCoordinator.libraryComposition(),
+                // V2g: these cards are still physically IN the library right now (scry/surveil only
+                // peeks) -- Player.getCardsIn(Library) already counts them, so no "extra" here.
+                physicalCoordinator.candidates(List.of()),
                 new AgentObservationBuilder().build(game, player)
         );
         List<Card> reconciled = physicalCoordinator.reconcile(wrongCards, declared);

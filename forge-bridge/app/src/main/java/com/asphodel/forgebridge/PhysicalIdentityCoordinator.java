@@ -71,6 +71,13 @@ final class PhysicalIdentityCoordinator {
      * physical event kind implied by which zone they appeared in. Iteration order is stable (Hand,
      * Battlefield, Graveyard, Exile, Command) so several simultaneous events resolve
      * deterministically, one physical declaration round at a time.
+     *
+     * <p>Each round's declaration and reconciliation is scoped to ONLY that round's own zone (see
+     * {@link #candidates} / {@link #reconcile}) -- a genuinely rare case where the same identity is
+     * needed by two simultaneous events in different zones within one checkpoint is a documented V0
+     * limitation (docs/physical-companion-v0.md §7), not silently guessed at: {@link #reconcile}
+     * throws {@link PhysicalReconciliationException} rather than attempting an unsafe cross-zone
+     * swap (which could relocate a genuinely-milled/drawn card into the wrong real zone).
      */
     Map<String, List<Card>> unreconciledNewCardsByZone() {
         Map<String, List<Card>> result = new LinkedHashMap<>();
@@ -100,13 +107,25 @@ final class PhysicalIdentityCoordinator {
     }
 
     /**
-     * The library's real current composition, grouped by name -- the sole authoritative candidate
-     * pool for a physical declaration. This is Forge's own remaining Library contents at this exact
-     * instant; nothing invented, nothing sourced from a Node-side ledger.
+     * The authoritative candidate pool for one physical declaration round: Forge's real current
+     * Library composition, PLUS {@code extra} -- the very cards this round is about to reconcile.
+     *
+     * <p>{@code extra} matters for correctness, not just convenience: a card already silently
+     * placed by Forge (e.g. a fresh draw) is no longer physically IN the library, but its true
+     * identity is exactly as undeclared as anything still there -- and in a singleton (or
+     * near-singleton) deck, the ONLY remaining copy of a name can easily be the very card Forge
+     * already (arbitrarily) dealt. Omitting it would make that name silently un-offerable even
+     * though declaring it is completely legitimate (the physical human really did draw their only
+     * copy). Callers pass {@code List.of()} when the cards in question are still genuinely IN the
+     * library at candidate-computation time (the scry/surveil peek, {@link
+     * AsphodelDecisionBroker#reconcilePhysicalLibraryPeek}) -- adding them there would double-count.
      */
-    List<AsphodelDecisionBroker.PhysicalCandidate> libraryComposition() {
+    List<AsphodelDecisionBroker.PhysicalCandidate> candidates(List<Card> extra) {
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (Card c : player.getCardsIn(ZoneType.Library)) {
+            counts.merge(c.getName(), 1, Integer::sum);
+        }
+        for (Card c : extra) {
             counts.merge(c.getName(), 1, Integer::sum);
         }
         List<AsphodelDecisionBroker.PhysicalCandidate> result = new ArrayList<>();
@@ -117,13 +136,29 @@ final class PhysicalIdentityCoordinator {
     }
 
     /**
-     * Reconciles {@code wrongCards} (real objects Forge itself already placed) against
-     * {@code declaredNames} (same size, positional): for each pair whose names differ, swaps the
-     * wrong card back into the library for a same-named library card, so the exact same zone slot
-     * ends up holding an object whose real name matches the physical declaration. Uses direct Zone
-     * membership changes (not GameAction.moveTo), so library/zone sizes never change and no
-     * zone-change trigger fires a second time for a card that is only being relabeled to its true
-     * physical identity. Returns the reconciled objects in declaredNames order.
+     * Reconciles {@code wrongCards} (real objects Forge itself already placed in one zone) against
+     * {@code declaredNames} (same size) so that zone ends up holding exactly the declared name
+     * multiset -- backed by real Forge objects with matching rules text. Two passes:
+     *
+     * <ol>
+     * <li><b>Keep by name, not by position.</b> Hand/Graveyard/etc. are unordered zones -- there is
+     * no real positional correspondence between "the i-th Forge-arbitrary card" and "the i-th
+     * declared name" to begin with. Any wrong card whose name is still needed by the declaration
+     * multiset is left completely untouched, regardless of which position declared that name. This
+     * also means a card Forge already happens to have gotten right needs no swap at all, and a
+     * batch whose multiset already matches the declaration (just reordered) does zero card churn.
+     * <li><b>Swap the rest from the library.</b> Whatever is left over (wrong cards whose name is
+     * not needed, and declared names not yet satisfied) is resolved by pulling a same-named real
+     * object from the library and ejecting the surplus wrong card there in its place -- direct Zone
+     * membership changes only, per the class doc.
+     * </ol>
+     *
+     * <p>If a still-needed declared name cannot be found anywhere in the library, this throws
+     * {@link PhysicalReconciliationException} rather than silently keeping the wrong card or
+     * guessing a substitute -- candidates are always drawn from {@link #candidates}, so this should
+     * never happen for a legally-submitted declaration UNLESS the same identity was simultaneously
+     * needed by a different zone's round within the same checkpoint (see {@link
+     * #unreconciledNewCardsByZone}'s doc) -- a rare, explicitly documented V0 limitation.
      *
      * <p>Known limitation: engine bookkeeping keyed off "entered this zone this turn" (e.g.
      * descend/landfall-style turn trackers) is updated by the underlying {@code Zone.add} call as
@@ -136,28 +171,46 @@ final class PhysicalIdentityCoordinator {
                     "physical reconciliation size mismatch: " + wrongCards.size()
                             + " cards vs " + declaredNames.size() + " declared names");
         }
-        List<Card> reconciled = new ArrayList<>(wrongCards.size());
+        List<String> stillNeeded = new ArrayList<>(declaredNames);
+        List<Card> kept = new ArrayList<>();
+        List<Card> toEject = new ArrayList<>();
+        for (Card wrong : wrongCards) {
+            int index = stillNeeded.indexOf(wrong.getName());
+            if (index >= 0) {
+                stillNeeded.remove(index);
+                kept.add(wrong);
+            } else {
+                toEject.add(wrong);
+            }
+        }
+        // Invariant (guaranteed by construction, not runtime-checked): stillNeeded.size() ==
+        // toEject.size() == wrongCards.size() - kept.size(), since wrongCards.size() ==
+        // declaredNames.size() was already checked above.
+        List<Card> reconciled = new ArrayList<>(kept);
         List<Card> claimedFromLibrary = new ArrayList<>();
         PlayerZone library = player.getZone(ZoneType.Library);
-        for (int i = 0; i < wrongCards.size(); i++) {
-            Card wrong = wrongCards.get(i);
-            String declaredName = declaredNames.get(i);
-            if (wrong.getName().equals(declaredName)) {
-                reconciled.add(wrong);
-                continue;
+        for (int i = 0; i < stillNeeded.size(); i++) {
+            String name = stillNeeded.get(i);
+            Card eject = toEject.get(i);
+            Zone ejectZone = eject.getZone();
+            if (ejectZone == null) {
+                throw new PhysicalReconciliationException(
+                        "Card \"" + eject.getName() + "\" has no current zone; cannot reconcile it.");
             }
-            Card replacement = findInLibrary(declaredName, claimedFromLibrary);
-            Zone wrongZone = wrong.getZone();
-            if (replacement == null || wrongZone == null) {
-                // Candidates always come from the real library composition, so this should not
-                // happen; degrade to the Forge-chosen object rather than lose the card entirely.
-                reconciled.add(wrong);
-                continue;
+            Card replacement = findInLibrary(name, claimedFromLibrary);
+            if (replacement == null) {
+                throw new PhysicalReconciliationException(
+                        "No remaining real card named \"" + name + "\" could be found in the library to "
+                                + "reconcile the slot currently holding \"" + eject.getName() + "\". This is "
+                                + "never silently guessed or substituted -- it can happen when the SAME "
+                                + "identity is needed by two simultaneous hidden-zone events in different "
+                                + "zones within one checkpoint, a rare, documented V0 limitation (see "
+                                + "docs/physical-companion-v0.md).");
             }
-            wrongZone.remove(wrong);
+            ejectZone.remove(eject);
             library.remove(replacement);
-            wrongZone.add(replacement);
-            library.add(wrong);
+            ejectZone.add(replacement);
+            library.add(eject);
             claimedFromLibrary.add(replacement);
             reconciled.add(replacement);
         }
@@ -179,5 +232,17 @@ final class PhysicalIdentityCoordinator {
      */
     void confirm(List<Card> cards) {
         trackedCards.addAll(cards);
+    }
+
+    /**
+     * Thrown instead of ever silently keeping a wrong identity or guessing a substitute -- see
+     * {@link #reconcile}. Surfaces to Node as a generic {@code EXTERNAL_MATCH_FAILED} (the bridge's
+     * existing catch-all for an unexpected {@code RuntimeException} on the game thread), with this
+     * message logged server-side; V0 does not add a dedicated wire error code for it.
+     */
+    static final class PhysicalReconciliationException extends RuntimeException {
+        PhysicalReconciliationException(String message) {
+            super(message);
+        }
     }
 }

@@ -3,7 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { driveBaseline } from "./testing/external-controller-driver.js";
-import { commanderFixtures } from "./testing/commander-fixtures.js";
+import { commanderFixtures, green, red } from "./testing/commander-fixtures.js";
 import { afterEach, describe, it } from "node:test";
 import { DeckService } from "../decks/deck-service.js";
 import type { DatabaseConnection } from "../db/client.js";
@@ -897,8 +897,10 @@ describe("ForgeBridgeClient integration", () => {
     if (decision.type !== "physical_identity_declare") throw new Error("expected physical declare");
     assert.equal(decision.eventKind, "draw");
     assert.equal(decision.count, 7);
-    // 20-card mainboard minus the 7 already dealt into hand before this checkpoint ever runs.
-    assert.equal(decision.candidates.reduce((sum, c) => sum + c.remaining, 0), 13);
+    // Full 20-card mainboard: the candidate pool is Library (13 left) PLUS the 7 already-dealt
+    // fresh cards themselves (still undeclared, so still legitimately declarable — e.g. in a
+    // singleton deck the ONLY remaining copy of a name can be the very card Forge already dealt).
+    assert.equal(decision.candidates.reduce((sum, c) => sum + c.remaining, 0), 20);
     const openingHand = ["Goblin Piker", "Lightning Bolt", "Lightning Bolt", "Mountain", "Mountain", "Mountain", "Mountain"];
     await external.submitPhysicalIdentity(sessionId, decision.decisionId, openingHand);
     state = await waitForExternalSnapshot(external, sessionId, (s) => Boolean(s.pendingDecision));
@@ -1019,6 +1021,219 @@ describe("ForgeBridgeClient integration", () => {
       await submitDeterministicSecondary(external, sessionId, d);
     }
     assert.fail("Physical scry reconciliation proof not reached");
+  });
+
+  it("V2g Physical Companion: a singleton card Forge already drew stays declarable (candidate pool = library + fresh cards)", { timeout: 30_000 }, async () => {
+    const client = createClient(); await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const singletonNames = ["Sol Ring", "Lightning Bolt", "Goblin Piker", "Grizzly Bears"];
+    const deck: ForgeDeckSpec = { name: "Singleton candidate pool fixture", cards: [
+      { name: "Krenko, Tin Street Kingpin", quantity: 1, section: "commander" },
+      { name: "Mountain", quantity: 15, section: "mainboard" },
+      ...singletonNames.map((name) => ({ name, quantity: 1, section: "mainboard" as const })),
+    ] };
+    const { sessionId } = await external.startSpecs(deck, harmlessOpponentDeck(), { seed: 3, physicalPlayerId: "player-1" });
+    const state = await waitForExternalSnapshot(external, sessionId, (s) => Boolean(s.pendingDecision));
+    const decision = state.pendingDecision!;
+    assert.equal(decision.type, "physical_identity_declare");
+    if (decision.type !== "physical_identity_declare") throw new Error("expected physical declare");
+    const dealtHand = observedPlayers(state.observation!).self.hand.map((c) => c.name!);
+    const dealtSingletons = dealtHand.filter((name) => singletonNames.includes(name));
+    assert.ok(dealtSingletons.length > 0, "fixture/seed must actually deal at least one singleton for this test to be meaningful");
+    const remaining = new Map(decision.candidates.map((c) => [c.name, c.remaining]));
+    for (const name of dealtSingletons) {
+      // The deck's ONLY copy of this name was already (silently, arbitrarily) dealt by Forge --
+      // it no longer physically sits in the library -- but it must still show as exactly 1 legally
+      // declarable candidate, not 0 and not absent, since its true identity is still undeclared.
+      assert.equal(remaining.get(name), 1, `the deck's only "${name}" must remain declarable after being dealt`);
+    }
+    // Declare exactly what Forge already dealt (the "no physical surprise" case): every singleton
+    // needs zero swap at all (already correctly placed), proving reconciliation is a true no-op here.
+    await external.submitPhysicalIdentity(sessionId, decision.decisionId, dealtHand);
+    const after = await waitForExternalSnapshot(external, sessionId, (s) => Boolean(s.pendingDecision));
+    assert.deepEqual(observedPlayers(after.observation!).self.hand.map((c) => c.name).sort(), dealtHand.sort());
+    await external.cancel(sessionId);
+  });
+
+  it("V2g Physical Companion: a near-singleton 99-card opening hand keeps every dealt card declarable at scale", { timeout: 30_000 }, async () => {
+    const client = createClient(); await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const singletons = [...red, ...green.slice(0, 35)];
+    assert.equal(new Set(singletons).size, 92, "92 distinct real singleton nonland cards, zero duplicates");
+    const deck: ForgeDeckSpec = { name: "Near-singleton 99 fixture", cards: [
+      { name: "Krenko, Tin Street Kingpin", quantity: 1, section: "commander" },
+      { name: "Mountain", quantity: 7, section: "mainboard" },
+      ...singletons.map((name) => ({ name, quantity: 1, section: "mainboard" as const })),
+    ] };
+    const { sessionId } = await external.startSpecs(deck, harmlessOpponentDeck(), { seed: 24680, physicalPlayerId: "player-1" });
+    const state = await waitForExternalSnapshot(external, sessionId, (s) => Boolean(s.pendingDecision));
+    const decision = state.pendingDecision!;
+    assert.equal(decision.type, "physical_identity_declare");
+    if (decision.type !== "physical_identity_declare") throw new Error("expected physical declare");
+    assert.equal(decision.count, 7);
+    const dealtHand = observedPlayers(state.observation!).self.hand.map((c) => c.name!);
+    assert.equal(dealtHand.length, 7);
+    const remaining = new Map(decision.candidates.map((c) => [c.name, c.remaining]));
+    // Total candidate mass is the FULL 99-card mainboard (library 92 + the 7 already-dealt fresh
+    // cards) -- never merely whatever is still physically left in the library.
+    assert.equal([...remaining.values()].reduce((a, b) => a + b, 0), 99);
+    for (const name of dealtHand) {
+      assert.ok((remaining.get(name) ?? 0) >= 1, `"${name}" (already dealt by Forge) must remain declarable even as a singleton`);
+    }
+    await external.submitPhysicalIdentity(sessionId, decision.decisionId, dealtHand);
+    const after = await waitForExternalSnapshot(external, sessionId, (s) => Boolean(s.pendingDecision));
+    assert.deepEqual(observedPlayers(after.observation!).self.hand.map((c) => c.name).sort(), dealtHand.sort());
+    await external.cancel(sessionId);
+  });
+
+  it("V2g Physical Companion: one spell's draw-then-mill produces a real multi-hidden-zone-event sequence, and declaring an already-fully-accounted card fails explicitly", { timeout: 60_000 }, async () => {
+    const client = createClient(); await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    // Sokka's Haiku (3UU instant): "Counter target spell. Draw a card, then mill three cards.
+    // Untap target land." All targets (Counter's spell target, Untap's land target) are chosen up
+    // front at cast time; Draw and Mill need no decision of their own. Countering our OWN Lightning
+    // Bolt (already on the stack -- no opponent cooperation needed) resolves Counter -> Draw -> Mill
+    // -> Untap in one uninterrupted chain, with no NEW target/mode decision along the way.
+    //
+    // Confirmed empirically (not assumed): this does NOT collapse into one single atomic
+    // physical_identity_declare covering both zones. Forge interleaves an ordinary, pre-existing
+    // (V2e.8) "order cards moved to Graveyard" (`ordering_selection`/"zone_order") decision between
+    // the draw and the mill, and mills one real card at a time. This is still exactly the kind of
+    // "simultaneous multi-zone event" spec V2g §11 asks for: a real hidden-zone-event sequence from
+    // one spell, spanning two different zones, interleaved with an ordinary (non-physical) decision
+    // kind -- proving the reconciliation checkpoint composes correctly with the rest of the existing
+    // decision infrastructure, not merely in isolation.
+    const deck: ForgeDeckSpec = { name: "Multi-zone event fixture", cards: [
+      { name: "Talrand, Sky Summoner", quantity: 1, section: "commander" },
+      { name: "Island", quantity: 11, section: "mainboard" },
+      { name: "Mountain", quantity: 1, section: "mainboard" },
+      { name: "Sokka's Haiku", quantity: 1, section: "mainboard" },
+      { name: "Lightning Bolt", quantity: 1, section: "mainboard" },
+      { name: "Sol Ring", quantity: 1, section: "mainboard" },
+      { name: "Grizzly Bears", quantity: 1, section: "mainboard" },
+    ] };
+    const { sessionId } = await external.startSpecs(deck, harmlessOpponentDeck(), { seed: 909, physicalPlayerId: "player-1" });
+
+    // Opening hand: exactly 4 Island + 1 Mountain + both spells -- declared outright regardless of
+    // what Forge actually dealt.
+    let state = await waitForExternalSnapshot(external, sessionId, (s) => Boolean(s.pendingDecision));
+    let decision = state.pendingDecision!;
+    assert.equal(decision.type, "physical_identity_declare");
+    if (decision.type !== "physical_identity_declare") throw new Error("expected opening hand declare");
+    await external.submitPhysicalIdentity(sessionId, decision.decisionId,
+      ["Island", "Island", "Island", "Island", "Mountain", "Sokka's Haiku", "Lightning Bolt"]);
+    // No mulliganPlayerId is configured for this fixture (mulligan mechanics are not what's under
+    // test here), so Forge auto-keeps the hand silently and the very next decision is real gameplay.
+
+    // Six land-drop turns, declaring "Island" for every incidental draw along the way (leaving Sol
+    // Ring/Grizzly Bears untouched in the library as real mill fodder for later).
+    for (let turn = 0; turn < 6; turn += 1) {
+      let landPlayed = false;
+      for (let step = 0; step < 100 && !landPlayed; step += 1) {
+        state = await waitForExternalSnapshot(external, sessionId, (s) => Boolean(s.pendingDecision));
+        decision = state.pendingDecision!;
+        if (decision.type === "physical_identity_declare") {
+          assert.equal(decision.eventKind, "draw");
+          assert.equal(decision.count, 1);
+          await external.submitPhysicalIdentity(sessionId, decision.decisionId, ["Island"]);
+          continue;
+        }
+        if (decision.type === "priority_action") {
+          const land = decision.actions.find((a) => a.type === "play_land");
+          if (land) { await external.submitDecision(sessionId, decision.decisionId, land.actionId); landPlayed = true; continue; }
+          await external.submitDecision(sessionId, decision.decisionId, decision.actions.find((a) => a.type === "pass")!.actionId);
+          continue;
+        }
+        await submitDeterministicSecondary(external, sessionId, decision);
+      }
+      assert.ok(landPlayed, `turn ${turn + 1}: a land was never played`);
+    }
+
+    // Cast Lightning Bolt (paid with the Mountain) targeting the opponent -- it will never resolve.
+    const boltCast = await driveUntilObservedAction(external, sessionId,
+      (_o, a) => a.type === "cast_spell" && a.cardName === "Lightning Bolt");
+    await external.submitDecision(sessionId, boltCast.decision.decisionId, boltCast.action.actionId);
+    const boltTarget = await waitForTargetDecision(external, sessionId);
+    const opponentTarget = boltTarget.pendingDecision.targets.find((t) => t.type === "player" && t.playerId !== "player-1")!;
+    await external.submitTarget(sessionId, boltTarget.pendingDecision.decisionId, opponentTarget.targetId);
+    let payment = await waitForManaPaymentDecision(external, sessionId);
+    const afterBoltPayment = await payFullManaCost(external, sessionId, payment);
+
+    // Immediately (same priority window -- the caster keeps priority after putting a spell on the
+    // stack), cast Sokka's Haiku (paid with the 5 Islands) targeting that exact Lightning Bolt.
+    assert.equal(afterBoltPayment.pendingDecision?.type, "priority_action");
+    const haikuCast = await driveUntilObservedAction(external, sessionId,
+      (_o, a) => a.type === "cast_spell" && a.cardName === "Sokka's Haiku");
+    await external.submitDecision(sessionId, haikuCast.decision.decisionId, haikuCast.action.actionId);
+    // Two targets are chosen up front (Counter's spell target, then Untap's land target) --
+    // whichever legal option comes first is fine for both (only one spell on the stack; any Island
+    // is an equally legal untap target).
+    for (let i = 0; i < 4; i += 1) {
+      const targetState = await waitForExternalSnapshot(external, sessionId, (s) => Boolean(s.pendingDecision));
+      if (targetState.pendingDecision!.type !== "target_selection") break;
+      const t = targetState.pendingDecision as ForgePendingTargetDecision;
+      const chosen = t.targets[0]?.targetId ?? t.finishTargetId!;
+      assert.ok(chosen);
+      await external.submitTarget(sessionId, t.decisionId, chosen);
+    }
+    payment = await waitForManaPaymentDecision(external, sessionId);
+    await payFullManaCost(external, sessionId, payment);
+
+    // Sokka's Haiku is now fully cast (targeted + paid) and sitting on the stack -- pass priority
+    // until it starts resolving.
+    for (let step = 0; step < 10; step += 1) {
+      state = await waitForExternalSnapshot(external, sessionId, (s) => Boolean(s.pendingDecision));
+      decision = state.pendingDecision!;
+      if (decision.type !== "priority_action") break;
+      await external.submitDecision(sessionId, decision.decisionId, decision.actions.find((a) => a.type === "pass")!.actionId);
+    }
+
+    // Counter -> Draw -> Mill -> Untap all resolve with no further target/mode decision needed --
+    // but (confirmed empirically, not assumed) NOT as one single atomic checkpoint: Forge interleaves
+    // an ordinary, pre-existing (V2e.8) "order cards moved to Graveyard" decision between the draw
+    // and the mill, and mills one real card at a time rather than a single count=3 batch. The
+    // reconciliation mechanism has to hold up across this genuine mixed sequence -- a real
+    // multi-hidden-zone-event chain from one spell, interleaved with an ordinary decision kind, not
+    // merely one clean batch.
+    decision = state.pendingDecision!;
+    assert.equal(decision.type, "physical_identity_declare");
+    if (decision.type !== "physical_identity_declare") throw new Error("expected the first physical declare (draw)");
+    assert.equal(decision.eventKind, "draw");
+    assert.equal(decision.count, 1);
+    const firstDrawDecision = decision;
+
+    // Prove items 4/6 directly and deterministically: "Sokka's Haiku" is a real card in this exact
+    // deck, but only 1 copy exists and it is already fully accounted for (on the stack, resolving)
+    // -- it can never legally be a "remaining" candidate for ANY physical declaration again. This
+    // must fail explicitly, never silently substitute or crash, and must not consume the decision.
+    await assert.rejects(
+      external.submitPhysicalIdentity(sessionId, firstDrawDecision.decisionId, ["Sokka's Haiku"]),
+      (error: unknown) => error instanceof ForgeBridgeError && error.code === "DECLARED_NAME_NOT_FOUND",
+    );
+    const stillPending = await external.get(sessionId);
+    assert.equal(stillPending.pendingDecision?.decisionId, firstDrawDecision.decisionId,
+      "the rejected declaration must not consume the pending decision");
+
+    // Declare the draw correctly, then drain every remaining decision generically (any kind: more
+    // physical declarations, the ordinary zone-order selection, priority passes) until the game
+    // returns to a stable priority window, recording which physical event kinds actually occurred.
+    const seenEventKinds = new Set<string>([firstDrawDecision.eventKind]);
+    await external.submitPhysicalIdentity(sessionId, firstDrawDecision.decisionId, declareGreedy(firstDrawDecision));
+    for (let step = 0; step < 30; step += 1) {
+      state = await waitForExternalSnapshot(external, sessionId, (s) => Boolean(s.pendingDecision));
+      decision = state.pendingDecision!;
+      if (decision.type === "priority_action") break;
+      if (decision.type === "physical_identity_declare") {
+        seenEventKinds.add(decision.eventKind);
+        await external.submitPhysicalIdentity(sessionId, decision.decisionId, declareGreedy(decision));
+        continue;
+      }
+      await submitDeterministicSecondary(external, sessionId, decision);
+    }
+    assert.ok(seenEventKinds.has("draw") && seenEventKinds.has("mill"),
+      "Sokka's Haiku's own draw-then-mill produced both physical event kinds across one real sequence");
+
+    await external.cancel(sessionId);
   });
 
   it("V2e.8 pays Uurg with each exact Strangled Cemetery color and keeps library search options private", async () => {
