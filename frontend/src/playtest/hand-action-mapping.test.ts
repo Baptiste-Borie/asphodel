@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { decideCardAction, mapActionsToCards, mapPriorityActionsToHand, splitCardActionMapByHand } from "./hand-action-mapping.js";
+import { buildDockItems, decideCardAction, mapActionsToCards, mapPriorityActionsToHand, splitCardActionMapByHand } from "./hand-action-mapping.js";
 import type { AgentCardObservation, DecisionPrompt, MenuItem } from "./types.js";
 
 function handCard(cardRef: string, name = "Mountain"): AgentCardObservation {
@@ -142,4 +142,100 @@ it("splitCardActionMapByHand: duplicate card names (two Mountains, one in hand o
   assert.deepEqual(board.byCardRef.get("mtn-battlefield-1")?.map(i => i.choice.choice), ["activate-mtn"]);
   assert.equal(hand.byCardRef.has("mtn-battlefield-1"), false);
   assert.equal(board.byCardRef.has("mtn-hand-1"), false);
+});
+
+// --- buildDockItems (V2g.1: "expose physical hand actions in Companion mode") ---------------
+
+it("DIGITAL: a hand-mapped cast action is filtered from the dock, exactly as before", () => {
+  const items = [menuItem("Pass priority", "pass", null), menuItem("Cast Stinkweed Imp", "cast-imp", "imp-hand-1")];
+  const combined = mapActionsToCards(menuPrompt(items), ["imp-hand-1"]);
+  const { hand, board } = splitCardActionMapByHand(combined, ["imp-hand-1"]);
+  const dock = buildDockItems({ hand, board, unmapped: combined.unmapped }, "digital");
+  assert.deepEqual(dock.map(i => i.label), ["Pass priority"]);
+});
+
+it("PHYSICAL: the same hand-mapped cast action remains in the dock", () => {
+  const items = [menuItem("Pass priority", "pass", null), menuItem("Cast Stinkweed Imp", "cast-imp", "imp-hand-1")];
+  const combined = mapActionsToCards(menuPrompt(items), ["imp-hand-1"]);
+  const { hand, board } = splitCardActionMapByHand(combined, ["imp-hand-1"]);
+  const dock = buildDockItems({ hand, board, unmapped: combined.unmapped }, "physical");
+  assert.deepEqual(dock.map(i => i.label).sort(), ["Cast Stinkweed Imp", "Pass priority"].sort());
+});
+
+it("PHYSICAL: a legal play_land action mapped to hand remains in the dock", () => {
+  const items = [menuItem("Pass priority", "pass", null), menuItem("Play Forest", "play-forest", "forest-hand-1")];
+  const combined = mapActionsToCards(menuPrompt(items), ["forest-hand-1"]);
+  const { hand, board } = splitCardActionMapByHand(combined, ["forest-hand-1"]);
+  const dock = buildDockItems({ hand, board, unmapped: combined.unmapped }, "physical");
+  assert.ok(dock.some(i => i.label === "Play Forest" && i.choice.choice === "play-forest"));
+});
+
+it("PHYSICAL: Pass priority remains available", () => {
+  const items = [menuItem("Pass priority", "pass", null), menuItem("Cast Lightning Bolt", "cast-bolt", "bolt-hand-1")];
+  const combined = mapActionsToCards(menuPrompt(items), ["bolt-hand-1"]);
+  const { hand, board } = splitCardActionMapByHand(combined, ["bolt-hand-1"]);
+  const dock = buildDockItems({ hand, board, unmapped: combined.unmapped }, "physical");
+  assert.ok(dock.some(i => i.label === "Pass priority"));
+});
+
+it("PHYSICAL: board-mapped actions are not duplicated into the dock (kept on their existing direct-card surface)", () => {
+  const items = [
+    menuItem("Pass priority", "pass", null),
+    menuItem("Cast Krenko, Tin Street Kingpin", "cast-krenko", "krenko-hand-1"),
+    menuItem("Activate Skirk Prospector", "activate-skirk", "skirk-battlefield-1"),
+  ];
+  const combined = mapActionsToCards(menuPrompt(items), ["krenko-hand-1", "skirk-battlefield-1"]);
+  const { hand, board } = splitCardActionMapByHand(combined, ["krenko-hand-1"]);
+  const dock = buildDockItems({ hand, board, unmapped: combined.unmapped }, "physical");
+  assert.deepEqual(dock.map(i => i.label).sort(), ["Cast Krenko, Tin Street Kingpin", "Pass priority"].sort());
+  assert.equal(dock.some(i => i.label === "Activate Skirk Prospector"), false, "still represented by the clickable battlefield card, not the dock");
+});
+
+it("PHYSICAL: command-zone / battlefield behavior is unchanged — a command-zone-mapped action stays out of the dock exactly as in Digital", () => {
+  const items = [menuItem("Cast Commander", "cast-cmdr", "cmdr-1")];
+  const combined = mapActionsToCards(menuPrompt(items), ["cmdr-1"]); // no hand refs — a command-zone card is never "hand"
+  const { hand, board } = splitCardActionMapByHand(combined, []);
+  const digitalDock = buildDockItems({ hand, board, unmapped: combined.unmapped }, "digital");
+  const physicalDock = buildDockItems({ hand, board, unmapped: combined.unmapped }, "physical");
+  assert.deepEqual(digitalDock, []);
+  assert.deepEqual(physicalDock, []);
+});
+
+it("exact AgentChoice/action id is preserved end to end through buildDockItems", () => {
+  const items = [menuItem("Cast Lightning Bolt", "cast-bolt-exact-id", "bolt-hand-1")];
+  const combined = mapActionsToCards(menuPrompt(items), ["bolt-hand-1"]);
+  const { hand, board } = splitCardActionMapByHand(combined, ["bolt-hand-1"]);
+  const dock = buildDockItems({ hand, board, unmapped: combined.unmapped }, "physical");
+  assert.equal(dock.length, 1);
+  assert.equal(dock[0]!.choice.choice, "cast-bolt-exact-id");
+  assert.equal(dock[0]!.choice.decisionId, "d-1");
+  assert.equal(dock[0], items[0], "the exact same MenuItem object is surfaced — never a rebuilt copy");
+});
+
+it("PHYSICAL: duplicate same-name hand cards do not collapse — each keeps its own distinct dock entry", () => {
+  const items = [
+    menuItem("Play Mountain", "play-mtn-1", "mtn-1"),
+    menuItem("Play Mountain", "play-mtn-2", "mtn-2"),
+  ];
+  const combined = mapActionsToCards(menuPrompt(items), ["mtn-1", "mtn-2"]);
+  const { hand, board } = splitCardActionMapByHand(combined, ["mtn-1", "mtn-2"]);
+  const dock = buildDockItems({ hand, board, unmapped: combined.unmapped }, "physical");
+  assert.equal(dock.length, 2);
+  assert.deepEqual(dock.map(i => i.choice.choice).sort(), ["play-mtn-1", "play-mtn-2"]);
+});
+
+it("PHYSICAL: when the Forge decision changes, stale hand actions disappear (buildDockItems is a pure function of the CURRENT mapping only)", () => {
+  const before = [menuItem("Cast Stinkweed Imp", "cast-imp", "imp-hand-1"), menuItem("Pass priority", "pass", null)];
+  const combinedBefore = mapActionsToCards(menuPrompt(before), ["imp-hand-1"]);
+  const splitBefore = splitCardActionMapByHand(combinedBefore, ["imp-hand-1"]);
+  const dockBefore = buildDockItems({ ...splitBefore, unmapped: combinedBefore.unmapped }, "physical");
+  assert.ok(dockBefore.some(i => i.label === "Cast Stinkweed Imp"));
+
+  // Next decision: the Imp already resolved off the stack — no longer a legal hand action at all.
+  const after = [menuItem("Pass priority", "pass", null)];
+  const combinedAfter = mapActionsToCards(menuPrompt(after), ["imp-hand-1"]);
+  const splitAfter = splitCardActionMapByHand(combinedAfter, ["imp-hand-1"]);
+  const dockAfter = buildDockItems({ ...splitAfter, unmapped: combinedAfter.unmapped }, "physical");
+  assert.equal(dockAfter.some(i => i.label === "Cast Stinkweed Imp"), false);
+  assert.deepEqual(dockAfter.map(i => i.label), ["Pass priority"]);
 });

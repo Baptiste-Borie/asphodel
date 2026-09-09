@@ -15,7 +15,7 @@ import { combatSelectedCardRefs } from "./combat-selection.js";
 import { renderDecision } from "./decision-renderer.js";
 import { FramePlaybackQueue } from "./frame-playback.js";
 import { createHandActionMenu } from "./hand-action-menu.js";
-import { decideCardAction, mapActionsToCards, splitCardActionMapByHand, type CardActionMap } from "./hand-action-mapping.js";
+import { buildDockItems, decideCardAction, mapActionsToCards, splitCardActionMapByHand, type CardActionMap } from "./hand-action-mapping.js";
 import { computePreviewAction } from "./preview-action.js";
 import { groupManaPaymentOptions, type ManaPaymentGroups } from "./mana-payment-mapping.js";
 import { createManaPaymentOverlay } from "./mana-payment-overlay.js";
@@ -704,10 +704,17 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     };
   }
 
-  /** The action dock only ever shows what a card cannot already represent — "Pass priority"/"Finish" and any legal action with no matching visible card (hand or board). Title/context are untouched; only the menu's own item list is filtered. */
-  function filterDockDecision(pending: WebPendingDecisionDTO, unmapped: MenuItem[] | null): WebPendingDecisionDTO {
-    if (!unmapped || pending.rendered.kind !== "menu") return pending;
-    return { ...pending, rendered: { ...pending.rendered, items: unmapped } };
+  /**
+   * The action dock only ever shows what a card cannot already represent. In Digital mode that's
+   * "Pass priority"/"Finish" and any legal action with no matching visible card (hand or board). In
+   * Physical mode (V2g.1) it's the same PLUS every action mapped to a human hand card, since the
+   * compact hand is never a clickable digital surface there — see `buildDockItems`. `dockItems` is
+   * the already-play-mode-aware list computed by the caller; title/context are untouched, only the
+   * menu's own item list is replaced.
+   */
+  function filterDockDecision(pending: WebPendingDecisionDTO, dockItems: MenuItem[] | null): WebPendingDecisionDTO {
+    if (!dockItems || pending.rendered.kind !== "menu") return pending;
+    return { ...pending, rendered: { ...pending.rendered, items: dockItems } };
   }
 
   /**
@@ -758,7 +765,9 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       lastObservation = state.observation;
       renderTableIfChanged(state.observation, state.pendingDecision, active);
     }
-    renderDecisionIfChanged(state, active?.unmapped ?? null);
+    // V2g.1: which of `active`'s mapped items belong in the dock depends on Play Mode — see
+    // `buildDockItems`'s doc comment for the exact Digital/Physical rule.
+    renderDecisionIfChanged(state, active ? buildDockItems(active, currentPlayMode) : null);
   }
 
   /** Feeds any newly-arrived frames into the queue and (re)starts playback — safe to call every poll; a call while already playing is a harmless no-op re-entry that keeps draining the same shared queue. */
@@ -847,7 +856,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     );
   }
 
-  function renderDecisionIfChanged(state: WebPlaytestStateDTO, unmapped: MenuItem[] | null): void {
+  function renderDecisionIfChanged(state: WebPlaytestStateDTO, dockItems: MenuItem[] | null): void {
     const key = JSON.stringify(state.pendingDecision) + (submitting ? ":submitting" : "");
     if (key === lastDecisionKey) return;
     lastDecisionKey = key;
@@ -885,8 +894,12 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     }
 
     if (state.pendingDecision) {
-      renderDecision(decisionDock, filterDockDecision(state.pendingDecision, unmapped), (choice) => void submitChoice(choice));
-      if (unmapped && state.pendingDecision.rendered.kind === 'menu' && unmapped.length < state.pendingDecision.rendered.items.length) {
+      renderDecision(decisionDock, filterDockDecision(state.pendingDecision, dockItems), (choice) => void submitChoice(choice));
+      // The hint only makes sense when something was ACTUALLY left off the dock in favor of a
+      // clickable card — in Physical mode that's board/commander cards only (hand actions are back
+      // in `dockItems`, see `buildDockItems`), so comparing against `dockItems.length` (rather than
+      // the old bare `unmapped`) keeps the hint accurate in both Play Modes.
+      if (dockItems && state.pendingDecision.rendered.kind === 'menu' && dockItems.length < state.pendingDecision.rendered.items.length) {
         const hint = document.createElement('p'); hint.className = 'table-action-hint'; hint.textContent = 'Choose a highlighted card, or an action below.';
         decisionDock.querySelector('.decision-title')?.after(hint);
       }

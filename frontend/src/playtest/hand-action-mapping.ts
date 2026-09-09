@@ -81,3 +81,33 @@ export function decideCardAction(items: readonly MenuItem[]): CardActionDecision
   if (items.length === 1) return { kind: "submit", choice: items[0]!.choice };
   return { kind: "menu", items: [...items] };
 }
+
+/**
+ * Pure. Decides which already-legal menu items belong in the explicit decision dock, given the
+ * current Play Mode (V2g). This is the exact seam `playtest-view.ts` was missing (V2g.1): mapping a
+ * hand action onto a cardRef is not, by itself, a reason to hide it — that's only true where the
+ * matching card is ALSO a clickable digital surface.
+ *
+ * DIGITAL: unchanged from V2e.6 — both hand and board cards are clickable digital surfaces, so
+ * every hand/board-mapped action is represented there instead and only `unmapped` reaches the dock.
+ *
+ * PHYSICAL ("Physical Companion"): the human's own hand is real cardboard, never a clickable
+ * digital surface (`renderCompactHand`, not `renderHand`) — so every action mapped to a HAND
+ * cardRef must still surface here, verbatim (exact label, exact `AgentChoice`), alongside the
+ * unmapped items. Board/commander-mapped actions keep their existing direct-card affordance in
+ * BOTH modes and are deliberately left out of the dock here — including them would duplicate an
+ * action that's already reachable by clicking the card, which is the "IMPORTANT DISTINCTION" this
+ * function exists to preserve (do not simply disable all filtering in Physical mode).
+ *
+ * Never re-derives legality and never invents an item: every returned `MenuItem` is one already
+ * present in `mapping.hand.byCardRef`/`mapping.unmapped`, untouched — so its `choice` (the exact
+ * Forge `AgentChoice`) submits exactly as it would have from a clickable card.
+ */
+export function buildDockItems(
+  mapping: { hand: CardActionMap; board: CardActionMap; unmapped: MenuItem[] },
+  playMode: "digital" | "physical",
+): MenuItem[] {
+  if (playMode !== "physical") return mapping.unmapped;
+  const handItems = [...mapping.hand.byCardRef.values()].flat();
+  return [...mapping.unmapped, ...handItems];
+}
