@@ -46,3 +46,13 @@
 .physical-board[data-density=preview] .physical-life { font-size: 22px; }
 .physical-board[data-density=preview] .physical-identity { font-size: 13px; }
 .physical-commander-casts { position: absolute; bottom: 2px; left: 2px; right: 2px; background: #111e; color: #eed9ad; font: 9px system-ui; padding: 3px; }
+.table-card-caption, .table-card-stats { display: none; }
+.physical-board .table-battlefield-cards .table-card { aspect-ratio: 1 / 1.08; }
+.physical-board .table-battlefield-cards .table-card-slot { aspect-ratio: 1 / 1.15; }
+.physical-board .table-battlefield-cards .table-card-image { height: 195%; width: 100%; object-fit: cover; object-position: top; transform: translateY(-12%); }
+.physical-board .table-battlefield-cards .table-card-caption { display: block; position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent,#101613 35%); padding: 13px 4px 5px; font-size: 10px; text-align: left; }
+.physical-board .table-battlefield-cards .table-card-stats { display: block; position: absolute; right: 2px; top: 2px; padding: 2px 4px; border-radius: 3px; background: #101613ee; color: #fff0cc; font-size: 12px; }
+.physical-board .table-land-zone .table-card { aspect-ratio: 1.15; }
+.physical-board .table-land-zone .table-card-slot { aspect-ratio: 1; }
+.physical-board .table-land-zone .table-card-image { height: 220%; transform: translateY(-15%); }
+.physical-board .table-card-face { overflow: hidden; }

@@ -175,6 +175,13 @@ export function createTableCard(
     badge.textContent = `×${options.count}`;
     children.push(badge);
   }
+  if (!concealed) {
+    const caption = document.createElement('span'); caption.className = 'table-card-caption'; caption.textContent = name;
+    children.push(caption);
+    if (card.power !== null && card.toughness !== null) {
+      const stats = document.createElement('span'); stats.className = 'table-card-stats'; stats.textContent = `${card.power}/${card.toughness}`; children.push(stats);
+    }
+  }
   element.replaceChildren(...children);
 
   activationState.set(element, { card, onActivate: options.onActivate });

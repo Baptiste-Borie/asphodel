@@ -70,7 +70,7 @@ export function collectVisibleCardNames(observation: AgentObservation): string[]
 }
 
 function presentationFor(card: AgentCardObservation, callbacks: BoardCallbacks): CardPresentation | null | undefined {
-  return card.name ? callbacks.getPresentation(card.name) : null;
+  return card.name && !card.hidden && !card.faceDown ? callbacks.getPresentation(card.name) : null;
 }
 
 /** One "row" of cards to reconcile: a display group in the default (collapsed) case, or a single real card (count 1) while `expand` is active for a selection decision — see `renderCardRow`. */
@@ -177,7 +177,8 @@ export function renderLandZone(container: HTMLElement, player: AgentPlayerObserv
  * is derived from a decklist. `expand` (V2e.5): see `renderBattlefieldHalf`.
  */
 export function renderCommanderDock(container: HTMLElement, player: AgentPlayerObservation, callbacks: BoardCallbacks, expand = false): void {
-  const groups = rowsFor(commandZoneCards(player), expand);
+  const groups = rowsFor(commandZoneCards(player), true);
+  void expand; // Commanders retain individual identity and casts even when their faces match.
   renderCardRow(container, groups, callbacks, "table-card--commander");
 }
 
@@ -196,7 +197,7 @@ export function renderHand(
   const existing = new Map(Array.from(container.children, node => [(node as HTMLElement).dataset.cardRef, node as HTMLElement]));
   const children = hand.map((card, index) => {
     const playable = handActions?.isPlayable(card) ?? false;
-    const node = createTableCard(card, card.name ? getPresentation(card.name) : null, {
+    const node = createTableCard(card, card.name && !card.hidden && !card.faceDown ? getPresentation(card.name) : null, {
       className: playable ? "table-card--hand table-card--playable" : "table-card--hand",
       ...(playable && handActions ? { onActivate: handActions.onActivate } : {}),
     }, existing.get(card.cardRef));

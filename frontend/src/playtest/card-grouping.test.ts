@@ -161,3 +161,18 @@ it("V2e.6 §9: a countered token never groups with an uncountered one of the sam
   const groups = groupCards(cards);
   assert.equal(groups.length, 2);
 });
+
+it('never hides differing ownership, types, keywords or future observed state', () => {
+  const base = card({cardRef:'a'});
+  for (const state of [{ownerId:'other'}, {typeLine:'Artifact Creature'}, {combatKeywords:['Flying']}, {attachedTo:'other'}]) {
+    assert.equal(groupCards([base, {...base, cardRef:'b', ...state}]).length, 2);
+  }
+});
+it('concealed cards never group by an internally populated name', () => {
+  assert.equal(groupCards([card({cardRef:'a',hidden:true}), card({cardRef:'b',hidden:true})]).length, 2);
+});
+it('a token army splits modified and tapped subsets and merges restored state', () => {
+  const army = Array.from({length:32}, (_,i) => card({cardRef:`t${i}`, tapped:i<16, counters: i>=30 ? {'+1/+1':1} : null}));
+  assert.deepEqual(groupCards(army).map(g => g.count), [16,14,2]);
+  assert.equal(groupCards(army.map(c => ({...c,tapped:false,counters:null})))[0]?.count,32);
+});

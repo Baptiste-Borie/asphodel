@@ -19,18 +19,15 @@ export interface CardGroup {
  * hiding a real difference behind a shared stack.
  */
 function groupSignature(card: AgentCardObservation): string {
-  const counters = card.counters
-    ? Object.entries(card.counters).sort(([a], [b]) => a.localeCompare(b)).map(([type, n]) => `${type}:${n}`).join(",")
-    : "";
-  return JSON.stringify([
-    card.name,
-    card.tapped,
-    card.summoningSick,
-    card.power,
-    card.toughness,
-    counters,
-    Boolean(card.token),
-  ]);
+  // Unknown future state stays part of the signature. Hidden objects never aggregate by secrets.
+  if (card.hidden || card.faceDown || !card.name) return JSON.stringify(['concealed', card.cardRef]);
+  const { cardRef: _identity, ...state } = card;
+  function canonical(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)]));
+    return value;
+  }
+  return JSON.stringify(canonical(state));
 }
 
 /**
