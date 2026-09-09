@@ -12,6 +12,7 @@ export interface TableCardOptions {
   onActivate?: (card: AgentCardObservation, element: HTMLElement) => void;
   /** True when this is the card currently pinned in the preview panel. */
   selected?: boolean;
+  onInspect?: (card: AgentCardObservation, element: HTMLElement) => void;
   className?: string;
   /**
    * Wraps the card in a fixed-aspect "slot" sized to reserve room for a 90°-rotated (tapped) card
@@ -54,7 +55,7 @@ export function tableCardClassName(
 }
 
 /** Per-element mutable state for the single, stable click listener attached at creation — so a REUSED element (see `existingCardElement` below) always calls the CURRENT `card`/`onActivate` it was most recently rendered with, never a stale closure from when it was first created. */
-const activationState = new WeakMap<HTMLElement, { card: AgentCardObservation; onActivate?: (card: AgentCardObservation, element: HTMLElement) => void }>();
+const activationState = new WeakMap<HTMLElement, { card: AgentCardObservation; onActivate?: (card: AgentCardObservation, element: HTMLElement) => void; onInspect?: (card: AgentCardObservation, element: HTMLElement) => void }>();
 const hasClickListener = new WeakSet<HTMLElement>();
 
 /**
@@ -184,12 +185,16 @@ export function createTableCard(
   }
   element.replaceChildren(...children);
 
-  activationState.set(element, { card, onActivate: options.onActivate });
+  activationState.set(element, { card, onActivate: options.onActivate, onInspect: options.onInspect });
   if (options.onActivate && !hasClickListener.has(element)) {
     element.addEventListener("click", (event) => {
       event.stopPropagation();
       const state = activationState.get(element);
       state?.onActivate?.(state.card, element);
+    });
+    element.addEventListener('contextmenu', event => {
+      const state = activationState.get(element);
+      if (state?.onInspect) { event.preventDefault(); state.onInspect(state.card, element); }
     });
     hasClickListener.add(element);
   }

@@ -98,3 +98,18 @@
 @media(max-height:850px) { .physical-board .table-battlefield-cards .table-card-slot, .physical-board .table-battlefield-cards .table-card { width: 84px; } .physical-board[data-density=preview] .table-battlefield-cards .table-card-slot, .physical-board[data-density=preview] .table-battlefield-cards .table-card { width: 54px; } }
 @media(max-width:850px) { .table-root--physical .table-stack-control { right: 245px; } .physical-board { grid-template-columns: 75px minmax(0,1fr) 85px; } .physical-scene[data-count='3'][data-focused=false] { grid-template-columns: 1fr; } }
 @media(prefers-reduced-motion:reduce) { .physical-life-delta { animation: none; } }
+/* Preview overlap must be bounded by the actual preview card width. */
+.physical-board[data-density=preview] .table-battlefield-cards .table-card-slot:not(:first-child) { margin-left: calc(-1 * min(var(--bf-card-overlap),24px)); }
+.physical-board[data-density=preview] .table-pile { width: 30px; }
+.physical-board[data-density=preview] .table-pile-face { width: 28px; height: 40px; }
+.physical-board[data-density=preview] .table-pile-label { font-size: 7px; }
+.physical-board[data-density=preview] .table-public-zones { flex-wrap: wrap; gap: 8px 4px; }
+/* Two commanders share the command band without covering identity/life above it. */
+.physical-board .table-commander-dock { flex-wrap: nowrap; max-height: 100%; overflow: auto; }
+.physical-board .table-commander-dock[data-multiple=true] .table-card-slot,
+.physical-board .table-commander-dock[data-multiple=true] .table-card { width: 48px; }
+.physical-board[data-density=preview] .table-commander-dock[data-multiple=true] .table-card-slot,
+.physical-board[data-density=preview] .table-commander-dock[data-multiple=true] .table-card { width: 34px; }
+.physical-board .table-battlefield-cards .table-card-slot:not(:first-child) { margin-left: calc(-1 * min(var(--bf-card-overlap),24px)); }
+.physical-board .table-battlefield-cards .table-card-token-type,
+.physical-board .table-battlefield-cards .table-card-token-pt { display: none; }

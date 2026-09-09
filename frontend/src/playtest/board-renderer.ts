@@ -8,6 +8,7 @@ export interface BoardCallbacks {
   getPresentation: (name: string) => CardPresentation | null | undefined;
   /** Battlefield/commander cards only — the hand never pins the preview. */
   onCardActivate: (card: AgentCardObservation, element: HTMLElement) => void;
+  onCardInspect?: (card: AgentCardObservation, element: HTMLElement) => void;
   isSelected: (card: AgentCardObservation) => boolean;
   /** V2e.5: true while this card has a mapped legal action for the CURRENT selection decision (attackers/blockers/targets/cost-object) — gets the same clickable highlight as a playable hand card. Omitted (or always false) outside such a decision. */
   isPlayable?: (card: AgentCardObservation) => boolean;
@@ -108,6 +109,7 @@ function renderCardRow(container: HTMLElement, groups: CardGroup[], callbacks: B
     const className = [extraClassName, callbacks.isPlayable?.(card) ? "table-card--playable" : ""].filter(Boolean).join(" ");
     const root = createTableCard(card, presentationFor(card, callbacks), {
       onActivate: callbacks.onCardActivate,
+      onInspect: callbacks.onCardInspect,
       selected: callbacks.isSelected(card),
       combatSelected: callbacks.isCombatSelected?.(card) ?? false,
       className,

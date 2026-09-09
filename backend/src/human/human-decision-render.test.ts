@@ -43,6 +43,8 @@ it("priority_action items carry the exact Forge cardRef for card-backed actions,
   if (prompt.kind !== "menu") return;
   const pass = prompt.items.find(i => i.label === "Pass priority")!;
   assert.equal(pass.cardRef, null);
+  assert.equal(pass.control, "pass");
+  assert.equal(asClickable(pass.choice).choice, "pass");
   const byCardRef = new Map(prompt.items.map(i => [i.cardRef, i.label]));
   assert.equal(byCardRef.get("mtn-1"), "Play Mountain");
   assert.equal(byCardRef.get("mtn-2"), "Play Mountain");
@@ -63,6 +65,7 @@ it("target_selection (V2e.5): a card target carries its cardRef, a player target
   const prompt = describeDecision(observation(), targetDecision);
   assert.equal(prompt.kind, "menu");
   if (prompt.kind !== "menu") return;
+  assert.equal(prompt.items[0]?.playerId, "player-2");
   const byTargetId = new Map(prompt.items.map(i => [asClickable(i.choice).choice, i.cardRef]));
   assert.equal(byTargetId.get("t-1"), null, "a player target has no card to click");
   assert.equal(byTargetId.get("t-2"), "sol-ring-1", "a card target carries its own cardRef");

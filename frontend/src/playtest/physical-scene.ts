@@ -75,6 +75,7 @@ export function createPhysicalScene(inspect: (title: string, cards: AgentCardObs
         else renderHiddenHand(board.hand, player.handSize);
         board.hand.setAttribute('aria-label', `${player.name}: hand, ${player.handSize} cards`);
         renderCommanderDock(board.command, player, callbacks, expand);
+        board.command.dataset.multiple = String(board.command.childElementCount > 1);
         board.command.dataset.zone = 'command'; board.command.dataset.playerId = player.playerId;
         board.hand.dataset.zone = 'hand'; board.hand.dataset.playerId = player.playerId;
         for (const commander of player.commanders) {

@@ -6,7 +6,7 @@ export function visibleFace(card: Pick<AgentCardObservation, 'name' | 'hidden' |
 }
 
 /** A seat owns its public piles. Never reads a library or an opponent hand. */
-export function renderPublicZones(container: HTMLElement, player: AgentPlayerObservation, get: (name: string) => CardPresentation | null | undefined, inspect: (title: string, cards: AgentCardObservation[]) => void): void {
+export function renderPublicZones(container: HTMLElement, player: AgentPlayerObservation, get: (name: string) => CardPresentation | null | undefined, inspect: (title: string, cards: AgentCardObservation[], location?: {playerId: string; zone: 'graveyard' | 'exile'}) => void): void {
   container.dataset.playerId = player.playerId;
   container.replaceChildren();
   for (const zone of ['library', 'graveyard', 'exile'] as const) {
@@ -31,7 +31,7 @@ export function renderPublicZones(container: HTMLElement, player: AgentPlayerObs
     label.textContent = `${zone} · ${count}`;
     pile.append(face, label);
     pile.disabled = zone === 'library' || !count;
-    if (zone !== 'library') pile.onclick = () => inspect(`${player.name} · ${zone}`, cards);
+    if (zone !== 'library') pile.onclick = () => inspect(`${player.name} · ${zone}`, cards, {playerId: player.playerId, zone});
     container.append(pile);
   }
 }
@@ -40,15 +40,30 @@ export function createZoneInspector(get: (name: string) => CardPresentation | nu
   const dialog = document.createElement('dialog');
   dialog.className = 'table-zone-inspector';
   dialog.setAttribute('aria-label', 'Public zone cards');
-  return { element: dialog, open(title: string, cards: AgentCardObservation[]) {
-    dialog.replaceChildren();
-    const heading = document.createElement('h2'); heading.textContent = title;
-    const close = document.createElement('button'); close.textContent = 'Close ×'; close.onclick = () => dialog.close();
-    const row = document.createElement('div'); row.className = 'table-zone-inspector-cards';
-    for (const card of cards) row.append(createTableCard(card, visibleFace(card) ? get(card.name!) : null));
-    dialog.append(heading, close, row);
-    if (!dialog.open) dialog.showModal();
-  }, close() { dialog.close(); } };
+  let location: {playerId: string; zone: 'graveyard' | 'exile'} | undefined;
+  let snapshot = '';
+  const heading = document.createElement('h2');
+  const close = document.createElement('button'); close.textContent = 'Close ×'; close.onclick = () => dialog.close();
+  const row = document.createElement('div'); row.className = 'table-zone-inspector-cards';
+  dialog.append(heading, close, row);
+  const paint = (cards: AgentCardObservation[]) => {
+    snapshot = JSON.stringify(cards);
+    row.replaceChildren(...cards.map(card => createTableCard(card, visibleFace(card) ? get(card.name!) : null)));
+  };
+  return { element: dialog,
+    open(title: string, cards: AgentCardObservation[], source?: typeof location) {
+      location = source; heading.textContent = title; paint(cards);
+      if (!dialog.open) dialog.showModal();
+    },
+    refresh(observation: AgentObservation) {
+      if (!dialog.open || !location) return;
+      const player = observation.players.find(player => player.playerId === location!.playerId);
+      if (!player) { dialog.close(); return; }
+      const cards = player[location.zone];
+      if (snapshot !== JSON.stringify(cards)) paint(cards);
+    },
+    close() { dialog.close(); location = undefined; },
+  };
 }
 
 export function renderHiddenHand(container: HTMLElement, count: number): void {

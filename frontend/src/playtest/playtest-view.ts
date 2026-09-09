@@ -511,7 +511,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     stackControl = document.createElement('button'); stackControl.type = 'button'; stackControl.className = 'table-stack-control'; stackControl.textContent = 'Stack · 0';
     const stackDrawer = document.createElement('aside'); stackDrawer.className = 'table-stack-drawer'; stackDrawer.hidden = true; stackDrawer.setAttribute('aria-label', 'Spell stack');
     const closeStack = document.createElement('button'); closeStack.textContent = 'Close stack ×';
-    const toggleStack = (open: boolean) => { stackDrawer.hidden = !open; stackControl.setAttribute('aria-expanded', String(open)); if (!open) stackControl.focus(); };
+    const toggleStack = (open: boolean) => { stackDrawer.hidden = !open; stackControl.setAttribute('aria-expanded', String(open)); if (!open) stackControl.focus(); else closeStack.focus(); };
     stackControl.dataset.zone = 'stack';
     stackControl.setAttribute('aria-expanded', 'false'); stackControl.onclick = () => toggleStack(Boolean(stackDrawer.hidden));
     closeStack.onclick = () => toggleStack(false);
@@ -629,6 +629,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       isSelected: (card) => previewPanel.isSelected(card.cardRef),
       isPlayable: (card) => boardActionMap?.byCardRef.has(card.cardRef) ?? false,
       isCombatSelected,
+      onCardInspect: physicalScene ? (card) => { previewPanel.togglePin(card, card.name && !card.hidden && !card.faceDown ? cardStore.get(card.name) : null); updatePreviewActionable(boardActionMap); } : undefined,
       onCardActivate: (card, anchor) => {
         const items = boardActionMap?.byCardRef.get(card.cardRef);
         if (physicalScene && items?.length) { handleManaSourceActivate(card.cardRef, items, anchor); return; }
@@ -638,7 +639,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     };
 
     transitions.paint(gameSection, observation, () => {
-    zoneInspector.close();
+    zoneInspector.refresh(observation);
     renderHud(observation);
     renderStack(stackEl, observation);
     stackControl.textContent = `Stack · ${observation.stack.length}`;
@@ -936,6 +937,10 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
 
     if (state.pendingDecision) {
       renderDecision(decisionDock, filterDockDecision(state.pendingDecision, dockItems), (choice) => void submitChoice(choice));
+      if (currentPlayMode === 'physical') {
+        const inspectHint = document.createElement('p'); inspectHint.className = 'table-action-hint';
+        inspectHint.textContent = 'Right-click a board card to inspect it.'; decisionDock.append(inspectHint);
+      }
       // The hint only makes sense when something was ACTUALLY left off the dock in favor of a
       // clickable card — in Physical mode that's board/commander cards only (hand actions are back
       // in `dockItems`, see `buildDockItems`), so comparing against `dockItems.length` (rather than
