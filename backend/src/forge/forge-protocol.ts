@@ -540,6 +540,13 @@ export interface AgentCardObservation {
   selfAttackTriggers?: string[] | null;
   /** True for a Forge-generated token (Card.isToken()); absent on older bridges. Presentation-only signal (e.g. visual stacking) — never a rules input. */
   token?: boolean;
+  /**
+   * True while this card is its controller's current Ring-bearer (Card.isRingBearer()); absent on
+   * older bridges. V2g.1: added ONLY so a test/observer can read back Forge's own authoritative
+   * Ring-bearer state after "The Ring tempts you" resolves — Forge remains the sole owner of Ring
+   * rules/state; this is a read-only observation mirror, never a rules input on this side.
+   */
+  ringBearer?: boolean;
 }
 
 export interface AgentCommanderObservation {

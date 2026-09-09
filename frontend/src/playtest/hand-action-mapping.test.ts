@@ -191,14 +191,64 @@ it("PHYSICAL: board-mapped actions are not duplicated into the dock (kept on the
   assert.equal(dock.some(i => i.label === "Activate Skirk Prospector"), false, "still represented by the clickable battlefield card, not the dock");
 });
 
-it("PHYSICAL: command-zone / battlefield behavior is unchanged — a command-zone-mapped action stays out of the dock exactly as in Digital", () => {
+it("DIGITAL: command-zone / battlefield behavior is unchanged — a command-zone-mapped action stays out of the dock", () => {
   const items = [menuItem("Cast Commander", "cast-cmdr", "cmdr-1")];
   const combined = mapActionsToCards(menuPrompt(items), ["cmdr-1"]); // no hand refs — a command-zone card is never "hand"
   const { hand, board } = splitCardActionMapByHand(combined, []);
   const digitalDock = buildDockItems({ hand, board, unmapped: combined.unmapped }, "digital");
-  const physicalDock = buildDockItems({ hand, board, unmapped: combined.unmapped }, "physical");
   assert.deepEqual(digitalDock, []);
-  assert.deepEqual(physicalDock, []);
+});
+
+// --- buildDockItems (V2g.1 fix: never leave the Physical dock completely empty) -------------
+
+it("PHYSICAL: a decision ENTIRELY mapped to board/command-zone cards (no unmapped option, no hand action) falls back to the compact explicit list — never an empty dock", () => {
+  const items = [menuItem("Cast Commander", "cast-cmdr", "cmdr-1")];
+  const combined = mapActionsToCards(menuPrompt(items), ["cmdr-1"]);
+  const { hand, board } = splitCardActionMapByHand(combined, []);
+  const physicalDock = buildDockItems({ hand, board, unmapped: combined.unmapped }, "physical");
+  assert.deepEqual(physicalDock.map(i => i.label), ["Cast Commander"]);
+  assert.equal(physicalDock[0], items[0], "the exact same MenuItem object is surfaced — never a rebuilt copy");
+});
+
+it('PHYSICAL: "Choose your Ring-bearer"-shaped decision (every option board-mapped, no Pass/Cancel) surfaces ALL legal creatures explicitly', () => {
+  const items = [
+    menuItem("Griffin Sentinel", "select-griffin", "griffin-1"),
+    menuItem("Bear Cub", "select-bear", "bear-1"),
+  ];
+  const combined = mapActionsToCards(menuPrompt(items), ["griffin-1", "bear-1"]);
+  const { hand, board } = splitCardActionMapByHand(combined, []); // no hand refs — both are battlefield creatures
+  const physicalDock = buildDockItems({ hand, board, unmapped: combined.unmapped }, "physical");
+  assert.deepEqual(physicalDock.map(i => i.choice.choice).sort(), ["select-bear", "select-griffin"]);
+});
+
+it("PHYSICAL: the board fallback never fires when the dock already has an unmapped option (e.g. Pass) — board keeps its plain direct-card affordance, uncluttered", () => {
+  const items = [
+    menuItem("Pass priority", "pass", null),
+    menuItem("Activate Skirk Prospector", "activate-skirk", "skirk-battlefield-1"),
+  ];
+  const combined = mapActionsToCards(menuPrompt(items), ["skirk-battlefield-1"]);
+  const { hand, board } = splitCardActionMapByHand(combined, []);
+  const physicalDock = buildDockItems({ hand, board, unmapped: combined.unmapped }, "physical");
+  assert.deepEqual(physicalDock.map(i => i.label), ["Pass priority"]);
+});
+
+it("PHYSICAL: the board fallback never fires when the dock already has a hand-mapped action", () => {
+  const items = [
+    menuItem("Cast Krenko, Tin Street Kingpin", "cast-krenko", "krenko-hand-1"),
+    menuItem("Activate Skirk Prospector", "activate-skirk", "skirk-battlefield-1"),
+  ];
+  const combined = mapActionsToCards(menuPrompt(items), ["krenko-hand-1", "skirk-battlefield-1"]);
+  const { hand, board } = splitCardActionMapByHand(combined, ["krenko-hand-1"]);
+  const physicalDock = buildDockItems({ hand, board, unmapped: combined.unmapped }, "physical");
+  assert.deepEqual(physicalDock.map(i => i.label), ["Cast Krenko, Tin Street Kingpin"]);
+});
+
+it("DIGITAL: the board fallback never applies — Digital always relies on direct-card clicking for board-only decisions, unchanged", () => {
+  const items = [menuItem("Griffin Sentinel", "select-griffin", "griffin-1")];
+  const combined = mapActionsToCards(menuPrompt(items), ["griffin-1"]);
+  const { hand, board } = splitCardActionMapByHand(combined, []);
+  const digitalDock = buildDockItems({ hand, board, unmapped: combined.unmapped }, "digital");
+  assert.deepEqual(digitalDock, []);
 });
 
 it("exact AgentChoice/action id is preserved end to end through buildDockItems", () => {

@@ -95,13 +95,28 @@ export function decideCardAction(items: readonly MenuItem[]): CardActionDecision
  * digital surface (`renderCompactHand`, not `renderHand`) — so every action mapped to a HAND
  * cardRef must still surface here, verbatim (exact label, exact `AgentChoice`), alongside the
  * unmapped items. Board/commander-mapped actions keep their existing direct-card affordance in
- * BOTH modes and are deliberately left out of the dock here — including them would duplicate an
- * action that's already reachable by clicking the card, which is the "IMPORTANT DISTINCTION" this
- * function exists to preserve (do not simply disable all filtering in Physical mode).
+ * BOTH modes (the human's own battlefield is still rendered full-size and clickable in Physical
+ * mode, just visually scaled down) and are normally left out of the dock here too — including them
+ * would duplicate an action that's already reachable by clicking the card.
+ *
+ * V2g.1 fix: that reasoning breaks down for a decision whose EVERY legal option is board/commander
+ * -mapped and nothing else is offered (no unmapped "Pass"/"Cancel", no hand-mapped action) — e.g.
+ * "Choose your Ring-bearer" (an object_selection over the player's own creatures), "choose a
+ * creature to sacrifice", or any other semantic object-selection decision reduced entirely to board
+ * cards. Filtering board items out THERE leaves the dock completely empty: only the decision's
+ * title/hint remains, and the human must notice a subtle `isPlayable` highlight on a scaled-down
+ * board with no explicit list of what the legal choices even are — not an "obvious usable
+ * interaction". So: board-mapped items are restored too, but ONLY as a last resort, exactly when
+ * the dock would otherwise be empty — never when the dock already offers something explicit
+ * (an unmapped option or a hand-mapped action), which keeps ordinary priority_action decisions
+ * (attack/cast menus with a "Pass" always available) exactly as uncluttered as before. This is
+ * deliberately generic — no decision `type`/`kind` is inspected, so it fixes every semantic
+ * object-selection decision shaped this way, not just the Ring prompt.
  *
  * Never re-derives legality and never invents an item: every returned `MenuItem` is one already
- * present in `mapping.hand.byCardRef`/`mapping.unmapped`, untouched — so its `choice` (the exact
- * Forge `AgentChoice`) submits exactly as it would have from a clickable card.
+ * present in `mapping.hand.byCardRef`/`mapping.board.byCardRef`/`mapping.unmapped`, untouched — so
+ * its `choice` (the exact Forge `AgentChoice`) submits exactly as it would have from a clickable
+ * card.
  */
 export function buildDockItems(
   mapping: { hand: CardActionMap; board: CardActionMap; unmapped: MenuItem[] },
@@ -109,5 +124,9 @@ export function buildDockItems(
 ): MenuItem[] {
   if (playMode !== "physical") return mapping.unmapped;
   const handItems = [...mapping.hand.byCardRef.values()].flat();
-  return [...mapping.unmapped, ...handItems];
+  const dock = [...mapping.unmapped, ...handItems];
+  if (dock.length > 0) return dock;
+  // Nothing explicit would otherwise be shown — the compact fallback list, so a decision entirely
+  // mapped to board/commander cards is never silently invisible in Physical mode.
+  return [...mapping.board.byCardRef.values()].flat();
 }

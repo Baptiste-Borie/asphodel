@@ -81,7 +81,8 @@ record AgentObservation(
             String typeLine,
             List<String> combatKeywords,
             List<String> selfAttackTriggers,
-            boolean token
+            boolean token,
+            boolean ringBearer
     ) {
     }
 

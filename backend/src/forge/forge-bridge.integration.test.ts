@@ -141,6 +141,24 @@ function manifestDeck(name = "Opponent face-down battlefield"): ForgeDeckSpec {
   };
 }
 
+/**
+ * "The Ring tempts you" fixture (V2g.1). "Slip On the Ring" (1W instant): exile then return one of
+ * your own creatures, then "the Ring tempts you". Memnite (a 0-cost creature) lets the board reach
+ * two creatures fast so the Ring-bearer choice actually reaches the wire (Forge auto-picks and
+ * never asks when fewer than two creatures are in play — see `ForgeStrategicSelections.selectVisible`).
+ */
+function ringTemptsDeck(name = "Ring tempts you fixture"): ForgeDeckSpec {
+  return {
+    name,
+    cards: [
+      { name: "Isamaru, Hound of Konda", quantity: 1, section: "commander" },
+      { name: "Plains", quantity: 20, section: "mainboard" },
+      { name: "Memnite", quantity: 30, section: "mainboard" },
+      { name: "Slip On the Ring", quantity: 10, section: "mainboard" },
+    ],
+  };
+}
+
 function blueFixtureDeck(
   name: string,
   spellName: "Counterintelligence" | "Predict" | "Counterspell",
@@ -1592,6 +1610,78 @@ describe("ForgeBridgeClient integration", () => {
       } else await submitDeterministicSecondary(external, sessionId, d);
     }
     assert.fail("Legend choice not reached");
+  });
+
+  it("external Ring tempts you: chooses the exact selected creature as Ring-bearer, then reassigns it on a later temptation", { timeout: 90_000 }, async () => {
+    const client = createClient();
+    await client.start();
+    const external = new ForgeExternalMatchClient(client);
+    const { sessionId } = await external.startSpecs(ringTemptsDeck(), ashlingDeck(), { seed: 12345 });
+
+    let firstBearer: string | undefined;
+    let secondBearer: string | undefined;
+    let checkFirstBearerNext = false;
+    let checkSecondBearerNext = false;
+
+    for (let step = 0; step < 800; step++) {
+      const s = await waitForExternalSnapshot(external, sessionId, (s) => s.status === "waiting_for_decision" || s.status === "failed");
+      assert.equal(s.status, "waiting_for_decision", JSON.stringify(s));
+      const d = s.pendingDecision!;
+      const self = s.observation!.players.find((p) => p.role === "self")!;
+
+      if (checkFirstBearerNext) {
+        assert.equal(self.battlefield.find((c) => c.cardRef === firstBearer)?.ringBearer, true,
+          "the exact Node-selected creature must be marked as Ring-bearer by Forge");
+        checkFirstBearerNext = false;
+      }
+      if (checkSecondBearerNext) {
+        assert.equal(self.battlefield.find((c) => c.cardRef === secondBearer)?.ringBearer, true,
+          "a later temptation reassigns the Ring-bearer to the newly selected creature");
+        assert.equal(self.battlefield.find((c) => c.cardRef === firstBearer)?.ringBearer, false,
+          "701.52a: only one Ring-bearer at a time — the PREVIOUS Ring-bearer loses the flag");
+        await external.cancel(sessionId);
+        return;
+      }
+
+      if (d.type === "object_selection" && d.selectionKind === "entity" && d.prompt.includes("Ring-bearer")) {
+        // Every legal option is exactly one of the player's own creatures — nothing invented,
+        // nothing missing (proves requirement: choices correspond exactly to legal creatures).
+        const ownCreatureRefs = self.battlefield.filter((c) => (c.typeLine ?? "").includes("Creature")).map((c) => c.cardRef).sort();
+        const legalOptions = d.options.filter((o) => !o.finish);
+        assert.deepEqual(legalOptions.map((o) => o.cardRef).sort(), ownCreatureRefs);
+
+        if (!firstBearer) {
+          const chosen = legalOptions[0]!;
+          firstBearer = chosen.cardRef!;
+          checkFirstBearerNext = true;
+          await external.submitSelection(sessionId, d.decisionId, chosen.objectId);
+        } else {
+          const chosen = legalOptions.find((o) => o.cardRef !== firstBearer);
+          assert.ok(chosen, "a later temptation must be able to choose a creature OTHER than the current Ring-bearer");
+          secondBearer = chosen!.cardRef!;
+          checkSecondBearerNext = true;
+          await external.submitSelection(sessionId, d.decisionId, chosen!.objectId);
+        }
+        continue;
+      }
+
+      if (d.type === "priority_action") {
+        const creatureCount = self.battlefield.filter((c) => (c.typeLine ?? "").includes("Creature")).length;
+        const action =
+          d.actions.find((a) => a.type === "play_land")
+          ?? d.actions.find((a) => a.type === "cast_spell" && a.cardName === "Isamaru, Hound of Konda")
+          ?? (creatureCount >= 2 ? d.actions.find((a) => a.type === "cast_spell" && a.cardName === "Slip On the Ring") : undefined)
+          ?? d.actions.find((a) => a.type === "cast_spell" && a.cardName === "Memnite")
+          ?? d.actions.find((a) => a.type === "cast_spell" && a.cardName === "Slip On the Ring")
+          ?? d.actions.find((a) => a.type === "pass");
+        assert.ok(action, JSON.stringify(d));
+        await external.submitDecision(sessionId, d.decisionId, action.actionId);
+        continue;
+      }
+
+      await submitDeterministicSecondary(external, sessionId, d);
+    }
+    assert.fail(`Ring-bearer flow not completed (firstBearer=${firstBearer}, secondBearer=${secondBearer})`);
   });
 
   for (const flying of [false, true]) {

@@ -140,7 +140,8 @@ final class AgentObservationBuilder {
                 characteristicsVisible ? card.getType().toString() : null,
                 characteristicsVisible ? combatKeywords(card) : null,
                 characteristicsVisible ? selfAttackTriggers(card) : null,
-                card.isToken()
+                card.isToken(),
+                card.isRingBearer()
         );
     }
 
