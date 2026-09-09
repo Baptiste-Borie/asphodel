@@ -1,3 +1,4 @@
+import { createPhysicalScene } from './physical-scene.js';
 import { decisionPresentationNames, renderDecisionCards } from "./decision-cards.js";
 import { ApiError } from "../api/api-client.js";
 import "../styles/playtest.css";
@@ -22,6 +23,7 @@ import { createManaPaymentOverlay } from "./mana-payment-overlay.js";
 import { renderPhysicalDeclare } from "./physical-declare.js";
 import { computeSeatPresentations } from "./seat-presentation.js";
 import "../styles/physical-companion.css";
+import "../styles/physical-scene.css";
 import type { AgentCardObservation, AgentChoice, AgentObservation, AgentSelfPlayerObservation, DeckInput, MenuItem, PublicGameEvent, StartPlaytestRequest, WebPendingDecisionDTO, WebPlaytestStateDTO } from "./types.js";
 
 const POLL_INTERVAL_MS = 300;
@@ -215,6 +217,8 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   const zoneInspector = createZoneInspector((name) => cardStore.get(name));
   const transitions = new VisualTransitions();
   let opponentHand: HTMLElement, stackEl: HTMLElement;
+  let physicalScene: ReturnType<typeof createPhysicalScene> | null = null;
+  let stackControl: HTMLButtonElement;
   let opponentPiles: HTMLElement, humanPiles: HTMLElement;
 
   // Public turn-of-Asphodel frames (V2e.3) are queued and replayed in order with a short delay —
@@ -265,6 +269,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     latestState = null;
     currentPlayMode = "digital";
     transitions.reset();
+    physicalScene = null;
     zoneInspector.close();
     document.body.classList.remove("tabletop-active");
     previewPanel.close();
@@ -286,6 +291,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
 
   function showEndScreen(): void {
     transitions.reset();
+    physicalScene = currentPlayMode === "physical" ? createPhysicalScene() : null;
     zoneInspector.close();
     document.body.classList.remove("tabletop-active");
     setupSection.hidden = true;
@@ -423,6 +429,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   /** The battlefield fills the screen; header/nav/import chrome is hidden via the "tabletop-active" body class (see styles/tabletop.css). */
   function buildGameScreen(humanDeckName: string | null, asphodelDeckName: string | null): void {
     transitions.reset();
+    physicalScene = currentPlayMode === "physical" ? createPhysicalScene() : null;
     zoneInspector.close();
     gameSection.replaceChildren();
     gameSection.className = "table-root";
@@ -488,7 +495,15 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     stackEl = document.createElement('div'); stackEl.className = 'table-stack'; stackEl.hidden = true;
     stackEl.setAttribute('aria-label', 'Spell stack');
     const wordmark = document.createElement('div'); wordmark.className = 'table-wordmark'; wordmark.textContent = 'ASPHODEL';
-    battlefield.append(opponentHand, stackEl, wordmark);
+    battlefield.append(opponentHand, wordmark);
+    stackControl = document.createElement('button'); stackControl.type = 'button'; stackControl.className = 'table-stack-control'; stackControl.textContent = 'Stack · 0';
+    const stackDrawer = document.createElement('aside'); stackDrawer.className = 'table-stack-drawer'; stackDrawer.hidden = true; stackDrawer.setAttribute('aria-label', 'Spell stack');
+    const closeStack = document.createElement('button'); closeStack.textContent = 'Close stack ×';
+    const toggleStack = (open: boolean) => { stackDrawer.hidden = !open; stackControl.setAttribute('aria-expanded', String(open)); if (!open) stackControl.focus(); };
+    stackControl.setAttribute('aria-expanded', 'false'); stackControl.onclick = () => toggleStack(Boolean(stackDrawer.hidden));
+    closeStack.onclick = () => toggleStack(false);
+    stackDrawer.onkeydown = event => { if (event.key === 'Escape') { event.stopPropagation(); toggleStack(false); } };
+    stackDrawer.append(closeStack, stackEl); gameSection.append(stackControl, stackDrawer);
     renderLife(asphodelLifeEl, "ASPHODEL", undefined);
     renderLife(humanLifeEl, "YOU", undefined);
 
@@ -519,6 +534,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     handContainer = document.createElement("div");
     handContainer.className = "table-hand";
 
+    if (physicalScene) gameSection.append(physicalScene.element, physicalScene.overview);
     gameSection.append(battlefield, rail, hud, menuButton, menuPanel, previewPanel.element, decisionDock, handContainer, handActionMenu.element, manaOverlay.element, zoneInspector.element);
   }
 
@@ -573,7 +589,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
 
   /** Small, elegant turn/phase HUD (V2e.6) — uses the actual current Forge turn/phase, never a guess; friendly combat-phase labels via `formatHudPhase`. */
   function renderHud(observation: AgentObservation): void {
-    const activeLabel = observation.game.activePlayerId === observation.selfPlayerId ? "You" : "Asphodel";
+    const activeLabel = observation.players.find(p => p.playerId === observation.game.activePlayerId)?.name ?? "Player";
     updateHudLine(hudTurnEl, `Turn ${observation.game.turn} · ${activeLabel}`);
     updateHudLine(hudPhaseEl, formatHudPhase(observation.game.phase));
   }
@@ -610,6 +626,8 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     zoneInspector.close();
     renderHud(observation);
     renderStack(stackEl, observation);
+    stackControl.textContent = `Stack · ${observation.stack.length}`;
+    if (physicalScene) { physicalScene.render(observation, boardCallbacksForThisRender, expand); return; }
 
     const opponent = opponentPlayer(observation);
     const self = selfPlayer(observation);
