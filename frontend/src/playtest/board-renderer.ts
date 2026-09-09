@@ -5,6 +5,7 @@ import { partitionBattlefield } from "./land-zone.js";
 import type { AgentCardObservation, AgentObservation, AgentPlayerObservation, CardPresentation } from "./types.js";
 
 export interface BoardCallbacks {
+  battlefieldStyle?: "printed" | "condensed";
   getPresentation: (name: string) => CardPresentation | null | undefined;
   /** Battlefield/commander cards only — the hand never pins the preview. */
   onCardActivate: (card: AgentCardObservation, element: HTMLElement) => void;
@@ -108,6 +109,7 @@ function renderCardRow(container: HTMLElement, groups: CardGroup[], callbacks: B
 
     const className = [extraClassName, callbacks.isPlayable?.(card) ? "table-card--playable" : ""].filter(Boolean).join(" ");
     const root = createTableCard(card, presentationFor(card, callbacks), {
+      variant: callbacks.battlefieldStyle === "condensed" && extraClassName !== "table-card--commander" ? (extraClassName === "table-card--land" ? "land" : "battlefield") : "printed",
       onActivate: callbacks.onCardActivate,
       onInspect: callbacks.onCardInspect,
       selected: callbacks.isSelected(card),

@@ -445,6 +445,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     gameSection.replaceChildren();
     gameSection.className = "table-root";
     gameSection.dataset.environment = "courtyard";
+    gameSection.dataset.playMode = currentPlayMode;
     // V2g: the ONE branch point for seat presentation (see seat-presentation.ts) — every rendering
     // function below stays exactly as seat-agnostic as before. Digital always resolves both seats to
     // "primary", and a "primary" seat's className is left byte-for-byte identical to before V2g
@@ -485,7 +486,9 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     hudTurnEl.className = "table-hud-line table-hud-turn";
     hudPhaseEl = document.createElement("p");
     hudPhaseEl.className = "table-hud-line table-hud-phase";
-    hud.append(hudTurnEl, hudPhaseEl);
+    const modeLabel = document.createElement('p'); modeLabel.className = 'table-play-mode';
+    modeLabel.textContent = currentPlayMode === 'physical' ? 'Physical Companion' : 'Digital';
+    hud.append(modeLabel, hudTurnEl, hudPhaseEl);
 
     const rail = document.createElement("div");
     rail.className = "table-rail-left";
@@ -548,7 +551,8 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     handContainer.className = "table-hand";
 
     if (physicalScene) gameSection.append(physicalScene.element, physicalScene.overview);
-    gameSection.append(battlefield, rail, hud, menuButton, menuPanel, previewPanel.element, decisionDock, handContainer, handActionMenu.element, manaOverlay.element, zoneInspector.element);
+    if (!physicalScene) gameSection.append(battlefield, handContainer);
+    gameSection.append(rail, hud, menuButton, menuPanel, previewPanel.element, decisionDock, handActionMenu.element, manaOverlay.element, zoneInspector.element);
   }
 
   function setDeckInfo(humanDeckName: string, asphodelDeckName: string): void {

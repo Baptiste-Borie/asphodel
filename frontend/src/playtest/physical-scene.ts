@@ -13,7 +13,10 @@ function createBoard() {
   const lands = area('table-land-zone');
   const zones = area('table-public-zones');
   const hand = area('physical-hand');
-  element.append(identity, focus, command, permanents, lands, zones, hand);
+  const header = document.createElement('header'); header.className = 'physical-board-header';
+  header.append(identity, hand, focus);
+  const zoneBand = area('physical-board-zones'); zoneBand.append(command, zones);
+  element.append(header, permanents, lands, zoneBand);
   return { element, focus, identity, command, permanents, lands, zones, hand, previousLife: null as number | null };
 }
 
@@ -40,6 +43,7 @@ export function createPhysicalScene(inspect: (title: string, cards: AgentCardObs
   return { element, overview,
     render(observation: AgentObservation, callbacks: BoardCallbacks, expand: boolean, targets: MenuItem[] = [], choose?: (items: MenuItem[], anchor: HTMLElement) => void) {
       current = observation;
+      callbacks = { ...callbacks, battlefieldStyle: "condensed" };
       for (const [id, board] of boards) if (!observation.players.some(p => p.playerId === id)) { board.element.remove(); boards.delete(id); }
       for (const player of observation.players) {
         let board = boards.get(player.playerId);

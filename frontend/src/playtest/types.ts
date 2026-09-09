@@ -6,6 +6,7 @@
 
 /** Presentation-only metadata (backend cards/card-presentation-service.ts) — never a rules input. */
 export interface CardPresentation {
+  artUri?: string | null;
   name: string;
   manaCost: string | null;
   manaValue: number;

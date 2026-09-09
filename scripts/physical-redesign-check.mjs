@@ -99,7 +99,7 @@ await page.waitForTimeout(700);
 assert.equal(await page.getByRole('heading',{name:'PLAYTEST ENDED',exact:true}).count(),1);
 assert.equal(await page.getByText('fixture-summary.json',{exact:true}).count(),1);
 await page.getByRole('button',{name:'New Playtest',exact:true}).click();
-assert.equal(await page.getByText('Physical Companion',{exact:true}).count(),1);
+assert.equal(await page.locator('.playtest-setup').getByText('Physical Companion',{exact:true}).count(),1);
 assert.deepEqual(errors,[]);
 await browser.close();
 console.log('Physical browser checks passed: focus, live preview, overview, stack updates, keyboard pass, exact player/card targets, 4 seats, hidden information, live zone inspector, 1366px, dual commanders, crowded boards, token stacks, resume, reduced motion, combat selection, completion/report, setup.');

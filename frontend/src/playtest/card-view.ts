@@ -1,7 +1,9 @@
+import { battlefieldArtUri } from './card-art.js';
 import { cardDisplayName, counterBadges } from "./card-format.js";
 import type { AgentCardObservation, CardPresentation } from "./types.js";
 
 export interface TableCardOptions {
+  variant?: "printed" | "battlefield" | "land";
   /**
    * Present for battlefield cards (click/Enter toggles the large right-side preview) and, since
    * V2e.4, for a playable hand card (click submits its one legal action or opens a contextual
@@ -81,6 +83,8 @@ export function createTableCard(
   options: TableCardOptions = {},
   existingCardElement?: HTMLElement,
 ): HTMLElement {
+  const variant = options.variant ?? "printed";
+  const condensed = variant !== "printed";
   const concealed = card.hidden || card.faceDown;
   const name = concealed ? "Face-down card" : cardDisplayName(card);
   if (concealed) presentation = null;
@@ -102,6 +106,7 @@ export function createTableCard(
 
   element.dataset.cardRef = card.cardRef;
   element.className = tableCardClassName(card, Boolean(options.selected), options.className ?? "", { combatSelected: options.combatSelected, stacked });
+  element.dataset.cardVariant = variant;
   const accessibleName = card.tapped ? `${name} (Tapped)` : name;
   element.title = accessibleName;
   if (element instanceof HTMLButtonElement) {
@@ -112,17 +117,18 @@ export function createTableCard(
 
   const face = document.createElement("div");
   face.className = "table-card-face";
-  if (presentation?.imageUri) {
+  const imageUri = condensed ? battlefieldArtUri(presentation) : presentation?.imageUri;
+  if (imageUri) {
     const img = document.createElement("img");
-    img.className = "table-card-image";
-    img.src = presentation.imageUri;
+    img.className = condensed ? "table-card-art" : "table-card-image";
+    img.src = imageUri;
     img.alt = name;
     img.loading = "lazy";
     face.append(img);
   } else if (concealed) {
     face.classList.add("table-card-back");
     face.textContent = "◇";
-  } else if (card.token) {
+  } else if (card.token && !condensed) {
     // A Forge-reported token with no resolved art yet (V2e.6): a deliberate token-styled
     // treatment, never the generic grey placeholder or a broken-image icon. A later milestone may
     // resolve exact Scryfall token art; this is presentation-only either way.
