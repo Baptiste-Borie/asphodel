@@ -34,3 +34,15 @@
 .table-stack-drawer { position: absolute; z-index: 10; inset: 120px 28px auto auto; width: min(350px,85vw); max-height: 65%; overflow: auto; background: #17201bf5; border: 1px solid #807358; padding: 18px; box-shadow: 0 20px 50px #0009; }
 .table-stack-drawer .table-stack { position: static; transform: none; max-width: none; display: grid; margin-top: 14px; }
 @media(max-width: 850px) { .physical-scene { inset-inline: 10px; } .physical-board { grid-template-columns: 75px minmax(0,1fr) 85px; padding: 8px; } .physical-scene[data-count='4'] { grid-template-columns: minmax(0,1fr); } .physical-board[data-density=preview] { grid-template-columns: 70px minmax(0,1fr) 85px; } }
+.physical-life { margin-left: 16px; font: 30px Georgia,serif; color: #eee4cc; }
+.physical-identity { display: flex; align-items: center; }
+.physical-hand { display: flex; justify-content: center; align-items: flex-start; overflow: hidden; padding: 6px 20px 0; position: relative; min-width: 0; transition: padding-top .2s; }
+.physical-hand > .table-card--hand { flex-shrink: 0; width: 90px; margin-left: -58px; pointer-events: auto; }
+.physical-hand > .table-card--hand:first-child { margin-left: 0; }
+.physical-hand:hover, .physical-hand:focus-within { overflow: visible; z-index: 6; }
+.physical-hand .table-card--hand:hover, .physical-hand .table-card--hand:focus-visible { transform: translateY(-90px) scale(1.6); transition-delay: .25s; }
+.physical-hand > .table-card-back { width: 42px; height: 60px; flex-shrink: 0; border-radius: 4px; margin-left: -22px; transform: rotate(var(--fan-angle)); }
+.physical-hand small { align-self: center; white-space: nowrap; margin-left: 10px; font-size: 10px; color: #c0b69c; }
+.physical-board[data-density=preview] .physical-life { font-size: 22px; }
+.physical-board[data-density=preview] .physical-identity { font-size: 13px; }
+.physical-commander-casts { position: absolute; bottom: 2px; left: 2px; right: 2px; background: #111e; color: #eed9ad; font: 9px system-ui; padding: 3px; }

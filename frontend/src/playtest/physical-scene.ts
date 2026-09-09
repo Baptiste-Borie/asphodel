@@ -1,6 +1,7 @@
+import { renderHiddenHand, renderPublicZones } from './table-scene.js';
 import { physicalLayout } from './physical-layout.js';
-import { renderBattlefieldHalf, renderCommanderDock, renderLandZone, type BoardCallbacks } from './board-renderer.js';
-import type { AgentObservation } from './types.js';
+import { renderBattlefieldHalf, renderCommanderDock, renderLandZone, renderHand, type BoardCallbacks } from './board-renderer.js';
+import type { AgentObservation, AgentCardObservation } from './types.js';
 
 function area(className: string) { const node = document.createElement('div'); node.className = className; return node; }
 function createBoard() {
@@ -17,7 +18,7 @@ function createBoard() {
 }
 
 /** Physical composition only. All boards remain mounted and live when focus changes. */
-export function createPhysicalScene() {
+export function createPhysicalScene(inspect: (title: string, cards: AgentCardObservation[]) => void) {
   const element = area('physical-scene');
   const overview = document.createElement('button'); overview.type = 'button'; overview.className = 'physical-overview'; overview.textContent = 'Overview'; overview.hidden = true;
   const boards = new Map<string, ReturnType<typeof createBoard>>();
@@ -54,8 +55,28 @@ export function createPhysicalScene() {
         board.element.dataset.active = String(player.playerId === observation.game.activePlayerId);
         board.element.dataset.priority = String(player.playerId === observation.game.priorityPlayerId);
         board.focus.textContent = `Focus ${player.name}`;
-        board.identity.textContent = `${player.name} · ${player.life} life`;
+        const name = document.createElement('span'); name.textContent = player.name;
+        const life = document.createElement('strong'); life.className = 'physical-life'; life.textContent = String(player.life); life.setAttribute('aria-label', `${player.life} life`);
+        board.identity.replaceChildren(name, life);
+        renderPublicZones(board.zones, player, callbacks.getPresentation, inspect);
+        if (player.role === 'self') renderHand(board.hand, player.hand, callbacks.getPresentation, {
+          isPlayable: () => false,
+          onActivate: callbacks.onCardActivate,
+        });
+        else renderHiddenHand(board.hand, player.handSize);
+        board.hand.setAttribute('aria-label', `${player.name}: hand, ${player.handSize} cards`);
         renderCommanderDock(board.command, player, callbacks, expand);
+        board.command.dataset.zone = 'command'; board.command.dataset.playerId = player.playerId;
+        board.hand.dataset.zone = 'hand'; board.hand.dataset.playerId = player.playerId;
+        for (const commander of player.commanders) {
+          const node = Array.from(board.command.querySelectorAll<HTMLElement>('[data-card-ref]')).find(node => node.dataset.cardRef === commander.cardRef);
+          if (node && commander.castsFromCommand > 0) {
+            const casts = document.createElement('small'); casts.className = 'physical-commander-casts';
+            casts.textContent = `Command casts: ${commander.castsFromCommand}`;
+            casts.title = 'Previous casts from the command zone. Forge determines the current cost.';
+            node.append(casts);
+          }
+        }
         renderBattlefieldHalf(board.permanents, player, callbacks, expand);
         renderLandZone(board.lands, player, callbacks, expand);
       }

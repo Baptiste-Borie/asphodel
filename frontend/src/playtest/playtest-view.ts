@@ -291,7 +291,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
 
   function showEndScreen(): void {
     transitions.reset();
-    physicalScene = currentPlayMode === "physical" ? createPhysicalScene() : null;
+    physicalScene = currentPlayMode === "physical" ? createPhysicalScene(zoneInspector.open) : null;
     zoneInspector.close();
     document.body.classList.remove("tabletop-active");
     setupSection.hidden = true;
@@ -429,7 +429,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   /** The battlefield fills the screen; header/nav/import chrome is hidden via the "tabletop-active" body class (see styles/tabletop.css). */
   function buildGameScreen(humanDeckName: string | null, asphodelDeckName: string | null): void {
     transitions.reset();
-    physicalScene = currentPlayMode === "physical" ? createPhysicalScene() : null;
+    physicalScene = currentPlayMode === "physical" ? createPhysicalScene(zoneInspector.open) : null;
     zoneInspector.close();
     gameSection.replaceChildren();
     gameSection.className = "table-root";
