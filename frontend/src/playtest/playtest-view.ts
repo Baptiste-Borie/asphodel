@@ -24,6 +24,7 @@ import { renderPhysicalDeclare } from "./physical-declare.js";
 import { computeSeatPresentations } from "./seat-presentation.js";
 import "../styles/physical-companion.css";
 import "../styles/physical-scene.css";
+import "../styles/physical-courtyard.css";
 import type { AgentCardObservation, AgentChoice, AgentObservation, AgentSelfPlayerObservation, DeckInput, MenuItem, PublicGameEvent, StartPlaytestRequest, WebPendingDecisionDTO, WebPlaytestStateDTO } from "./types.js";
 
 const POLL_INTERVAL_MS = 300;
@@ -443,6 +444,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     zoneInspector.close();
     gameSection.replaceChildren();
     gameSection.className = "table-root";
+    gameSection.dataset.environment = "courtyard";
     // V2g: the ONE branch point for seat presentation (see seat-presentation.ts) — every rendering
     // function below stays exactly as seat-agnostic as before. Digital always resolves both seats to
     // "primary", and a "primary" seat's className is left byte-for-byte identical to before V2g

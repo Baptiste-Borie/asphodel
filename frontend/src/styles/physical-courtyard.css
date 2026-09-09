@@ -1,0 +1,15 @@
+/* Replaceable environment. No card positions or gameplay assumptions belong in this file. */
+.table-root--physical[data-environment=courtyard] {
+  --courtyard-stone: #242925;
+  --courtyard-brass: #b39b6d;
+  background: radial-gradient(ellipse at 50% 44%, #343b32 0, var(--courtyard-stone) 46%, #111b17 83%);
+}
+.table-root--physical[data-environment=courtyard]::before {
+  inset: 12px; border-radius: 16px; border: 1px solid #93815c55;
+  background: repeating-linear-gradient(0deg, transparent 0 108px, #090f0c18 109px 110px), repeating-linear-gradient(90deg, transparent 0 196px, #090f0c18 197px 198px);
+  box-shadow: inset 0 0 0 7px #121a15, inset 0 0 0 8px #84755238, inset 0 0 65px 22px #050b09a0, 0 0 0 10px #070d0b;
+}
+.table-root--physical[data-environment=courtyard]::after {
+  inset: 0; opacity: .7;
+  background: radial-gradient(ellipse 85px 20px at 1% 12%,#495b32 0,transparent 80%), radial-gradient(ellipse 25px 110px at 0% 18%,#243a23 0,transparent 80%), radial-gradient(ellipse 120px 28px at 96% 98%,#42512e 0,transparent 80%), radial-gradient(ellipse 28px 140px at 100% 90%,#233720 0,transparent 80%), linear-gradient(90deg,#0006,transparent 6% 94%,#0006);
+}
