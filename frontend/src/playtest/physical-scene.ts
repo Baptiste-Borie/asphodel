@@ -14,7 +14,7 @@ function createBoard() {
   const zones = area('table-public-zones');
   const hand = area('physical-hand');
   element.append(identity, focus, command, permanents, lands, zones, hand);
-  return { element, focus, identity, command, permanents, lands, zones, hand };
+  return { element, focus, identity, command, permanents, lands, zones, hand, previousLife: null as number | null };
 }
 
 /** Physical composition only. All boards remain mounted and live when focus changes. */
@@ -58,6 +58,11 @@ export function createPhysicalScene(inspect: (title: string, cards: AgentCardObs
         const name = document.createElement('span'); name.textContent = player.name;
         const life = document.createElement('strong'); life.className = 'physical-life'; life.textContent = String(player.life); life.setAttribute('aria-label', `${player.life} life`);
         board.identity.replaceChildren(name, life);
+        if (board.previousLife !== null && board.previousLife !== player.life) {
+          const delta = document.createElement('small'); delta.className = 'physical-life-delta';
+          const amount = player.life - board.previousLife; delta.textContent = `${amount > 0 ? '+' : ''}${amount}`; board.identity.append(delta);
+        }
+        board.previousLife = player.life;
         const playerTargets = targets.filter(item => item.playerId === player.playerId);
         board.identity.classList.toggle('physical-identity--target', playerTargets.length > 0);
         board.identity.setAttribute('aria-label', playerTargets.length ? `Target ${player.name}` : `${player.name}, ${player.life} life`);

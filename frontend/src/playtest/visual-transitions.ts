@@ -30,17 +30,18 @@ export class VisualTransitions {
   reset(): void { this.previous = null; for (const animation of this.animations) animation.cancel(); this.animations.clear(); }
   paint(root: HTMLElement, observation: AgentObservation, render: () => void): void {
     const before = new Map<string, { rect: DOMRect; node: HTMLElement }>();
-    for (const node of root.querySelectorAll<HTMLElement>('.table-battlefield [data-card-ref], .table-hand [data-card-ref]')) {
-      if (!before.has(node.dataset.cardRef!)) before.set(node.dataset.cardRef!, { rect: node.getBoundingClientRect(), node });
+    for (const node of root.querySelectorAll<HTMLElement>('.table-battlefield [data-card-ref], .table-hand [data-card-ref], .physical-scene [data-card-ref], .table-stack [data-card-ref]')) {
+      if (node.getBoundingClientRect().width > 0 && !before.has(node.dataset.cardRef!)) before.set(node.dataset.cardRef!, { rect: node.getBoundingClientRect(), node });
     }
+    const anchors = new Map(Array.from(root.querySelectorAll<HTMLElement>('[data-zone]'), node => [node.dataset.zone === 'stack' ? 'stack' : `${node.dataset.playerId}:${node.dataset.zone}`, node.getBoundingClientRect()]));
     const changes = this.previous ? diffLocations(this.previous, observation) : [];
     render();
     const hadPrevious = this.previous?.gameRef === observation.gameRef;
     this.previous = observation;
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const after = new Map(Array.from(root.querySelectorAll<HTMLElement>('.table-battlefield [data-card-ref], .table-hand [data-card-ref]'), node => [node.dataset.cardRef!, node]));
+    const after = new Map(Array.from(root.querySelectorAll<HTMLElement>('.table-battlefield [data-card-ref], .table-hand [data-card-ref], .physical-scene [data-card-ref], .table-stack [data-card-ref]'), node => [node.dataset.cardRef!, node]));
     if (hadPrevious) for (const [ref, node] of after) {
-      if (before.has(ref)) continue;
+      if (before.has(ref) || changes.some(change => change.cardRef === ref)) continue;
       const animation = node.animate([{ opacity: .3, translate: '0 16px' }, { opacity: 1, translate: '0 0' }], { duration: 280, easing: 'ease-out' });
       this.animations.add(animation);
       void animation.finished.catch(() => {}).finally(() => this.animations.delete(animation));
@@ -48,18 +49,21 @@ export class VisualTransitions {
     for (const change of changes) {
       const old = before.get(change.cardRef);
       const target = after.get(change.cardRef);
-      const pile = Array.from(root.querySelectorAll<HTMLElement>('[data-zone]')).find(node => node.dataset.zone === change.to.zone && node.dataset.playerId === change.to.playerId);
-      if (!old || !(target || pile)) continue;
+      const pile = Array.from(root.querySelectorAll<HTMLElement>('[data-zone]')).find(node => node.dataset.zone === change.to.zone && (change.to.zone === 'stack' || node.dataset.playerId === change.to.playerId));
+      const origin = old?.rect ?? anchors.get(change.from.zone === 'stack' ? 'stack' : `${change.from.playerId}:${change.from.zone}`);
+      if (!origin?.width || !(target || pile)) continue;
       if (change.from.zone === change.to.zone && change.from.playerId === change.to.playerId) continue; // native tap rotation
-      const destination = (target ?? pile)!.getBoundingClientRect();
-      const ghost = old.node.cloneNode(true) as HTMLElement;
+      const destination = (target?.getBoundingClientRect().width ? target : pile ?? target)!.getBoundingClientRect();
+      if (!destination.width) continue;
+      const ghost = old ? old.node.cloneNode(true) as HTMLElement : document.createElement('div');
+      if (!old) { ghost.textContent = '◇'; ghost.style.background = '#24362c'; ghost.style.color = '#c7ae79'; }
       ghost.removeAttribute('data-card-ref'); ghost.removeAttribute('id'); ghost.setAttribute('aria-hidden', 'true');
       ghost.className = 'table-transition-ghost';
-      Object.assign(ghost.style, { left: `${old.rect.left}px`, top: `${old.rect.top}px`, width: `${old.rect.width}px`, height: `${old.rect.height}px` });
+      Object.assign(ghost.style, { left: `${origin.left}px`, top: `${origin.top}px`, width: `${origin.width}px`, height: `${origin.height}px` });
       document.body.append(ghost);
       const animation = ghost.animate([
         { transform: 'translate(0,0) scale(1)', opacity: .9 },
-        { transform: `translate(${destination.left - old.rect.left}px,${destination.top - old.rect.top}px) scale(${destination.width / old.rect.width})`, opacity: 0 },
+        { transform: `translate(${destination.left - origin.left}px,${destination.top - origin.top}px) scale(${destination.width / origin.width})`, opacity: 0 },
       ], { duration: 420, easing: 'cubic-bezier(.2,.7,.2,1)' });
       this.animations.add(animation);
       void animation.finished.catch(() => {}).finally(() => { ghost.remove(); this.animations.delete(animation); });

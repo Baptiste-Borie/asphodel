@@ -301,7 +301,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
 
   function showEndScreen(): void {
     transitions.reset();
-    physicalScene = currentPlayMode === "physical" ? createPhysicalScene(zoneInspector.open) : null;
+    physicalScene = null;
     zoneInspector.close();
     document.body.classList.remove("tabletop-active");
     setupSection.hidden = true;
@@ -510,6 +510,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     const stackDrawer = document.createElement('aside'); stackDrawer.className = 'table-stack-drawer'; stackDrawer.hidden = true; stackDrawer.setAttribute('aria-label', 'Spell stack');
     const closeStack = document.createElement('button'); closeStack.textContent = 'Close stack ×';
     const toggleStack = (open: boolean) => { stackDrawer.hidden = !open; stackControl.setAttribute('aria-expanded', String(open)); if (!open) stackControl.focus(); };
+    stackControl.dataset.zone = 'stack';
     stackControl.setAttribute('aria-expanded', 'false'); stackControl.onclick = () => toggleStack(Boolean(stackDrawer.hidden));
     closeStack.onclick = () => toggleStack(false);
     stackDrawer.onkeydown = event => { if (event.key === 'Escape') { event.stopPropagation(); toggleStack(false); } };

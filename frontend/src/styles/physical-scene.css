@@ -65,3 +65,6 @@
 .physical-board[data-density=preview] { order: 1; }
 .physical-board-focus { position: relative; z-index: 3; align-self: center; }
 .physical-board .table-public-zones { align-self: stretch; align-content: center; overflow: auto; padding: 4px; }
+.physical-board .table-card--combat-selected { translate: 0 -10px; outline: 2px solid #d8b477; }
+.physical-life-delta { margin-left: 8px; color: #e3c083; font: 15px Georgia,serif; animation: physical-life-delta 1.8s forwards; }
+@keyframes physical-life-delta { 0% { opacity: 0; translate: 0 6px; } 15%,70% { opacity: 1; } 100% { opacity: 0; translate: 0 -12px; } }
