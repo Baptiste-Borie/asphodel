@@ -14,7 +14,9 @@ import { resolvePlayerPresentation } from "./player-presentation.js";
 export interface MenuItem {
   presentationName?: string;
   /** Presentation hint for an explicit Forge cancellation choice. */
-  control?: "cancel";
+  control?: "cancel" | "pass";
+  /** Exact Forge player target, for board selection. */
+  playerId?: string | null;
   label: string;
   choice: AgentChoice;
   /**
@@ -144,7 +146,7 @@ export function describeDecision(observation: AgentObservation, d: ForgePendingE
   switch (d.type) {
     case "priority_action": {
       const items = d.actions.map((a): MenuItem => {
-        if (a.type === "pass") return { label: "Pass priority", choice: { decisionId: d.decisionId, kind: "action", choice: a.actionId, reason }, cardRef: null };
+        if (a.type === "pass") return { control: "pass", label: "Pass priority", choice: { decisionId: d.decisionId, kind: "action", choice: a.actionId, reason }, cardRef: null };
         const cost = a.manaCost ? ` [${a.manaCost}]` : "";
         const verb = a.type === "play_land" ? "Play" : a.type === "cast_spell" ? "Cast" : "Activate";
         return { label: `${verb} ${a.cardName}${cost}`, choice: { decisionId: d.decisionId, kind: "action", choice: a.actionId, reason }, cardRef: a.cardRef };
@@ -158,6 +160,7 @@ export function describeDecision(observation: AgentObservation, d: ForgePendingE
           : `Target ${describeCard(cardMap(observation).get(t.cardRef ?? ""), t.cardRef)}`,
         choice: { decisionId: d.decisionId, kind: "target", choice: t.targetId, reason },
         cardRef: t.type === "card" ? t.cardRef : null,
+        ...(t.type === "player" ? { playerId: t.playerId } : {}),
       }));
       if (d.canFinish && d.finishTargetId) items.push({ label: "Finish selecting targets", choice: { decisionId: d.decisionId, kind: "target", choice: d.finishTargetId, reason } });
       return { kind: "menu", title: d.prompt || "Choose a target", items };

@@ -1,13 +1,13 @@
 import { renderHiddenHand, renderPublicZones } from './table-scene.js';
 import { physicalLayout } from './physical-layout.js';
 import { renderBattlefieldHalf, renderCommanderDock, renderLandZone, renderHand, type BoardCallbacks } from './board-renderer.js';
-import type { AgentObservation, AgentCardObservation } from './types.js';
+import type { AgentObservation, AgentCardObservation, MenuItem } from './types.js';
 
 function area(className: string) { const node = document.createElement('div'); node.className = className; return node; }
 function createBoard() {
   const element = document.createElement('section'); element.className = 'physical-board';
   const focus = document.createElement('button'); focus.type = 'button'; focus.className = 'physical-board-focus';
-  const identity = area('physical-identity');
+  const identity = document.createElement('button'); identity.type = 'button'; identity.className = 'physical-identity';
   const command = area('table-commander-dock');
   const permanents = area('table-battlefield-cards');
   const lands = area('table-land-zone');
@@ -38,7 +38,7 @@ export function createPhysicalScene(inspect: (title: string, cards: AgentCardObs
   };
   overview.onclick = () => { focused = null; layout(); };
   return { element, overview,
-    render(observation: AgentObservation, callbacks: BoardCallbacks, expand: boolean) {
+    render(observation: AgentObservation, callbacks: BoardCallbacks, expand: boolean, targets: MenuItem[] = [], choose?: (items: MenuItem[], anchor: HTMLElement) => void) {
       current = observation;
       for (const [id, board] of boards) if (!observation.players.some(p => p.playerId === id)) { board.element.remove(); boards.delete(id); }
       for (const player of observation.players) {
@@ -58,6 +58,10 @@ export function createPhysicalScene(inspect: (title: string, cards: AgentCardObs
         const name = document.createElement('span'); name.textContent = player.name;
         const life = document.createElement('strong'); life.className = 'physical-life'; life.textContent = String(player.life); life.setAttribute('aria-label', `${player.life} life`);
         board.identity.replaceChildren(name, life);
+        const playerTargets = targets.filter(item => item.playerId === player.playerId);
+        board.identity.classList.toggle('physical-identity--target', playerTargets.length > 0);
+        board.identity.setAttribute('aria-label', playerTargets.length ? `Target ${player.name}` : `${player.name}, ${player.life} life`);
+        board.identity.onclick = () => { if (playerTargets.length) choose?.(playerTargets, board!.identity); else { focused = player.playerId; layout(); } };
         renderPublicZones(board.zones, player, callbacks.getPresentation, inspect);
         if (player.role === 'self') renderHand(board.hand, player.hand, callbacks.getPresentation, {
           isPlayable: () => false,

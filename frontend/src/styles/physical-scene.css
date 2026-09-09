@@ -56,3 +56,12 @@
 .physical-board .table-land-zone .table-card-slot { aspect-ratio: 1; }
 .physical-board .table-land-zone .table-card-image { height: 220%; transform: translateY(-15%); }
 .physical-board .table-card-face { overflow: hidden; }
+.physical-identity { border: 0; padding: 0; background: transparent; color: #e2d9c3; text-align: left; }
+.physical-identity--target { outline: 2px solid #e2a542; outline-offset: 4px; cursor: crosshair; }
+.physical-input-required .table-decision-dock { border-top-color: #e7c68a; box-shadow: 0 -5px 25px #c7ae7915; }
+.physical-input-required .table-decision-dock::before { content: 'YOUR DECISION'; display: block; font-size: 9px; letter-spacing: .16em; color: #dfbf85; margin-bottom: 6px; }
+.table-root--physical .table-decision-dock--cards { max-height: 62vh; }
+.table-root--physical .table-picker-cards { max-height: 37vh; }
+.physical-board[data-density=preview] { order: 1; }
+.physical-board-focus { position: relative; z-index: 3; align-self: center; }
+.physical-board .table-public-zones { align-self: stretch; align-content: center; overflow: auto; padding: 4px; }

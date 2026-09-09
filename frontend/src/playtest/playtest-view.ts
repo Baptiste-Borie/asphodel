@@ -219,6 +219,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   let opponentHand: HTMLElement, stackEl: HTMLElement;
   let physicalScene: ReturnType<typeof createPhysicalScene> | null = null;
   let stackControl: HTMLButtonElement;
+  let livePlayerTargets: MenuItem[] = [];
   let opponentPiles: HTMLElement, humanPiles: HTMLElement;
 
   // Public turn-of-Asphodel frames (V2e.3) are queued and replayed in order with a short delay —
@@ -245,6 +246,15 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   let asphodelLandZone: HTMLElement, humanLandZone: HTMLElement;
   let hudTurnEl: HTMLElement, hudPhaseEl: HTMLElement;
   let decisionDock: HTMLElement, menuPanel: HTMLElement, menuDeckInfo: HTMLElement;
+  document.addEventListener('keydown', event => {
+    if (event.code !== 'Space' || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || gameSection.hidden || currentPlayMode !== 'physical' || submitting || !frameQueue.isIdle()) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('button, input, textarea, select, [contenteditable], summary, [role="dialog"]') || gameSection.querySelector('dialog[open], .table-mana-overlay:not([hidden]), .table-hand-menu:not([hidden])')) return;
+    const pending = latestState?.pendingDecision;
+    if (pending?.type !== 'priority_action' || pending.rendered.kind !== 'menu') return;
+    const pass = pending.rendered.items.find(item => item.control === 'pass');
+    if (pass) { event.preventDefault(); void submitChoice(pass.choice); }
+  });
   const lastKnownLife = new WeakMap<HTMLElement, number>();
   let lastObservationKey = "";
   let lastPresentationVersion = 0;
@@ -616,7 +626,9 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       isSelected: (card) => previewPanel.isSelected(card.cardRef),
       isPlayable: (card) => boardActionMap?.byCardRef.has(card.cardRef) ?? false,
       isCombatSelected,
-      onCardActivate: (card) => {
+      onCardActivate: (card, anchor) => {
+        const items = boardActionMap?.byCardRef.get(card.cardRef);
+        if (physicalScene && items?.length) { handleManaSourceActivate(card.cardRef, items, anchor); return; }
         previewPanel.togglePin(card, card.name ? cardStore.get(card.name) : null);
         updatePreviewActionable(boardActionMap);
       },
@@ -627,7 +639,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     renderHud(observation);
     renderStack(stackEl, observation);
     stackControl.textContent = `Stack · ${observation.stack.length}`;
-    if (physicalScene) { physicalScene.render(observation, boardCallbacksForThisRender, expand); return; }
+    if (physicalScene) { physicalScene.render(observation, boardCallbacksForThisRender, expand, livePlayerTargets, (items, anchor) => handleManaSourceActivate("", items, anchor)); return; }
 
     const opponent = opponentPlayer(observation);
     const self = selfPlayer(observation);
@@ -731,6 +743,10 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
    * menu's own item list is replaced.
    */
   function filterDockDecision(pending: WebPendingDecisionDTO, dockItems: MenuItem[] | null): WebPendingDecisionDTO {
+    if (currentPlayMode === 'physical' && pending.rendered.kind === 'menu' && pending.type === 'priority_action') return pending;
+    if (currentPlayMode === 'physical' && pending.rendered.kind === 'menu' && livePlayerTargets.length) {
+      return { ...pending, rendered: { ...pending.rendered, items: (dockItems ?? pending.rendered.items).filter(item => !livePlayerTargets.includes(item)) } };
+    }
     if (!dockItems || pending.rendered.kind !== "menu") return pending;
     return { ...pending, rendered: { ...pending.rendered, items: dockItems } };
   }
@@ -779,6 +795,8 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   /** Only while frame playback is genuinely idle — never mid-queue — do we paint the live board/decision, so the human never jumps ahead of a state they have not visually seen play out. */
   function revealLiveState(state: WebPlaytestStateDTO): void {
     const active = computeActiveMapping(state);
+    livePlayerTargets = state.pendingDecision?.rendered.kind === 'menu' ? state.pendingDecision.rendered.items.filter(item => item.playerId) : [];
+    gameSection.classList.toggle('physical-input-required', currentPlayMode === 'physical' && Boolean(state.pendingDecision) && !submitting);
     if (state.observation) {
       lastObservation = state.observation;
       renderTableIfChanged(state.observation, state.pendingDecision, active);
@@ -792,6 +810,8 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   function pumpFrames(): void {
     void frameQueue.pump({
       onFrame: (frame) => {
+        livePlayerTargets = [];
+        gameSection.classList.remove('physical-input-required');
         paintBoard(frame.observation);
         if (frame.event) pushPlayedEvent(frame.event);
       },
