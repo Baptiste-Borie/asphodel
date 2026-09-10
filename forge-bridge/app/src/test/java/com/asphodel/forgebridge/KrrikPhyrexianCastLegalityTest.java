@@ -8,6 +8,7 @@ import forge.game.GameEndReason;
 import forge.game.card.Card;
 import forge.game.mana.Mana;
 import forge.game.player.Player;
+import forge.game.zone.ZoneType;
 import forge.util.MyRandom;
 import org.junit.Test;
 
@@ -111,6 +112,33 @@ public class KrrikPhyrexianCastLegalityTest {
         player.getManaPool().clearPool(false);
         for (int i = 0; i < count; i++) {
             player.getManaPool().addManaNoEvent(new Mana(color, source, null, player));
+        }
+    }
+
+    /**
+     * Puts {@code count} real, untapped Swamps onto the battlefield straight from the library —
+     * unlike {@link #floatMana}, this does NOT pre-fill the mana pool. The {@code N} untapped lands
+     * are only mana SOURCES: {@link ForgeLegalActionEnumerator} must go through the same
+     * {@code ComputerUtilMana} source-discovery/tap-simulation path a real match takes (a human never
+     * has mana floating before they act), not the trivial floating-pool short-circuit the other tests
+     * in this file exercise. This is the fixture the V2h/V2h.2 investigation notes
+     * (`commander-cast-diagnostics.ts`) flagged as never having been isolated: "real-match state a
+     * synthetic fixture doesn't represent".
+     */
+    private static void putUntappedSwampsInPlay(Game game, Player player, int count) {
+        // Snapshot first: moveToPlay mutates the library zone in place, so iterating the live
+        // CardCollectionView directly would throw ConcurrentModificationException.
+        List<Card> library = new java.util.ArrayList<>(player.getCardsIn(ZoneType.Library));
+        int moved = 0;
+        for (Card card : library) {
+            if (moved >= count) break;
+            if (!"Swamp".equals(card.getName())) continue;
+            Card inPlay = game.getAction().moveToPlay(card, player, null, null);
+            inPlay.setTapped(false);
+            moved++;
+        }
+        if (moved < count) {
+            fail("Deck did not contain " + count + " Swamps to move to the battlefield (found " + moved + ").");
         }
     }
 
@@ -221,5 +249,63 @@ public class KrrikPhyrexianCastLegalityTest {
         } finally {
             state.endAndJoin();
         }
+    }
+
+    /**
+     * V2h/V2h.2 real-match threshold matrix, driven through REAL untapped Swamps (see
+     * {@link #putUntappedSwampsInPlay}) instead of {@link #floatMana}'s floating-pool short-circuit.
+     * {4}{B/P}{B/P}{B/P} with ample life must become legal at exactly 4 lands (the {4} generic paid
+     * by tapping lands, the three Phyrexian symbols paid with 6 life) — not only once mana alone
+     * covers the full {7}, which is the reported symptom ("K'rrik only appears around 7 mana").
+     */
+    private static void assertKrrikLegalityAtLandCount(int landCount, boolean expectedLegal, long seed) throws InterruptedException {
+        PausedGame state = reachOwnMain1(
+                deck("K'rrik, Son of Yawgmoth", "Swamp"),
+                deck("Krenko, Tin Street Kingpin", "Mountain"),
+                seed);
+        try {
+            putUntappedSwampsInPlay(state.game(), state.actingPlayer(), landCount);
+            assertEquals(40, state.actingPlayer().getLife());
+
+            ForgeLegalActionEnumerator.Candidate krrik =
+                    findCastCandidate(state.game(), state.actingPlayer(), "K'rrik, Son of Yawgmoth");
+
+            if (expectedLegal) {
+                assertNotNull("With " + landCount + " untapped Swamps (real mana sources, not floating "
+                        + "pool) and 40 life, K'rrik must be offered: {4} taps 4 lands (or fewer once "
+                        + landCount + " >= 4, with black covering Phyrexian symbols), remaining "
+                        + "Phyrexian symbols paid with life.", krrik);
+            } else {
+                assertNull("With only " + landCount + " untapped Swamps, the {4} generic portion of "
+                        + "{4}{B/P}{B/P}{B/P} cannot be paid: K'rrik must not be offered regardless of life.", krrik);
+            }
+        } finally {
+            state.endAndJoin();
+        }
+    }
+
+    @Test
+    public void krrikIsNotOfferedWithThreeRealLands() throws InterruptedException {
+        assertKrrikLegalityAtLandCount(3, false, 4300L);
+    }
+
+    @Test
+    public void krrikIsOfferedWithFourRealLandsAndLifeForPhyrexian() throws InterruptedException {
+        assertKrrikLegalityAtLandCount(4, true, 4301L);
+    }
+
+    @Test
+    public void krrikIsOfferedWithFiveRealLandsAndLifeForPhyrexian() throws InterruptedException {
+        assertKrrikLegalityAtLandCount(5, true, 4302L);
+    }
+
+    @Test
+    public void krrikIsOfferedWithSixRealLandsAndLifeForPhyrexian() throws InterruptedException {
+        assertKrrikLegalityAtLandCount(6, true, 4303L);
+    }
+
+    @Test
+    public void krrikIsOfferedWithSevenRealLandsPayingFullManaCost() throws InterruptedException {
+        assertKrrikLegalityAtLandCount(7, true, 4304L);
     }
 }

@@ -2,8 +2,12 @@ package com.asphodel.forgebridge;
 
 import forge.ai.ComputerUtilAbility;
 import forge.ai.ComputerUtilCost;
+import forge.ai.ComputerUtilMana;
 import forge.game.Game;
 import forge.game.card.Card;
+import forge.game.cost.Cost;
+import forge.game.mana.ManaCostBeingPaid;
+import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.Zone;
 import forge.game.zone.ZoneType;
@@ -40,7 +44,7 @@ final class ForgeLegalActionEnumerator {
     private final ForgeValueDecisionBuilder valueDecisions =
             new ForgeValueDecisionBuilder();
 
-    List<Candidate> enumerate(Game game, forge.game.player.Player player) {
+    List<Candidate> enumerate(Game game, Player player) {
         List<Candidate> candidates = new ArrayList<>();
         for (Card card : visibleCandidateCards(player)) {
             for (SpellAbility ability : card.getAllPossibleAbilities(player, true)) {
@@ -78,7 +82,7 @@ final class ForgeLegalActionEnumerator {
      * model of Forge's play/reveal permissions before it can be exposed
      * safely, which is deferred to a future pass.</p>
      */
-    private static Set<Card> visibleCandidateCards(forge.game.player.Player player) {
+    private static Set<Card> visibleCandidateCards(Player player) {
         Set<Card> cards = new LinkedHashSet<>();
         cards.addAll(player.getCardsIn(ZoneType.Hand));
         cards.addAll(player.getCardsIn(ZoneType.Battlefield));
@@ -104,7 +108,7 @@ final class ForgeLegalActionEnumerator {
     private boolean isPlayable(
             Card card,
             SpellAbility ability,
-            forge.game.player.Player player
+            Player player
     ) {
         if (ability.getPayCosts() != null && ability.getPayCosts().hasXInAnyCostPart()) {
             if (!valueDecisions.supportsPrimaryAction(ability, player)) {
@@ -115,7 +119,7 @@ final class ForgeLegalActionEnumerator {
                     ability, player, 0, Integer.MAX_VALUE
             );
             ability.setXManaCostPaid(value.minValue());
-            boolean payable = ComputerUtilCost.canPayCost(ability, player, false);
+            boolean payable = canPayCostAllowingPhyrexianLife(ability, player);
             ability.setXManaCostPaid(previousX);
             if (!payable) {
                 return false;
@@ -127,10 +131,52 @@ final class ForgeLegalActionEnumerator {
         if (!ability.isLegalAfterStack() || !ability.canPlay()) {
             return false;
         }
-        if (!ComputerUtilCost.canPayCost(ability, player, false)) {
+        if (!canPayCostAllowingPhyrexianLife(ability, player)) {
             return false;
         }
         return ComputerUtilAbility.isFullyTargetable(ability);
+    }
+
+    /**
+     * {@link ComputerUtilCost#canPayCost} delegates to {@code ComputerUtilMana}'s AI mana-payment
+     * heuristic, reused here purely as a feasibility oracle. That heuristic assigns real mana
+     * sources to color-matching pips (including Phyrexian ones) before the generic portion of a
+     * cost — deliberately, so the AI keeps its life when it has the mana to spare — and it never
+     * backtracks. When a board's mana sources are exactly the color a card's Phyrexian pips want
+     * (e.g. K'rrik, Son of Yawgmoth's {@code {4}{B/P}{B/P}{B/P}} from a Swamp-only manabase), that
+     * single-pass assignment can starve the generic portion of real sources and report the cost as
+     * unpayable — even though MTG rule 118.4a lets every Phyrexian pip be paid with 2 life instead
+     * of mana, independent of whether matching mana is available. A real match (untapped lands as
+     * mana SOURCES, discovered through {@code ComputerUtilMana}'s source-search) hits exactly this:
+     * the regression-tested claim that {4} + 6 life is legal only held for a fixture that floated
+     * mana directly into the pool, short-circuiting that source search entirely (see
+     * {@code KrrikPhyrexianCastLegalityTest}'s real-land threshold tests).
+     *
+     * <p>This retries a failed check with every Phyrexian pip pre-committed to its life
+     * alternative — bypassing the greedy mana-first assignment for those pips specifically — then
+     * confirms the player can actually afford that much life. It does not solve for every partial
+     * mix of mana/life per pip (that needs a general assignment search); the reported symptom —
+     * K'rrik never offered below the full mana cost despite enough life for the {@code {B/P}} pips
+     * — is exactly the all-mana-fails/all-life-for-Phyrexian-succeeds pair this covers.</p>
+     */
+    private static boolean canPayCostAllowingPhyrexianLife(SpellAbility ability, Player player) {
+        if (ComputerUtilCost.canPayCost(ability, player, false)) {
+            return true;
+        }
+        Cost cost = ability.getPayCosts();
+        if (cost == null || !cost.hasManaCost() || cost.getTotalMana().getPhyrexianCount() == 0) {
+            return false;
+        }
+        ManaCostBeingPaid remaining = ComputerUtilMana.calculateManaCost(cost, ability, player, true, 0, false);
+        int phyrexianPipsPaidWithLife = 0;
+        while (remaining.payPhyrexian()) {
+            phyrexianPipsPaidWithLife++;
+        }
+        int lifeNeeded = phyrexianPipsPaidWithLife * 2;
+        if (!player.canPayLife(lifeNeeded, false, ability)) {
+            return false;
+        }
+        return ComputerUtilMana.canPayManaCost(remaining, ability, player, false);
     }
 
     static boolean requiresTargets(SpellAbility ability) {
