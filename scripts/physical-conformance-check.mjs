@@ -39,7 +39,7 @@ const measure = async () => page.evaluate(()=> {
   const rect = selector => { const r=document.querySelector(selector).getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right}; };
   return {
     primary:rect('.physical-board[data-density="primary"]'),preview:rect('.physical-board[data-density="preview"]'),
-    header:rect('.physical-board[data-density="primary"] .physical-board-header'),life:rect('.physical-board[data-density="primary"] .physical-life'),
+    dock:rect('.table-decision-dock'),header:rect('.physical-board[data-density="primary"] .physical-board-header'),life:rect('.physical-board[data-density="primary"] .physical-life'),
     card:rect('.physical-board[data-density="primary"] [data-card-variant="battlefield"]'),land:rect('.physical-board[data-density="primary"] [data-card-variant="land"]'),
     command:rect('.physical-board[data-density="primary"] .table-commander-dock'),
   };
@@ -55,7 +55,7 @@ assert.ok(metrics.card.width >= 140,'primary cards are readable, not preview siz
 assert.ok(metrics.land.width <= metrics.card.width*.5,'lands intentionally subordinate');
 assert.ok(metrics.life.y >= metrics.header.y && metrics.life.bottom <= metrics.header.bottom+1,'life belongs to header');
 assert.ok(metrics.command.y >= metrics.primary.y && metrics.command.bottom <= metrics.primary.bottom+1,'command cards inside seat');
-assert.ok(metrics.preview.bottom <= 768-150,'self-view above action dock');
+assert.ok(metrics.preview.bottom <= metrics.dock.y,'self-view above action dock');
 assert.equal(await opponent.locator('.table-pile--graveyard img').count(),1);
 assert.equal(await opponent.locator('.table-pile--exile img').count(),1);
 await page.waitForFunction(()=>[...document.querySelectorAll('.table-card-art')].every(img=>img.complete && img.naturalWidth>0));
