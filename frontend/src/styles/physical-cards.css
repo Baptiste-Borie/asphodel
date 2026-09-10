@@ -1,0 +1,21 @@
+/* Art remains untouched; material frame and measured slots surround it. */
+.physical-board [data-card-variant=battlefield], .physical-board [data-card-variant=land] {
+  border: 1px solid #9e9b8770; border-radius: 7px; overflow: visible;
+  box-shadow: 0 2px 1px #060b0ded,0 8px 12px #0009,0 17px 26px #0004;
+}
+.physical-board .table-card-face { border-radius: inherit; }
+.physical-board [data-card-variant=battlefield] .table-card-caption { padding: 17px 8px 7px; font-size: 12px; text-shadow: 0 1px #000; background: linear-gradient(transparent,#10181deb 40%); }
+.physical-board [data-card-variant=battlefield] .table-card-stats { top: auto; bottom: -6px; right: 5px; font: bold 14px Georgia,serif; padding: 4px 7px; min-width: 21px; border: 1px solid #ac977266; border-radius: 8px 3px; background: linear-gradient(#353e41,#131d24); box-shadow: 0 3px 5px #0008; }
+.physical-board [data-card-variant=battlefield]:has(.table-card-stats) .table-card-caption { padding-right: 43px; }
+.physical-board .table-card-count { font: bold 13px system-ui; border-radius: 3px; padding: 3px 5px; background: #172128; border: 1px solid #b9a67d; box-shadow: 0 3px 6px #0009; }
+.physical-board [data-card-variant=battlefield] .table-card-count { bottom: 30px; }
+.physical-board .table-card--stacked::before { box-shadow: -3px 2px 0 #2d3639,-4px 3px 0 #a6a18b80,-7px 5px 0 #293236,-8px 6px 0 #98907970; }
+.physical-board .table-card--playable { border-color: #d6be84; box-shadow: 0 0 0 1px #d6be8499,0 4px 14px #0009; }
+.physical-board .table-card--playable:hover { translate: 0 -4px; box-shadow: 0 0 0 2px #d6be84,0 10px 20px #0009; }
+.physical-board .table-card-slot--tapped { display: grid; place-items: center; }
+.physical-board .table-card-counter { font-size: 10px; background: #142027f0; border: 1px solid #a79c7f77; }
+.physical-board[data-density=preview] [data-card-variant=battlefield] .table-card-caption { font-size: 9px; padding: 9px 3px 4px; }
+.physical-board[data-density=preview] [data-card-variant=battlefield] .table-card-stats { font-size: 10px; min-width: 0; padding: 1px 3px; bottom: -3px; }
+.physical-board[data-density=preview] .table-card-count { font-size: 10px; padding: 1px 3px; }
+.physical-board[data-density=preview] [data-card-variant=battlefield] .table-card-count { bottom: 20px; }
+.physical-board[data-density=preview] [data-card-variant=battlefield]:has(.table-card-stats) .table-card-caption { padding-right: 22px; }

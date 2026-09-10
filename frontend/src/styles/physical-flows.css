@@ -1,0 +1,23 @@
+/* One declaration flow for opening hands, draws and other physical identities. */
+.table-root--physical .physical-declaration { text-align: center; bottom: 64px; padding: 24px 30px 20px; border-radius: 6px 6px 30px 30px; background: linear-gradient(135deg,#303d46f7,#182630fa); }
+.table-root--physical .physical-declaration::before { content: 'PHYSICAL COMPANION'; font: 9px system-ui; letter-spacing: .15em; color: #bdaf90; margin-bottom: 8px; }
+.table-root--physical .physical-declaration h2 { font-size: clamp(21px,2vw,28px); }
+.table-root--physical .physical-declare-slots { display: flex; justify-content: center; gap: 9px; flex-wrap: nowrap; padding: 12px 8px 17px; overflow-x: auto; }
+.table-root--physical .physical-declare-slot { position: relative; flex: 0 0 clamp(72px,7vw,108px); height: clamp(100px,17vh,154px); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0; border: 1px solid #8c8d7755; border-radius: 7px; color: #a9b1a9; background: radial-gradient(ellipse,#2e4148,#162630); box-shadow: 0 5px 10px #0006,inset 0 0 0 4px #17272f,inset 0 0 0 5px #ab9b6c33; transform: rotate(var(--slot-tilt)); overflow: hidden; }
+.table-root--physical .physical-declare-slot--active { border-color: #d5bf8c; box-shadow: 0 0 0 1px #c1ad7833,0 6px 14px #0008,inset 0 0 0 4px #17272f; color: #e1cc9d; }
+.table-root--physical .physical-declare-empty-mark { font-size: 30px; margin-bottom: 12px; }
+.table-root--physical .physical-declare-slot small { font: 10px Georgia,serif; }
+.table-root--physical .physical-declare-slot--filled { border-color: #b7b09288; }
+.table-root--physical .physical-declare-slot img { width: 100%; height: 100%; object-fit: cover; }
+.table-root--physical .physical-declare-slot--filled > span { position: absolute; bottom: 0; left: 0; right: 0; padding: 14px 4px 5px; background: linear-gradient(transparent,#13212bef 30%); color: #f0e9d8; font: 10px system-ui; }
+.table-root--physical .physical-declare-slot-remove { position: absolute; top: 4px; right: 4px; width: 23px; height: 23px; border-radius: 50%; background: #101b25ed; color: #eee1c6; font-size: 19px; }
+.table-root--physical .physical-declare-search { width: min(420px,100%); margin: 0 auto 12px; }
+.table-root--physical .physical-declare-search .field-label { text-align: left; font-size: 10px; color: #b9c1bc; }
+.table-root--physical .card-search-input { background: #14232b; color: #ece4d2; border: 1px solid #8a967b66; border-radius: 4px; padding: 10px 13px; font-size: 13px; }
+.table-root--physical .card-search { position: relative; }
+.table-root--physical .card-search-results { bottom: calc(100% + 4px); top: auto; z-index: 10; background: #15242dfa; border-color: #a1916f; box-shadow: 0 8px 26px #0009; max-height: 190px; text-align: left; }
+.physical-declare-footer { display: flex; justify-content: center; align-items: center; gap: 28px; }
+.table-root--physical .physical-declare-footer .decision-option--confirm { min-width: 180px; background: linear-gradient(#a08b5b,#75623f); border-color: #dbc99777; color: #fff1d5; }
+.table-root--physical .physical-declare-clear { border: 0; border-bottom: 1px solid #8a95805e; background: transparent; color: #bbc2b8; font-size: 11px; padding: 6px 0; }
+.table-root--physical .physical-declare-clear:disabled { opacity: .35; }
+@media(prefers-reduced-motion:no-preference) { .table-root--physical .physical-declare-slot { transition: transform .2s, border-color .2s; } .table-root--physical .physical-declare-slot--filled:hover { transform: translateY(-4px); } }

@@ -12,7 +12,7 @@
  * plumbing every other decision kind already uses (see playtest-view.ts).
  */
 import { createCardSearch, type CardSearchCandidate } from "./card-search.js";
-import type { AgentChoice, PhysicalDeclareCandidate } from "./types.js";
+import type { AgentChoice, PhysicalDeclareCandidate, CardPresentation } from "./types.js";
 
 /**
  * Pure. Recomputes each candidate's remaining count after subtracting the picks already made this
@@ -59,8 +59,10 @@ export function renderPhysicalDeclare(
   container: HTMLElement,
   prompt: PhysicalDeclarePrompt,
   onChoose: (choice: AgentChoice) => void,
+  presentation?: (name: string) => Promise<CardPresentation | null | undefined>,
 ): void {
   let picked: string[] = [];
+  container.classList.add("physical-declaration");
 
   const heading = document.createElement("h2");
   heading.textContent = prompt.title;
@@ -77,12 +79,16 @@ export function renderPhysicalDeclare(
   const confirm = document.createElement("button");
   confirm.type = "button";
   confirm.className = "decision-option decision-option--confirm";
-  confirm.textContent = "Confirm";
+  confirm.textContent = prompt.count === 7 ? "Confirm hand" : "Confirm cards";
+  confirm.setAttribute("aria-label", "Confirm");
   confirm.addEventListener("click", () => {
     if (!isDeclareReadyToConfirm(picked, prompt.count)) return;
     onChoose({ decisionId: prompt.decisionId, kind: "physical_identity", declaredNames: picked, reason: "physical_declaration" });
   });
 
+  const clear = document.createElement('button'); clear.type = 'button'; clear.className = 'physical-declare-clear'; clear.textContent = 'Clear selection';
+  clear.onclick = () => { picked = []; render(); search.querySelector('input')?.focus(); };
+  const footer = document.createElement('div'); footer.className = 'physical-declare-footer'; footer.append(clear, confirm);
   const search = createCardSearch({
     label: "Declare a card",
     placeholder: "Search your deck…",
@@ -96,6 +102,7 @@ export function renderPhysicalDeclare(
   function removePick(index: number): void {
     picked = picked.filter((_, i) => i !== index);
     render();
+    search.querySelector("input")?.focus();
   }
 
   function render(): void {
@@ -106,6 +113,9 @@ export function renderPhysicalDeclare(
       const slot = document.createElement("div");
       const name = picked[i];
       slot.className = name ? "physical-declare-slot physical-declare-slot--filled" : "physical-declare-slot";
+      slot.style.setProperty('--slot-tilt', `${(i - (prompt.count - 1) / 2) * 1.4}deg`);
+      slot.classList.toggle('physical-declare-slot--active', !name && i === picked.length);
+      slot.setAttribute('aria-label', name ?? `Card ${i + 1} of ${prompt.count}`);
       if (name) {
         const label = document.createElement("span");
         label.textContent = name;
@@ -116,8 +126,14 @@ export function renderPhysicalDeclare(
         remove.textContent = "×";
         remove.addEventListener("click", () => removePick(i));
         slot.append(label, remove);
+        if (presentation) void presentation(name).then(card => {
+          if (!slot.isConnected || !card?.imageUri) return;
+          const image = document.createElement('img'); image.src = card.imageUri; image.alt = name; image.onerror = () => image.remove(); slot.prepend(image);
+        }).catch(() => {});
       } else {
-        slot.textContent = "?";
+        const mark = document.createElement('span'); mark.className = 'physical-declare-empty-mark'; mark.textContent = '◇';
+        const number = document.createElement('small'); number.textContent = `Card ${i + 1}`;
+        slot.append(mark, number);
       }
       slots.append(slot);
     }
@@ -125,9 +141,10 @@ export function renderPhysicalDeclare(
     const ready = isDeclareReadyToConfirm(picked, prompt.count);
     searchHost.hidden = ready;
     confirm.disabled = !ready;
+    clear.disabled = picked.length === 0;
   }
 
   searchHost.replaceChildren(search);
-  container.replaceChildren(heading, progress, slots, searchHost, confirm);
+  container.replaceChildren(heading, progress, slots, searchHost, footer);
   render();
 }

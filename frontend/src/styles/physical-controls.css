@@ -1,0 +1,44 @@
+/* Global controls are physical objects on the table, not a reserved footer. */
+.table-root--physical .table-hud { top: 30px; right: auto; left: 50%; transform: translateX(-50%); display: grid; grid-template-columns: auto auto; align-items: center; gap: 2px 20px; padding: 9px 27px; background: linear-gradient(110deg,#171f25ed,#343b40ed,#151e25ed); border-bottom: 1px solid #a6987977; box-shadow: 0 5px 13px #0006; border-radius: 2px 2px 16px 16px; }
+.table-root--physical .table-play-mode { grid-row: 1 / 3; font: 12px Georgia,serif; text-transform: none; letter-spacing: .02em; color: #d2c9b4; padding-right: 16px; border-right: 1px solid #b4a17c44; }
+.table-root--physical .table-hud-turn { text-align: center; font-size: 9px; letter-spacing: .06em; }
+.table-root--physical .table-hud-phase { text-align: center; font-size: 18px; }
+.table-root--physical .table-stack-control { top: 34px; right: var(--edge-space); padding: 9px 14px; border-radius: 3px 3px 12px 3px; }
+.table-root--physical .table-menu-button { top: 32px; right: 24px; width: 32px; height: 32px; font-size: 24px; background: #151e258c; }
+.table-root--physical .table-stack-drawer { top: 86px; right: var(--edge-space); width: 280px; padding: 18px; border: 1px solid #8e826755; border-radius: 3px 3px 16px 16px; background: linear-gradient(130deg,#354049f5,#141f28fa); box-shadow: 0 20px 40px #000a; }
+.table-root--physical .table-stack-spell { position: relative; font: 15px Georgia,serif; padding: 14px 18px; border-color: #9b8a6355; border-radius: 2px; background: #17232b; }
+.table-root--physical .table-stack-spell::before { content: '◇'; color: #b2a078; margin-right: 8px; }
+.table-root--physical .table-decision-dock { inset: auto auto 32px 50%; transform: translateX(-50%); width: max-content; min-width: min(440px,80vw); max-width: calc(100% - var(--edge-space) * 2); max-height: 38vh; display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 13px 22px; border: 0; border-top: 1px solid #ae9a704d; border-radius: 5px 5px 24px 24px; background: linear-gradient(130deg,#303b43f7,#151f27fa); box-shadow: 0 10px 28px #000b,inset 0 -2px #8a7b5544; }
+.table-root--physical .table-decision-dock:empty { display: none; }
+.table-root--physical .table-decision-dock::before { flex-basis: 100%; font: 9px system-ui; color: #c4b28a; margin: 0; letter-spacing: .12em; }
+.table-root--physical .table-decision-dock .decision-title { margin: 0; font: 17px Georgia,serif; max-width: 280px; }
+.table-root--physical .table-decision-dock .decision-menu { margin: 0; display: flex; gap: 8px; flex-wrap: wrap; max-width: 680px; }
+.table-root--physical .table-decision-dock .table-action-hint { display: none; }
+.table-root--physical .decision-option { min-height: 36px; width: auto; margin: 0; padding: 9px 16px; border: 1px solid #9a8e7355; border-radius: 4px 4px 10px 4px; background: linear-gradient(#3d474b,#25323a); color: #e7e2d5; font-size: 12px; }
+.table-root--physical .decision-option:hover { border-color: #cbb98b; background: #435058; }
+.table-root--physical .decision-option--pass { margin-left: auto; background: linear-gradient(#8f7d52,#5c5037); color: #fff4d9; border-color: #ceb98777; }
+.table-root--physical .decision-option--pass::after { content: ' ␣'; font-size: 12px; opacity: .65; }
+.table-root--physical .table-decision-dock--cards { display: block; width: min(900px,84vw); max-height: 64vh; bottom: 48px; padding: 22px 30px; }
+.table-root--physical .table-decision-dock--cards h2 { font: 24px Georgia,serif; margin: 0; }
+.table-root--physical .table-picker-progress { margin: 6px 0 14px; font-size: 12px; color: #bdc1ba; }
+.table-root--physical .table-picker-cards { padding: 14px 4px; max-height: 36vh; }
+.table-root--physical .table-rail-left { left: var(--edge-space); bottom: 48px; z-index: 5; width: 180px; }
+.table-root--physical .table-history summary { font: 11px Georgia,serif; letter-spacing: .03em; text-transform: none; color: #c8c3b1; }
+.table-root--physical .table-history[open] { width: min(300px,30vw); padding: 16px; background: #142029f5; border-left: 1px solid #a3936955; box-shadow: 0 8px 25px #0008; }
+.table-root--physical .table-actions { max-height: 200px; }
+.physical-overview { position: absolute; z-index: 5; top: 35px; left: var(--edge-space); padding: 8px 14px; border: 0; border-bottom: 1px solid #9e906977; border-radius: 0; background: #1e2a32d9; font: 13px Georgia,serif; }
+.physical-overview::before { content: '‹ '; margin-right: 5px; }
+.physical-board-focus { padding: 6px 9px; border: 0; background: transparent; border-bottom: 1px solid #a4987655; border-radius: 0; color: #c3c6bd; font: 11px Georgia,serif; box-shadow: none; }
+.physical-board-focus::after { content: ' ↗'; }
+.physical-board-focus[aria-pressed=true] { color: #ddcda3; border-color: #c4ae75; }
+.table-root--physical .table-preview { right: var(--edge-space); top: 104px; bottom: auto; transform: none; z-index: 12; width: clamp(235px,20vw,340px); max-height: calc(100% - 230px); overflow-y: auto; pointer-events: auto; padding: 12px; background: #101b23ee; border: 1px solid #98896955; border-radius: 8px; box-shadow: 0 22px 50px #000c; box-sizing: border-box; }
+.table-root--physical .table-preview .table-card { width: 100%; max-height: 100%; }
+.table-root--physical .table-preview .table-preview-card { max-height: 100%; }
+@media (prefers-reduced-motion:no-preference) { .table-root--physical .table-stack-drawer:not([hidden]), .table-root--physical .table-preview:not([hidden]) { animation: physical-panel-in .18s ease-out; } @keyframes physical-panel-in { from { opacity: 0; translate: 0 6px; } to { opacity: 1; translate: 0 0; } } }
+.table-root--physical .table-decision-dock:not(.table-decision-dock--cards)::before { position: absolute; top: 5px; left: 22px; font-size: 8px; }
+.table-root--physical .table-decision-dock:not(.table-decision-dock--cards) { padding-top: 20px; padding-bottom: 11px; }
+
+
+.table-root--physical .table-decision-dock button { width: auto; }
+.physical-input-required .table-decision-dock { border-top-color: #e7c68a; }
+.physical-input-required .table-decision-dock::before { content: "YOUR DECISION"; display: block; }

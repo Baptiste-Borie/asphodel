@@ -44,6 +44,8 @@ export interface CardSearchOptions {
   placeholder?: string;
 }
 
+let searchSequence = 0;
+
 /** Builds the DOM widget: text input + results list, arrow-key navigation, Enter to select, Escape to close. */
 export function createCardSearch(options: CardSearchOptions): HTMLElement {
   const root = document.createElement("div");
@@ -64,6 +66,9 @@ export function createCardSearch(options: CardSearchOptions): HTMLElement {
   const list = document.createElement("ul");
   list.className = "card-search-results";
   list.hidden = true;
+  list.id = `card-search-results-${++searchSequence}`;
+  list.setAttribute('role', 'listbox');
+  input.setAttribute('aria-controls', list.id);
   root.append(label, list);
 
   let results: CardSearchCandidate[] = [];
@@ -84,6 +89,8 @@ export function createCardSearch(options: CardSearchOptions): HTMLElement {
     results.forEach((candidate, index) => {
       const item = document.createElement("li");
       item.className = index === activeIndex ? "card-search-result card-search-result--active" : "card-search-result";
+      item.id = `${list.id}-${index}`;
+      item.setAttribute('role', 'option'); item.setAttribute('aria-selected', String(index === activeIndex));
       const name = document.createElement("span");
       name.textContent = candidate.name;
       item.append(name);
@@ -98,6 +105,8 @@ export function createCardSearch(options: CardSearchOptions): HTMLElement {
       list.append(item);
     });
     list.hidden = results.length === 0;
+    if (activeIndex >= 0 && results[activeIndex]) input.setAttribute('aria-activedescendant', `${list.id}-${activeIndex}`);
+    else input.removeAttribute('aria-activedescendant');
     input.setAttribute("aria-expanded", String(results.length > 0));
   }
 

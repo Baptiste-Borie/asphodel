@@ -25,6 +25,10 @@ import { computeSeatPresentations } from "./seat-presentation.js";
 import "../styles/physical-companion.css";
 import "../styles/physical-scene.css";
 import "../styles/physical-courtyard.css";
+import "../styles/physical-seat.css";
+import "../styles/physical-cards.css";
+import "../styles/physical-controls.css";
+import "../styles/physical-flows.css";
 import type { AgentCardObservation, AgentChoice, AgentObservation, AgentSelfPlayerObservation, DeckInput, MenuItem, PublicGameEvent, StartPlaytestRequest, WebPendingDecisionDTO, WebPlaytestStateDTO } from "./types.js";
 
 const POLL_INTERVAL_MS = 300;
@@ -872,7 +876,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
 
   function renderStatusLine(status: WebPlaytestStateDTO["status"]): void {
     decisionDock.replaceChildren();
-    decisionDock.classList.remove("table-decision-dock--complex", "table-decision-dock--cards");
+    decisionDock.classList.remove("table-decision-dock--complex", "table-decision-dock--cards", "physical-declaration");
     const text = submitting ? "Submitting choice…" : {
       starting: "Starting Forge…", running: "Asphodel is thinking…",
       waiting_for_human: "", completed: "", ended_by_human: "", failed: "",
@@ -921,7 +925,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       return;
     }
     manaOverlay.close();
-    decisionDock.classList.remove('table-decision-dock--cards');
+    decisionDock.classList.remove('table-decision-dock--cards', 'physical-declaration');
     const prompt=state.pendingDecision?.rendered;
     if (prompt?.kind==='card_picker' || prompt?.kind==='opening_hand') {
       decisionDock.replaceChildren(); decisionDock.classList.remove('table-decision-dock--complex'); decisionDock.classList.add('table-decision-dock--cards');
@@ -935,7 +939,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     // physical_declare again on a mulligan redraw -> opening_hand again, …).
     if (prompt?.kind === 'physical_declare') {
       decisionDock.replaceChildren(); decisionDock.classList.remove('table-decision-dock--complex'); decisionDock.classList.add('table-decision-dock--cards');
-      renderPhysicalDeclare(decisionDock, prompt, (choice) => void submitChoice(choice));
+      renderPhysicalDeclare(decisionDock, prompt, (choice) => void submitChoice(choice), async (name) => { await decisionCardStore.ensure([name]); return decisionCardStore.get(name); });
       return;
     }
 

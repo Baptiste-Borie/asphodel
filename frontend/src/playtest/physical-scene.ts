@@ -1,3 +1,4 @@
+import { renderPlayerSeat, seatName } from './player-seat.js';
 import { renderHiddenHand, renderPublicZones } from './table-scene.js';
 import { physicalLayout } from './physical-layout.js';
 import { renderBattlefieldHalf, renderCommanderDock, renderLandZone, renderHand, type BoardCallbacks } from './board-renderer.js';
@@ -23,7 +24,7 @@ function createBoard() {
 /** Physical composition only. All boards remain mounted and live when focus changes. */
 export function createPhysicalScene(inspect: (title: string, cards: AgentCardObservation[]) => void) {
   const element = area('physical-scene');
-  const overview = document.createElement('button'); overview.type = 'button'; overview.className = 'physical-overview'; overview.textContent = 'Overview'; overview.hidden = true;
+  const overview = document.createElement('button'); overview.type = 'button'; overview.className = 'physical-overview'; overview.textContent = 'Table view'; overview.setAttribute('aria-label','Overview'); overview.hidden = true;
   const boards = new Map<string, ReturnType<typeof createBoard>>();
   let focused: string | null = null;
   let current: AgentObservation | null = null;
@@ -37,6 +38,7 @@ export function createPhysicalScene(inspect: (title: string, cards: AgentCardObs
       const board = boards.get(seat.playerId)!;
       board.element.dataset.density = seat.density;
       board.focus.setAttribute('aria-pressed', String(focused === seat.playerId));
+      board.focus.textContent = focused === seat.playerId ? 'Focused' : 'Inspect';
     }
   };
   overview.onclick = () => { focused = null; layout(); };
@@ -58,14 +60,9 @@ export function createPhysicalScene(inspect: (title: string, cards: AgentCardObs
         board.element.dataset.playerId = player.playerId;
         board.element.dataset.active = String(player.playerId === observation.game.activePlayerId);
         board.element.dataset.priority = String(player.playerId === observation.game.priorityPlayerId);
-        board.focus.textContent = `Focus ${player.name}`;
-        const name = document.createElement('span'); name.textContent = player.name;
-        const life = document.createElement('strong'); life.className = 'physical-life'; life.textContent = String(player.life); life.setAttribute('aria-label', `${player.life} life`);
-        board.identity.replaceChildren(name, life);
-        if (board.previousLife !== null && board.previousLife !== player.life) {
-          const delta = document.createElement('small'); delta.className = 'physical-life-delta';
-          const amount = player.life - board.previousLife; delta.textContent = `${amount > 0 ? '+' : ''}${amount}`; board.identity.append(delta);
-        }
+        board.focus.setAttribute("aria-label", `Focus ${seatName(player, observation)}`);
+        board.element.dataset.role = player.role;
+        renderPlayerSeat(board.identity, player, observation, board.previousLife);
         board.previousLife = player.life;
         const playerTargets = targets.filter(item => item.playerId === player.playerId);
         board.identity.classList.toggle('physical-identity--target', playerTargets.length > 0);
