@@ -9,6 +9,7 @@ function decision(overrides: Partial<WebPendingDecisionDTO>): WebPendingDecision
     context: { turn: 1, phase: "combat_declare_attackers", activePlayerId: "player-1", priorityPlayerId: "player-1", stackSize: 0 },
     rendered: { kind: "menu", title: "Declare attackers", items: [] },
     selectedCardRefs: null,
+    combatPairings: null,
     ...overrides,
   };
 }

@@ -63,7 +63,7 @@ const army = Array.from({length:32},(_,i)=>({...card('Goblin',`g${i}`),token:tru
 const field = [...army,...Array.from({length:16},(_,i)=>({...card(i<10?'Forest':'Swamp',`land${i}`,'battlefield','Basic Land'),tapped:i<5})),...Array.from({length:12},(_,i)=>({...card('Llanowar Elves',`elf${i}`),power:i%3+1,toughness:i%3+1,counters:{'+1/+1':i}}))];
 observation.players[1].battlefield=field;
 observation.players[1].command.push(card('Ravos, Soultender','partner','command'));
-observation.players[1].commanders=[{cardRef:'aic',castsFromCommand:1,name:'Uurg, Spawn of Turg',inCommandZone:true},{cardRef:'partner',castsFromCommand:2,name:'Ravos, Soultender',inCommandZone:true}];
+observation.players[1].commanders=[{cardRef:'aic',castsFromCommand:1,commanderTaxGeneric:2,name:'Uurg, Spawn of Turg',inCommandZone:true},{cardRef:'partner',castsFromCommand:2,commanderTaxGeneric:4,name:'Ravos, Soultender',inCommandZone:true}];
 observation.players[1].handSize=17;
 observation.players[1].graveyard=Array.from({length:20},(_,i)=>card('Cultivate',`grave${i}`,'graveyard','Sorcery')); observation.players[1].graveyardSize=20;
 await shot('stress-1366');
@@ -74,7 +74,9 @@ const collidingBadges = await opponent.locator('[data-card-variant="battlefield"
   return count && stats && count.left < stats.right && count.right > stats.left && count.top < stats.bottom && count.bottom > stats.top;
 }).length);
 assert.equal(collidingBadges, 0, 'stack quantity must not cover power/toughness, including tapped groups');
-assert.equal(await opponent.locator('.physical-commander-casts').count(),2);
+assert.equal(await opponent.locator('.table-commander-tax').count(),2,'both commanders with non-zero tax show the material tax badge (V2h)');
+assert.equal(await opponent.locator('.table-commander-tax').first().textContent(),'+2');
+assert.equal(await opponent.locator('.table-commander-tax').last().textContent(),'+4');
 await page.setViewportSize({width:1920,height:1080}); await shot('stress-1920');
 observation.players.push(player('ai2','opponent')); observation.players[2].name='Asphodel II'; await shot('three-overview-1920');
 assert.equal(await page.locator('.physical-board').count(),3);

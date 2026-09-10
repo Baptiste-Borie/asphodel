@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { computePlaybackDelayMs, FramePlaybackQueue, OPPONENT_ACTION_DELAY_MS, OPPONENT_MINOR_DELAY_MS } from "./frame-playback.js";
+import { classifyFrameImportance, computePlaybackDelayMs, FramePlaybackQueue, OPPONENT_ACTION_DELAY_MS, OPPONENT_MEDIUM_DELAY_MS, OPPONENT_MINOR_DELAY_MS } from "./frame-playback.js";
 import type { PublicGameFrame } from "./types.js";
 
 function frame(id: number, text: string | null = null): PublicGameFrame {
@@ -74,4 +74,19 @@ it("a meaningful opponent action gets the longer OPPONENT_ACTION_DELAY_MS; a min
   assert.equal(computePlaybackDelayMs(minor, 0), OPPONENT_MINOR_DELAY_MS);
   assert.ok(OPPONENT_ACTION_DELAY_MS > OPPONENT_MINOR_DELAY_MS, "a real action should linger noticeably longer than a minor visual step");
   assert.ok(OPPONENT_ACTION_DELAY_MS >= 900 && OPPONENT_MINOR_DELAY_MS >= 500 && OPPONENT_MINOR_DELAY_MS <= 650, "matches the V2e.5 suggested starting values");
+});
+
+it("classifyFrameImportance (V2h): a cast/attack/block is HIGH, a land play or activated ability is MEDIUM, no event is LOW", () => {
+  assert.equal(classifyFrameImportance({ event: { id: 1, turn: 1, phase: "main1", text: "Asphodel casts Krenko" } }), "high");
+  assert.equal(classifyFrameImportance({ event: { id: 1, turn: 1, phase: "combat_declare_attackers", text: "Asphodel attacks with Krenko" } }), "high");
+  assert.equal(classifyFrameImportance({ event: { id: 1, turn: 1, phase: "combat_declare_blockers", text: "Asphodel blocks with Wall" } }), "high");
+  assert.equal(classifyFrameImportance({ event: { id: 1, turn: 1, phase: "main1", text: "Asphodel plays Forest" } }), "medium");
+  assert.equal(classifyFrameImportance({ event: { id: 1, turn: 1, phase: "main1", text: "Asphodel activates Skirk Prospector" } }), "medium");
+  assert.equal(classifyFrameImportance({ event: null }), "low");
+});
+
+it("a medium-importance frame gets a delay strictly between the low and high tiers", () => {
+  const medium = { event: { id: 1, turn: 1, phase: "main1", text: "Asphodel plays Forest" } };
+  assert.equal(computePlaybackDelayMs(medium, 0), OPPONENT_MEDIUM_DELAY_MS);
+  assert.ok(OPPONENT_MINOR_DELAY_MS < OPPONENT_MEDIUM_DELAY_MS && OPPONENT_MEDIUM_DELAY_MS < OPPONENT_ACTION_DELAY_MS);
 });
