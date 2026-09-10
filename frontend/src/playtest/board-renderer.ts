@@ -1,6 +1,7 @@
 import { computeBattlefieldScale } from "./battlefield-scale.js";
 import { groupCards, type CardGroup } from "./card-grouping.js";
 import { createTableCard } from "./card-view.js";
+import { commanderTaxLabel } from "./commander-tax.js";
 import { partitionBattlefield } from "./land-zone.js";
 import type { AgentCardObservation, AgentObservation, AgentPlayerObservation, CardPresentation } from "./types.js";
 
@@ -15,6 +16,8 @@ export interface BoardCallbacks {
   isPlayable?: (card: AgentCardObservation) => boolean;
   /** V2e.6: true while Forge currently reports this card as a declared attacker/blocker — a distinct visual state, entirely independent of `isPlayable`/`tapped`. Omitted (or always false) outside attackers_selection/blockers_selection. */
   isCombatSelected?: (card: AgentCardObservation) => boolean;
+  /** V2h "COMBAT READABILITY": what a combat-selected card is attacking/blocking, already resolved to a display name — see combat-selection.ts's `combatRelations`. `undefined`/`null` outside attackers_selection/blockers_selection, or for a card with no pairing. */
+  combatTag?: (card: AgentCardObservation) => { role: "attacker" | "blocker"; relatedName: string } | null | undefined;
 }
 
 /** Pure. "main1" -> "Main 1", "combat_damage" -> "Combat Damage". */
@@ -114,6 +117,7 @@ function renderCardRow(container: HTMLElement, groups: CardGroup[], callbacks: B
       onInspect: callbacks.onCardInspect,
       selected: callbacks.isSelected(card),
       combatSelected: callbacks.isCombatSelected?.(card) ?? false,
+      combatTag: callbacks.combatTag?.(card) ?? null,
       className,
       useSlot: true,
       count: group.count,
@@ -184,6 +188,22 @@ export function renderCommanderDock(container: HTMLElement, player: AgentPlayerO
   const groups = rowsFor(commandZoneCards(player), true);
   void expand; // Commanders retain individual identity and casts even when their faces match.
   renderCardRow(container, groups, callbacks, "table-card--commander");
+
+  // V2h "COMMANDER TAX VISIBILITY": a small material badge on/near each commander whose tax is
+  // currently non-zero — supports partners/dual commanders (each tracked independently), and is
+  // hidden entirely when there is nothing to show (commanderTaxLabel returns null for zero/absent).
+  const cardElements = container.querySelectorAll<HTMLElement>("[data-card-ref]");
+  for (const commander of player.commanders) {
+    const node = Array.from(cardElements).find((el) => el.dataset.cardRef === commander.cardRef);
+    node?.querySelector(".table-commander-tax")?.remove();
+    const label = commanderTaxLabel(commander);
+    if (!node || !label) continue;
+    const badge = document.createElement("span");
+    badge.className = "table-commander-tax";
+    badge.textContent = label;
+    badge.title = `Commander tax: ${label} generic mana (cast from the command zone ${commander.castsFromCommand} time${commander.castsFromCommand === 1 ? "" : "s"} before)`;
+    node.append(badge);
+  }
 }
 
 /** The human's hand as a fanned/overlapping row of real cards — read via hover (CSS-only rise+scale), never pinned to the preview panel. A playable card (see HandActionCallbacks) gets a distinct highlight and becomes clickable; every other card is unaffected. */

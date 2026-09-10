@@ -90,7 +90,16 @@ record AgentObservation(
             String cardRef,
             String name,
             boolean inCommandZone,
-            int castsFromCommand
+            int castsFromCommand,
+            /**
+             * The generic-mana commander tax currently in effect for this commander (V2h,
+             * "COMMANDER TAX VISIBILITY") — computed the exact same way Forge itself applies it when
+             * building the real cast cost, see {@code forge.game.cost.CostAdjustment} ({@code n =
+             * activator.getCommanderCast(host) * 2}). This is Forge's own rule constant, not a
+             * frontend/backend guess: rule 903.8 always adds {2} generic per previous command-zone
+             * cast. Zero when the commander has never been cast from the command zone.
+             */
+            int commanderTaxGeneric
     ) {
     }
 

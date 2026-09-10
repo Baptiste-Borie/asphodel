@@ -15,7 +15,7 @@
 .table-root--physical .physical-declare-search .field-label { text-align: left; font-size: 10px; color: #b9c1bc; }
 .table-root--physical .card-search-input { background: #14232b; color: #ece4d2; border: 1px solid #8a967b66; border-radius: 4px; padding: 10px 13px; font-size: 13px; }
 .table-root--physical .card-search { position: relative; }
-.table-root--physical .card-search-results { bottom: calc(100% + 4px); top: auto; z-index: 10; background: #15242dfa; border-color: #a1916f; box-shadow: 0 8px 26px #0009; max-height: 190px; text-align: left; }
+.table-root--physical .card-search-results { bottom: calc(100% + 4px); top: auto; z-index: 10; background: #15242dfa; border-color: #a1916f; box-shadow: 0 8px 26px #0009; max-height: min(230px, 32vh); text-align: left; }
 .physical-declare-footer { display: flex; justify-content: center; align-items: center; gap: 28px; }
 .table-root--physical .physical-declare-footer .decision-option--confirm { min-width: 180px; background: linear-gradient(#a08b5b,#75623f); border-color: #dbc99777; color: #fff1d5; }
 .table-root--physical .physical-declare-clear { border: 0; border-bottom: 1px solid #8a95805e; background: transparent; color: #bbc2b8; font-size: 11px; padding: 6px 0; }

@@ -247,6 +247,15 @@
   border-radius: var(--radius-sm);
   background: var(--surface-raised);
   list-style: none;
+  /*
+    V2h "AUTOCOMPLETE": a bounded, internally-scrolling list — this used to have no max-height at
+    all, so a broad query (many candidates) grew the dropdown far past a sensible size and covered
+    cards/controls beneath it. `overscroll-behavior` keeps a scroll-to-the-edge inside this list from
+    also scrolling whatever sits behind it.
+  */
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .card-search-result {

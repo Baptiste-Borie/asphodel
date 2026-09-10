@@ -105,7 +105,12 @@ export function createCardSearch(options: CardSearchOptions): HTMLElement {
       list.append(item);
     });
     list.hidden = results.length === 0;
-    if (activeIndex >= 0 && results[activeIndex]) input.setAttribute('aria-activedescendant', `${list.id}-${activeIndex}`);
+    if (activeIndex >= 0 && results[activeIndex]) {
+      input.setAttribute('aria-activedescendant', `${list.id}-${activeIndex}`);
+      // The list now scrolls internally (V2h — a bounded, non-clipping dropdown) — keep the
+      // keyboard-active option actually visible inside it rather than off the top/bottom edge.
+      list.children[activeIndex]?.scrollIntoView({ block: "nearest" });
+    }
     else input.removeAttribute('aria-activedescendant');
     input.setAttribute("aria-expanded", String(results.length > 0));
   }

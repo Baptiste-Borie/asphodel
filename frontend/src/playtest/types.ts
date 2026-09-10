@@ -42,6 +42,14 @@ export interface AgentCommanderObservation {
   name: string;
   inCommandZone: boolean;
   castsFromCommand: number;
+  /**
+   * V2h "COMMANDER TAX VISIBILITY": the generic-mana commander tax currently in effect — computed
+   * bridge-side the exact same way Forge itself applies it to the real cast cost (see
+   * backend/src/forge/forge-protocol.ts's field doc / `forge.game.cost.CostAdjustment`), never
+   * recomputed here. `undefined` on an older bridge that predates this field — see
+   * commander-tax.ts, which is the ONLY place allowed to read this and never defaults it to 0.
+   */
+  commanderTaxGeneric?: number;
 }
 
 interface AgentPlayerObservationBase {
@@ -156,6 +164,13 @@ export interface WebPendingDecisionDTO {
   rendered: DecisionPrompt;
   /** V2e.6: Forge's own currently-declared attackers/blockers, as cardRefs — null outside attackers_selection/blockers_selection. Never derived from tapped state. */
   selectedCardRefs: string[] | null;
+  /**
+   * V2h "COMBAT READABILITY": the same declared attacker/blocker set as `selectedCardRefs`, but
+   * keeping Forge's own pairing (`relatedRef` — the defending player for an attacker, or the
+   * attacker's cardRef for a blocker) — see combat-selection.ts's `combatRelations`. `null` outside
+   * attackers_selection/blockers_selection.
+   */
+  combatPairings: { cardRef: string; relatedRef: string }[] | null;
 }
 
 export interface PublicGameEvent {

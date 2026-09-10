@@ -192,7 +192,10 @@ final class AgentObservationBuilder {
                     cardRef(commander),
                     commander.getName(),
                     commander.isInZone(ZoneType.Command),
-                    player.getCommanderCast(commander)
+                    player.getCommanderCast(commander),
+                    // Same formula Forge's own forge.game.cost.CostAdjustment applies to the real cast
+                    // cost (rule 903.8's fixed {2}-per-previous-cast tax) — see the field's javadoc.
+                    player.getCommanderCast(commander) * 2
             ));
         }
         return List.copyOf(result);

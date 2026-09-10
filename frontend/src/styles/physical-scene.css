@@ -30,6 +30,37 @@
 .physical-board[data-density=preview] .table-card-stats { font-size: 9px; padding: 1px 2px; }
 [data-card-variant=land] .table-card-caption { font-size: 8px; }
 .physical-board[data-active=true] { background: radial-gradient(ellipse at 12% 8%,#bdb28c08,transparent 55%); }
+
+/*
+  --- Human digital twin framing (V2h "HUMAN DIGITAL TWIN MUST BE VISUALLY SEPARATE"): the human's
+  own board is conceptually a separate secondary view of a real physical hand, never just another
+  seat on the main surface — a deliberate stone/brass frame (engraved edge, elevation, a stamped
+  "YOU" mark) makes that unmistakable at a glance, at any density (compact preview or focused
+  primary). Asphodel's board (data-role=opponent) is untouched — it keeps dominating the table.
+--- */
+
+.physical-board[data-role=self] {
+  position: relative;
+  border: 1px solid var(--brass, #aa9062);
+  border-radius: 14px 14px 34px 14px;
+  background: linear-gradient(160deg, #262d33 0%, #171c20 78%);
+  box-shadow: 0 10px 26px #0007, inset 0 0 0 1px #00000055, inset 0 0 0 6px #ffffff08;
+}
+
+.physical-board[data-role=self]::before {
+  content: 'YOU · DIGITAL TWIN';
+  position: absolute;
+  top: 6px;
+  left: 14px;
+  z-index: 1;
+  font: 8px system-ui;
+  letter-spacing: .18em;
+  color: var(--brass-light, #dec899);
+  opacity: .8;
+  pointer-events: none;
+}
+
+.physical-board[data-density=preview][data-role=self]::before { content: 'YOU'; top: 4px; left: 9px; font-size: 7px; }
 .physical-identity--target { outline: 2px solid #e2a542; outline-offset: 4px; cursor: crosshair; }
 .physical-board .table-card--combat-selected { translate: 0 -10px; outline: 2px solid #d8b477; }
 .physical-life-delta { color: #e3c083; font: 15px Georgia,serif; animation: physical-life-delta 1.8s forwards; }

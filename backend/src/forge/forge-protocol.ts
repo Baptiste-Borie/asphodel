@@ -554,6 +554,14 @@ export interface AgentCommanderObservation {
   name: string;
   inCommandZone: boolean;
   castsFromCommand: number;
+  /**
+   * V2h "COMMANDER TAX VISIBILITY": the generic-mana commander tax currently in effect, computed
+   * bridge-side the exact same way Forge itself applies it to the real cast cost (see
+   * `AgentObservationBuilder.CommanderObservation`'s javadoc / `forge.game.cost.CostAdjustment`) —
+   * never recomputed here, just relayed. `undefined` on an older bridge that predates this field
+   * (never guessed as 0 in that case — see `commander-tax.ts`). Zero when never cast from command.
+   */
+  commanderTaxGeneric?: number;
 }
 
 interface AgentPlayerObservationBase {

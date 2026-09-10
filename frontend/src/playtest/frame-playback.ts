@@ -1,15 +1,47 @@
 import type { PublicGameFrame } from "./types.js";
 
 /**
- * The one place these pacing constants live (V2e.5) — change them here to retune every playback
- * speed. A "meaningful" opponent action (the frame carries a narratable `event`, e.g. "Asphodel
- * casts Krenko") gets the longer delay; a minor/intermediate visual-only transition (e.g. a mana
- * ability tapping a land, `event: null`) gets the shorter one — the human must be able to
- * comfortably follow each individual step (land enters -> tap -> spell appears) before the next
- * one is shown.
+ * The one place these pacing constants live (V2e.5/V2h) — change them here to retune every
+ * playback speed. Three importance tiers (V2h "AI PLAYBACK PACING", roughly following the spec's
+ * suggested ranges):
+ *   - LOW: no narratable event at all (e.g. a mana ability tapping a land mid-payment).
+ *   - MEDIUM: a land played, or an activated ability — a real but modest step.
+ *   - HIGH: a spell cast, an attack declaration, a block — the moments a human most needs a beat to
+ *     actually register before the next thing happens.
+ * `OPPONENT_ACTION_DELAY_MS`/`OPPONENT_MINOR_DELAY_MS` are the pre-V2h names for the HIGH/LOW
+ * tiers, kept as the exact values a caller (or a future speed setting) reads for those two tiers.
  */
 export const OPPONENT_ACTION_DELAY_MS = 900;
+export const OPPONENT_MEDIUM_DELAY_MS = 700;
 export const OPPONENT_MINOR_DELAY_MS = 600;
+
+export type FrameImportance = "low" | "medium" | "high";
+
+const IMPORTANCE_DELAY_MS: Readonly<Record<FrameImportance, number>> = {
+  low: OPPONENT_MINOR_DELAY_MS,
+  medium: OPPONENT_MEDIUM_DELAY_MS,
+  high: OPPONENT_ACTION_DELAY_MS,
+};
+
+/** A spell cast, an attack declared, or a block — the events worth the longest, most readable pause. */
+const HIGH_IMPORTANCE_PATTERN = /\bcasts?\b|\battacks? with\b|\bblocks?\b/i;
+/** A land played or an ability activated — a real, narratable step, but a shorter one than the above. */
+const MEDIUM_IMPORTANCE_PATTERN = /\bplays?\b|\bactivates?\b/i;
+
+/**
+ * Pure. Classifies one frame's pacing importance purely from whether/what it narrates — never from
+ * raw Forge data, only the same human-readable `event.text` already used for Recent Actions (see
+ * `describeAgentAction`, backend/src/human/human-decision-render.ts). A frame with no event at all
+ * is always LOW; a narrated event this doesn't recognize defaults to MEDIUM (a real step, just not
+ * one of the two named-and-tuned patterns above) — never silently collapsed to LOW, which would
+ * under-pace a future event kind nobody has classified yet.
+ */
+export function classifyFrameImportance(frame: Pick<PublicGameFrame, "event">): FrameImportance {
+  if (!frame.event) return "low";
+  if (HIGH_IMPORTANCE_PATTERN.test(frame.event.text)) return "high";
+  if (MEDIUM_IMPORTANCE_PATTERN.test(frame.event.text)) return "medium";
+  return "medium";
+}
 
 /**
  * Pure. Paces individual actions generously in the common case, but caps how long a big backlog
@@ -17,7 +49,7 @@ export const OPPONENT_MINOR_DELAY_MS = 600;
  * grows (a "reasonable accelerated catch-up", never abandoning any frame).
  */
 export function computePlaybackDelayMs(frame: Pick<PublicGameFrame, "event">, remainingAfterThisFrame: number): number {
-  const base = frame.event ? OPPONENT_ACTION_DELAY_MS : OPPONENT_MINOR_DELAY_MS;
+  const base = IMPORTANCE_DELAY_MS[classifyFrameImportance(frame)];
   if (remainingAfterThisFrame <= 2) return base;
   if (remainingAfterThisFrame <= 6) return Math.round(base * 0.6);
   return Math.max(150, Math.round(base * 0.3));

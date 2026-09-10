@@ -24,7 +24,9 @@
 .physical-hand > .table-card--hand { flex-shrink: 0; width: 94px; margin-left: -58px; pointer-events: auto; }
 .physical-hand > .table-card--hand:first-child { margin-left: 0; }
 .physical-hand:hover, .physical-hand:focus-within { overflow: visible; z-index: 6; }
-.physical-hand .table-card--hand:hover, .physical-hand .table-card--hand:focus-visible { transform: translateY(28px) scale(1.65); transition-delay: .2s; }
+/* V2h: the magnified read is the global hover-preview portal (hover-preview.ts) now, which is never
+   clipped by this seat's own overflow — this stays a small "picked up toward the viewer" cue only. */
+.physical-hand .table-card--hand:hover, .physical-hand .table-card--hand:focus-visible { transform: translateY(10px) scale(1.08); transition-delay: .1s; }
 .physical-hand > .table-card-back { width: 47px; height: 67px; flex-shrink: 0; border-radius: 5px; margin-left: -24px; transform: rotate(var(--fan-angle)); background: radial-gradient(ellipse,#384447,#14212a); border-color: #968267; color: #c0ac80; }
 .physical-hand small { white-space: nowrap; margin-left: 14px; padding-top: 9px; font: 10px system-ui; color: #c8c6b6; }
 .physical-board[data-density=preview] .physical-hand { padding: 8px 4px 0; }
@@ -47,5 +49,3 @@
 .physical-board[data-density=preview] .table-pile { width: 28px; }
 .physical-board[data-density=preview] .table-pile-face { width: 25px; height: 35px; }
 .physical-board[data-density=preview] .table-public-zones { gap: 5px; }
-
-.physical-commander-casts { position: absolute; bottom: 2px; left: 2px; right: 2px; background: #111e; color: #eed9ad; font: 8px system-ui; padding: 2px; }

@@ -13,7 +13,9 @@ import { runHumanVsAgentMatch } from "./human-vs-agent-runner.js";
 import { WebHumanDecisionProvider } from "./web-human-decision-provider.js";
 import { DecisionRecorder } from "./decision-recorder.js";
 import { describeAgentAction, describeDecision, describePhysicalDeclare, type DecisionPrompt } from "./human-decision-render.js";
-import { sanitizeAgentObservation, type PublicGameFrame } from "./public-game-frame.js";
+import { sanitizeAgentObservation, type HumanSafePublicBoardObservation, type PublicGameFrame } from "./public-game-frame.js";
+import { describeObservationDelta } from "./public-event-delta.js";
+import { logCommanderCastDiagnostics } from "./commander-cast-diagnostics.js";
 import { writePlaytestReport, type PlaytestReportResult, type RecordedPhysicalDeclaration } from "./playtest-report.js";
 import { ManualPhysicalCardProvider } from "../physical/physical-card-provider.js";
 import { deckCompositionFrom, PhysicalLedger } from "../physical/physical-ledger.js";
@@ -73,6 +75,14 @@ export interface WebPendingDecisionDTO {
    * `blockers_selection` (never fabricated for other families, and never derived from tapped state).
    */
   selectedCardRefs: string[] | null;
+  /**
+   * V2h "COMBAT READABILITY": the exact same declared attacker/blocker set as `selectedCardRefs`,
+   * but keeping Forge's own pairing (`relatedRef` — the defending player for an attacker, or the
+   * attacker's own cardRef for a blocker) that `selectedCardRefs` flattens away. Relayed verbatim
+   * from `ForgePendingCombatDecision.selected`, never derived/guessed on this side. `null` for every
+   * decision type other than `attackers_selection`/`blockers_selection`.
+   */
+  combatPairings: { cardRef: string; relatedRef: string }[] | null;
 }
 
 export interface WebPlaytestStateDTO {
@@ -138,6 +148,8 @@ interface Session {
   /** The owner of the previously processed decision. A frame is captured only when this was "agent" — i.e. the incoming observation reflects a state Asphodel's own action just produced, regardless of who owns the decision that just arrived. */
   pendingFrameOwner: DecisionOwner | null;
   lastFrameObservationKey: string | null;
+  /** The last sanitized public observation a frame was actually pushed for — the "previous" side of `describeObservationDelta` (V2h "RECENT ACTIONS"), so a life change / new arrival during Asphodel's turn is narrated even when `describeAgentAction` itself had nothing to say (e.g. a triggered ability, not a direct cast). `null` before the first agent-owned frame. */
+  lastNarratedObservation: HumanSafePublicBoardObservation | null;
   phase: "starting" | "in_progress" | "completed" | "ended_by_human" | "failed";
   result: ForgeGameResult | null;
   errorMessage: string | null;
@@ -195,6 +207,7 @@ export class PlaytestSessionManager {
       lastObservation: null,
       recorder: new DecisionRecorder(), events: [],
       frames: [], lastHumanHand: [], pendingFrameEvent: null, pendingFrameOwner: null, lastFrameObservationKey: null,
+      lastNarratedObservation: null,
       phase: "starting", result: null, errorMessage: null, reportResult: null,
       runPromise: Promise.resolve(),
     };
@@ -241,6 +254,13 @@ export class PlaytestSessionManager {
                 const event = session.pendingFrameEvent ? { id: frameId, ...session.pendingFrameEvent } : null;
                 session.frames.push({ id: frameId, event, observation: safeObservation });
                 session.lastFrameObservationKey = key;
+                // V2h "RECENT ACTIONS": life changes and new non-land arrivals during Asphodel's turn,
+                // on top of whatever describeAgentAction already said for the action that caused them
+                // (a triggered ability's life loss, e.g., has no priority_action of its own to narrate).
+                for (const text of describeObservationDelta(session.lastNarratedObservation, safeObservation)) {
+                  session.events.push({ id: session.events.length + 1, turn: decision.context.turn, phase: decision.context.phase, text });
+                }
+                session.lastNarratedObservation = safeObservation;
               }
             }
             if (owner === "human") {
@@ -302,6 +322,11 @@ export class PlaytestSessionManager {
     // the physical one here is the defensive, well-defined choice either way.
     const physicalPending = session.physicalProvider?.current();
     const pending = session.provider.current();
+    // V2h "K'RRIK REAL-MATCH ISSUE": opt-in diagnostic only (see commander-cast-diagnostics.ts) —
+    // a no-op unless ASPHODEL_DEBUG_COMMANDER_CAST=1 is set.
+    if (pending && pending.decision.type === "priority_action") {
+      logCommanderCastDiagnostics(pending.observation, pending.decision);
+    }
     return {
       sessionId: session.id, status: this.statusOf(session), playMode: session.playMode,
       humanDeckName: session.humanDeckName, asphodelDeckName: session.agentDeckName,
@@ -310,11 +335,14 @@ export class PlaytestSessionManager {
         decisionId: physicalPending.request.decisionId, type: "physical_identity_declare", context: physicalPending.request.context,
         rendered: describePhysicalDeclare(physicalPending.request),
         selectedCardRefs: null,
+        combatPairings: null,
       } : pending ? {
         decisionId: pending.decision.decisionId, type: pending.decision.type, context: pending.decision.context,
         rendered: describeDecision(pending.observation, pending.decision),
         selectedCardRefs: (pending.decision.type === "attackers_selection" || pending.decision.type === "blockers_selection")
           ? pending.decision.selected.map(s => s.cardRef) : null,
+        combatPairings: (pending.decision.type === "attackers_selection" || pending.decision.type === "blockers_selection")
+          ? pending.decision.selected.map(s => ({ cardRef: s.cardRef, relatedRef: s.relatedRef })) : null,
       } : null,
       publicEvents: session.events,
       frames: session.frames,

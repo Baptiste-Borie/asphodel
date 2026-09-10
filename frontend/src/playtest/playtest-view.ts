@@ -1,5 +1,5 @@
 import { createPhysicalScene } from './physical-scene.js';
-import { decisionPresentationNames, renderDecisionCards } from "./decision-cards.js";
+import { decisionPresentationNames, renderDecisionCards, renderOpeningHandReview } from "./decision-cards.js";
 import { ApiError } from "../api/api-client.js";
 import "../styles/playtest.css";
 import "../styles/tabletop.css";
@@ -11,8 +11,11 @@ import { endPlaytest, getActivePlaytest, getPlaytestReport, getPlaytestState, st
 import { element } from "../dom.js";
 import { collectVisibleCardNames, commandZoneCards, formatHudPhase, opponentPlayer, renderBattlefieldHalf, renderCommanderDock, renderCompactHand, renderHand, renderLandZone, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
 import { createCardPreviewPanel } from "./card-preview.js";
+import { createHoverPreview } from "./hover-preview.js";
 import { CardPresentationStore } from "./card-presentation-store.js";
-import { combatSelectedCardRefs } from "./combat-selection.js";
+import { cardDisplayName } from "./card-format.js";
+import { combatRelations, combatSelectedCardRefs, type CombatRelation } from "./combat-selection.js";
+import { seatName } from "./player-seat.js";
 import { renderDecision } from "./decision-renderer.js";
 import { FramePlaybackQueue } from "./frame-playback.js";
 import { createHandActionMenu } from "./hand-action-menu.js";
@@ -21,6 +24,9 @@ import { computePreviewAction } from "./preview-action.js";
 import { groupManaPaymentOptions, type ManaPaymentGroups } from "./mana-payment-mapping.js";
 import { createManaPaymentOverlay } from "./mana-payment-overlay.js";
 import { renderPhysicalDeclare } from "./physical-declare.js";
+import { createPhaseBanner, detectMajorPhaseTransition, phaseTransitionLabel } from "./phase-transitions.js";
+import { createCardReveal } from "./card-reveal.js";
+import { newlyArrivedPermanents } from "./reveal-detection.js";
 import { computeSeatPresentations } from "./seat-presentation.js";
 import "../styles/physical-companion.css";
 import "../styles/physical-scene.css";
@@ -217,10 +223,18 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   let lastObservation: AgentObservation | null = null;
   const cardStore = new CardPresentationStore();
   const previewPanel = createCardPreviewPanel();
+  // V2h: a single global hover-magnify overlay, attached once for the life of the page — see
+  // hover-preview.ts for why this must be a body-level portal rather than per-container CSS.
+  const hoverPreview = createHoverPreview();
+  hoverPreview.attach(document);
   const handActionMenu = createHandActionMenu();
   const manaOverlay = createManaPaymentOverlay();
   const zoneInspector = createZoneInspector((name) => cardStore.get(name));
   const transitions = new VisualTransitions();
+  const phaseBanner = createPhaseBanner();
+  let lastPhaseState: { turn: number; phase: string; activePlayerId: string } | null = null;
+  const cardReveal = createCardReveal();
+  let lastRevealObservation: AgentObservation | null = null;
   let opponentHand: HTMLElement, stackEl: HTMLElement;
   let physicalScene: ReturnType<typeof createPhysicalScene> | null = null;
   let stackControl: HTMLButtonElement;
@@ -284,10 +298,15 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     latestState = null;
     currentPlayMode = "digital";
     transitions.reset();
+    phaseBanner.reset();
+    lastPhaseState = null;
+    cardReveal.hide();
+    lastRevealObservation = null;
     physicalScene = null;
     zoneInspector.close();
     document.body.classList.remove("tabletop-active");
     previewPanel.close();
+    hoverPreview.hide();
     handActionMenu.close();
     manaOverlay.close();
     setupSection.hidden = false;
@@ -308,6 +327,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     transitions.reset();
     physicalScene = null;
     zoneInspector.close();
+    hoverPreview.hide();
     document.body.classList.remove("tabletop-active");
     setupSection.hidden = true;
     gameSection.hidden = true;
@@ -556,7 +576,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
 
     if (physicalScene) gameSection.append(physicalScene.element, physicalScene.overview);
     if (!physicalScene) gameSection.append(battlefield, handContainer);
-    gameSection.append(rail, hud, menuButton, menuPanel, previewPanel.element, decisionDock, handActionMenu.element, manaOverlay.element, zoneInspector.element);
+    gameSection.append(rail, hud, phaseBanner.element, cardReveal.element, menuButton, menuPanel, previewPanel.element, decisionDock, handActionMenu.element, manaOverlay.element, zoneInspector.element);
   }
 
   function setDeckInfo(humanDeckName: string, asphodelDeckName: string): void {
@@ -608,11 +628,44 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     el.classList.add("table-hud-line--changed");
   }
 
+  /**
+   * V2h "COMBAT READABILITY": resolves one `CombatRelation.relatedRef` (either a defending player's
+   * id, for an attacker, or the attacker's own cardRef, for a blocker — see combat-selection.ts) to
+   * a short display name, purely from the already-visible `observation` — never a new lookup source,
+   * never a rules input. Falls back to the raw ref only if genuinely nothing matches (should not
+   * happen in practice, since Forge only ever reports a real player/card as the related object).
+   */
+  function resolveCombatRelatedName(observation: AgentObservation, ref: string): string {
+    const player = observation.players.find((p) => p.playerId === ref);
+    if (player) return seatName(player, observation);
+    for (const p of observation.players) {
+      const zones: AgentCardObservation[][] = [p.battlefield, p.graveyard, p.exile, commandZoneCards(p)];
+      if (p.role === "self") zones.push((p as AgentSelfPlayerObservation).hand);
+      for (const zone of zones) {
+        const card = zone.find((c) => c.cardRef === ref);
+        if (card) return cardDisplayName(card);
+      }
+    }
+    return ref;
+  }
+
   /** Small, elegant turn/phase HUD (V2e.6) — uses the actual current Forge turn/phase, never a guess; friendly combat-phase labels via `formatHudPhase`. */
   function renderHud(observation: AgentObservation): void {
     const activeLabel = observation.players.find(p => p.playerId === observation.game.activePlayerId)?.name ?? "Player";
     updateHudLine(hudTurnEl, `Turn ${observation.game.turn} · ${activeLabel}`);
     updateHudLine(hudPhaseEl, formatHudPhase(observation.game.phase));
+
+    // V2h "MAJOR PHASE / CHAPTER TRANSITIONS": only the handful of genuinely major beats — see
+    // phase-transitions.ts. Fires from every board paint (live idle AND each played frame), exactly
+    // like the HUD lines above, so it fires once per real transition regardless of which path
+    // painted it.
+    const phaseState = { turn: observation.game.turn, phase: observation.game.phase, activePlayerId: observation.game.activePlayerId };
+    const transition = detectMajorPhaseTransition(lastPhaseState, phaseState, observation.selfPlayerId);
+    lastPhaseState = phaseState;
+    if (transition) {
+      const opponent = opponentPlayer(observation);
+      phaseBanner.show(transition, phaseTransitionLabel(transition, opponent ? seatName(opponent, observation) : "Opponent"));
+    }
   }
 
   /**
@@ -623,9 +676,22 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
    * turn-playback. `combatSelectedRefs` (V2e.6) is Forge's own declared attackers/blockers for the
    * current decision, if any — entirely independent of tapped state.
    */
-  function paintBoard(observation: AgentObservation, handActions?: HandActionCallbacks, boardActionMap?: CardActionMap, combatSelectedRefs?: ReadonlySet<string>): void {
+  function paintBoard(observation: AgentObservation, handActions?: HandActionCallbacks, boardActionMap?: CardActionMap, combatSelectedRefs?: ReadonlySet<string>, combatRelationMap?: ReadonlyMap<string, CombatRelation>): void {
+    // V2h "NEWLY PLAYED CARD REVEAL": one restrained large reveal for the first significant new
+    // battlefield arrival this paint represents (a fast multi-ETB burst reveals only its first card
+    // rather than stacking several at once — see reveal-detection.ts). Computed BEFORE updating
+    // `lastRevealObservation` so this is always a diff against the previously PAINTED state, live or
+    // played-frame alike.
+    const revealed = newlyArrivedPermanents(lastRevealObservation, observation)[0];
+    lastRevealObservation = observation;
+    if (revealed) cardReveal.show(revealed, revealed.name ? cardStore.get(revealed.name) : null);
+
     const expand = Boolean(boardActionMap && boardActionMap.byCardRef.size > 0);
     const isCombatSelected = (card: AgentCardObservation) => combatSelectedRefs?.has(card.cardRef) ?? false;
+    const combatTag = (card: AgentCardObservation) => {
+      const relation = combatRelationMap?.get(card.cardRef);
+      return relation ? { role: relation.role, relatedName: resolveCombatRelatedName(observation, relation.relatedRef) } : null;
+    };
     // V2f.1 §§1-3: ONE consistent callback set, always — a card being actionable never replaces or
     // suppresses its ability to be inspected (`onCardActivate` always just toggles the preview),
     // never forces `isSelected` false, and `isPlayable` reflects the CURRENT decision's exact
@@ -637,6 +703,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       isSelected: (card) => previewPanel.isSelected(card.cardRef),
       isPlayable: (card) => boardActionMap?.byCardRef.has(card.cardRef) ?? false,
       isCombatSelected,
+      combatTag,
       onCardInspect: physicalScene ? (card) => { previewPanel.togglePin(card, card.name && !card.hidden && !card.faceDown ? cardStore.get(card.name) : null); updatePreviewActionable(boardActionMap); } : undefined,
       onCardActivate: (card, anchor) => {
         const items = boardActionMap?.byCardRef.get(card.cardRef);
@@ -903,6 +970,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       active ? buildHandActionCallbacks(active.hand) : undefined,
       active?.board,
       combatSelectedCardRefs(pendingDecision) ?? undefined,
+      combatRelations(pendingDecision) ?? undefined,
     );
   }
 
@@ -924,12 +992,31 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       }
       return;
     }
+    // V2h "MANA/PAYMENT DECISION UI MUST NOT REMOUNT": between two steps of the SAME multi-step
+    // mana payment, the backend genuinely has no pending decision for a beat — Forge has accepted
+    // the previous mana choice and is still computing the next mana_payment decision (the remaining
+    // cost) on its own thread (see PlaytestSessionManager.getState: `pending` is simply absent while
+    // `session.provider.current()` hasn't produced the next decision yet). That is a real, accurate
+    // "nothing to show yet" state, not "the payment ended" — closing the overlay for it and
+    // reopening a beat later is exactly the close-then-reopen flicker this was built to avoid (see
+    // mana-payment-overlay.ts's own "never re-animate on every click" comment). So: while the
+    // overlay is still open and the session hasn't reached a terminal status, a null decision is
+    // bridged by simply leaving the overlay exactly as last rendered, never closed — only a REAL,
+    // different decision (or the session ending) actually closes it, just below.
+    if (manaOverlay.isOpen() && state.pendingDecision === null && !TERMINAL_STATUSES.has(state.status)) {
+      return;
+    }
     manaOverlay.close();
-    decisionDock.classList.remove('table-decision-dock--cards', 'physical-declaration');
+    decisionDock.classList.remove('table-decision-dock--cards', 'table-decision-dock--opening-hand', 'physical-declaration');
     const prompt=state.pendingDecision?.rendered;
-    if (prompt?.kind==='card_picker' || prompt?.kind==='opening_hand') {
+    if (prompt?.kind==='card_picker') {
       decisionDock.replaceChildren(); decisionDock.classList.remove('table-decision-dock--complex'); decisionDock.classList.add('table-decision-dock--cards');
-      renderDecisionCards(decisionDock,prompt,state.observation,(name)=>prompt.kind==='card_picker'?decisionCardStore.get(name):cardStore.get(name),(choice)=>void submitChoice(choice));
+      renderDecisionCards(decisionDock,prompt,state.observation,(name)=>decisionCardStore.get(name),(choice)=>void submitChoice(choice));
+      return;
+    }
+    if (prompt?.kind==='opening_hand') {
+      decisionDock.replaceChildren(); decisionDock.classList.remove('table-decision-dock--complex'); decisionDock.classList.add('table-decision-dock--cards', 'table-decision-dock--opening-hand');
+      renderOpeningHandReview(decisionDock,prompt,state.observation,(name)=>cardStore.get(name),(choice)=>void submitChoice(choice));
       return;
     }
 

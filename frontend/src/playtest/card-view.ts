@@ -1,5 +1,6 @@
 import { battlefieldArtUri } from './card-art.js';
 import { cardDisplayName, counterBadges } from "./card-format.js";
+import { keywordIcons } from "./card-icons.js";
 import type { AgentCardObservation, CardPresentation } from "./types.js";
 
 export interface TableCardOptions {
@@ -36,6 +37,13 @@ export interface TableCardOptions {
    * local guess; only ever derived from Forge's own `selected` list.
    */
   combatSelected?: boolean;
+  /**
+   * V2h "COMBAT READABILITY": what a combat-selected card is attacking/blocking, already resolved
+   * to a display name by the caller (see combat-selection.ts's `combatRelations` + playtest-view.ts)
+   * — rendered as a small tag near the card so "which blocker is assigned to which attacker" (and
+   * "which player is being attacked") reads at a glance, without a full-table connector line.
+   */
+  combatTag?: { role: "attacker" | "blocker"; relatedName: string } | null;
 }
 
 /** Pure. The className applied to the actual `.table-card` element (never the optional outer slot). Summoning sickness (V2e.5) and combat-selection (V2e.6) are distinct, independent visual signals from tapped/selected — presentation only, Forge remains the sole authority on legality. */
@@ -56,9 +64,31 @@ export function tableCardClassName(
   ].filter(Boolean).join(" ");
 }
 
-/** Per-element mutable state for the single, stable click listener attached at creation — so a REUSED element (see `existingCardElement` below) always calls the CURRENT `card`/`onActivate` it was most recently rendered with, never a stale closure from when it was first created. */
-const activationState = new WeakMap<HTMLElement, { card: AgentCardObservation; onActivate?: (card: AgentCardObservation, element: HTMLElement) => void; onInspect?: (card: AgentCardObservation, element: HTMLElement) => void }>();
+/**
+ * Per-element mutable state for the single, stable click listener attached at creation — so a
+ * REUSED element (see `existingCardElement` below) always calls the CURRENT `card`/`onActivate` it
+ * was most recently rendered with, never a stale closure from when it was first created. Also
+ * doubles (V2h) as the lookup table the global hover-preview portal (`hover-preview.ts`) reads to
+ * build its enlarged clone from whichever exact card/presentation this element was LAST rendered
+ * with — see `renderedCardState` below.
+ */
+const activationState = new WeakMap<HTMLElement, {
+  card: AgentCardObservation;
+  presentation: CardPresentation | null | undefined;
+  onActivate?: (card: AgentCardObservation, element: HTMLElement) => void;
+  onInspect?: (card: AgentCardObservation, element: HTMLElement) => void;
+}>();
 const hasClickListener = new WeakSet<HTMLElement>();
+
+/**
+ * V2h: the exact `{card, presentation}` a `.table-card` element was last rendered with — read by
+ * the global hover-preview portal so it can build a full, upright, printed-style clone regardless of
+ * which condensed/rotated on-table variant the hovered element itself currently is. `undefined` for
+ * anything not built by `createTableCard` (e.g. a `.table-picker-card` from decision-cards.ts).
+ */
+export function renderedCardState(element: HTMLElement): { card: AgentCardObservation; presentation: CardPresentation | null | undefined } | undefined {
+  return activationState.get(element);
+}
 
 /**
  * One real Magic card, full image, correct aspect ratio (5:7) — used for the battlefield, the
@@ -158,6 +188,12 @@ export function createTableCard(
 
   const children: HTMLElement[] = [face];
 
+  // V2h "CARD STATE ICONOGRAPHY": only ever built from Forge's own already-curated
+  // `combatKeywords` allowlist (see card-icons.ts) — never shown for a concealed card, which
+  // reports no characteristics at all.
+  const keywordsRow = !concealed ? keywordIcons(card.combatKeywords) : null;
+  if (keywordsRow) children.push(keywordsRow);
+
   const badges = counterBadges(card.counters);
   if (badges.length > 0) {
     const counterStack = document.createElement("div");
@@ -189,9 +225,15 @@ export function createTableCard(
       const stats = document.createElement('span'); stats.className = 'table-card-stats'; stats.textContent = `${card.power}/${card.toughness}`; children.push(stats);
     }
   }
+  if (options.combatTag) {
+    const tag = document.createElement('span');
+    tag.className = `table-card-combat-tag table-card-combat-tag--${options.combatTag.role}`;
+    tag.textContent = options.combatTag.role === 'attacker' ? `Attacking ${options.combatTag.relatedName}` : `Blocking ${options.combatTag.relatedName}`;
+    children.push(tag);
+  }
   element.replaceChildren(...children);
 
-  activationState.set(element, { card, onActivate: options.onActivate, onInspect: options.onInspect });
+  activationState.set(element, { card, presentation, onActivate: options.onActivate, onInspect: options.onInspect });
   if (options.onActivate && !hasClickListener.has(element)) {
     element.addEventListener("click", (event) => {
       event.stopPropagation();

@@ -48,7 +48,8 @@
 .table-hud-phase { font-family: Georgia,serif; text-transform: none; letter-spacing: .02em; font-size: 19px; color: #e5dfcf; }
 .table-hand { height: 190px; padding: 0 280px; align-items: flex-start; padding-top: 12px; }
 .table-card--hand { width: 178px; margin-left: -71px; transform: translateY(var(--fan-rise)) rotate(var(--fan-angle)); transform-origin: 50% 100%; box-shadow: 0 10px 22px #000b; }
-.table-card--hand:hover, .table-card--hand:focus-visible { z-index: 20; transform: translateY(-115px) rotate(0) scale(1.42); }
+/* V2h: the big in-place growth here used to get clipped by ancestor overflow — the actual magnified read is now the global hover-preview portal (hover-preview.ts); this stays a small "picked up" cue only. */
+.table-card--hand:hover, .table-card--hand:focus-visible { z-index: 20; transform: translateY(-26px) rotate(0) scale(1.05); }
 .table-card { box-shadow: 0 8px 14px #0009; transition: transform .3s cubic-bezier(.2,.7,.2,1), box-shadow .2s, border-color .2s; }
 /* V2f.1 §4: a restrained but immediately-readable warm amber/gold glow — soft border + one
    controlled outer ring, distinct from `.table-card--selected`'s paler `--accent` outline so
@@ -89,7 +90,7 @@
 .table-action-hint { margin: 0 0 12px; font-size: 11px; color: #aeb5a4; line-height: 1.5; }
 .table-decision-dock--complex { right: 40px; bottom: 220px; width: min(560px,70vw); max-height: 55vh; padding: 24px; border: 1px solid #8b7955; box-shadow: 0 15px 60px #0009; }
 .table-hand--crowded { justify-content: flex-start; overflow-x: auto; overflow-y: clip; padding-top: 90px; height: 270px; }
-.table-hand--crowded .table-card--hand:hover, .table-hand--crowded .table-card--hand:focus-visible { transform: translateY(-60px) scale(1.1); }
+.table-hand--crowded .table-card--hand:hover, .table-hand--crowded .table-card--hand:focus-visible { transform: translateY(-24px) scale(1.04); }
 .table-card:focus-visible, .table-pile:focus-visible { outline: 2px solid #f2dda8; outline-offset: 4px; }
 @media (max-height: 900px) and (min-width: 1201px) {
   .table-public-zones { flex-wrap: nowrap; gap: 12px; }
@@ -114,3 +115,11 @@
 .table-picker-card:hover,.table-picker-card:focus-visible { outline:2px solid #e4c993; z-index:1; }
 .table-picker-actions { display:flex; justify-content:center; gap:14px; }
 .table-picker-actions .decision-option { max-width:220px; }
+
+/*
+  V2h "OPENING HAND REVIEW IS FAR TOO LARGE": all seven cards in one fanned row (same presentation
+  as the live hand, board-renderer.ts's renderHand) instead of a wrapped grid of oversized tiles —
+  fits comfortably at 1366x768 without scrolling; Keep/Mulligan (.table-picker-actions, reused as-is)
+  stay below it, always visible.
+*/
+.opening-hand-fan { display:flex; align-items:flex-end; justify-content:center; flex-wrap:nowrap; padding:38px 12px 6px; }

@@ -808,10 +808,16 @@ body.tabletop-active #play-view {
   margin-left: 0;
 }
 
+/*
+  V2h: this used to lift AND scale the card in place (translateY(-112px) scale(1.58)) — that big an
+  in-place growth is exactly what got clipped by an ancestor's overflow (see hover-preview.ts's
+  doc comment). The actual magnified read is now the global hover-preview portal; this stays only as
+  a small, restrained "picked up" cue on the card itself, which never risks clipping.
+*/
 .table-card--hand:hover {
   position: relative;
   z-index: 20;
-  transform: translateY(-112px) scale(1.58);
+  transform: translateY(-28px) scale(1.06);
 }
 
 /*
@@ -1017,6 +1023,206 @@ body.tabletop-active #play-view {
     padding-left: 190px;
     padding-right: 190px;
   }
+}
+
+/*
+  --- Major phase/chapter transitions (V2h): short, elegant, non-blocking text for the handful of
+  genuinely major beats (whose turn it is, combat starting) — see phase-transitions.ts. Never
+  awaited by any gameplay path; purely decorative on top of whatever already painted.
+--- */
+
+.table-phase-banner {
+  position: absolute;
+  top: 32%;
+  left: 50%;
+  z-index: 15;
+  transform: translate(-50%, -50%) translateY(10px);
+  padding: 10px 34px;
+  border-top: 1px solid rgba(226, 165, 66, 0.55);
+  border-bottom: 1px solid rgba(226, 165, 66, 0.55);
+  color: #f2dfae;
+  font: 22px/1 Georgia, serif;
+  letter-spacing: 0.28em;
+  text-align: center;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 320ms ease, transform 320ms ease;
+}
+
+.table-phase-banner--visible {
+  opacity: 1;
+  transform: translate(-50%, -50%) translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table-phase-banner {
+    transition-duration: 0.01ms;
+  }
+}
+
+/*
+  --- Newly played card reveal (V2h): a restrained, temporary, large, centered presentation for a
+  significant new battlefield arrival — see reveal-detection.ts / card-reveal.ts. Skippable
+  (click/tap anywhere on it dismisses immediately); never blocks any decision or gameplay path.
+--- */
+
+.table-card-reveal {
+  position: absolute;
+  inset: 0;
+  z-index: 14;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  background: radial-gradient(ellipse at 50% 50%, rgba(0, 0, 0, 0.45), transparent 62%);
+  opacity: 0;
+  /*
+    Not shown right now (including the very first, pre-reveal state before any `show()` call): must
+    never intercept a click meant for the board underneath. `display: grid` above is unconditional
+    (so the fade-out transition has something to animate), which means the native `[hidden]` UA rule
+    (`display: none`) cannot be relied on alone to remove it from hit-testing here — pointer-events
+    does that job explicitly instead. `--visible` re-enables it only for the click-to-dismiss.
+  */
+  pointer-events: none;
+  transition: opacity 260ms ease;
+}
+
+.table-card-reveal--visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.table-card-reveal-card {
+  width: clamp(220px, 20vw, 320px);
+  cursor: pointer;
+  filter: drop-shadow(0 30px 60px rgba(0, 0, 0, 0.6));
+  transform: scale(0.92) translateY(10px);
+  transition: transform 260ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.table-card-reveal--visible .table-card-reveal-card {
+  transform: scale(1) translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table-card-reveal,
+  .table-card-reveal-card {
+    transition-duration: 0.01ms;
+  }
+}
+
+/*
+  --- Global hover-preview portal (V2h): appended directly to <body> by hover-preview.ts, so it has
+  no board/hand/zone ancestor left to clip it — the only real boundary is the viewport, enforced by
+  hover-preview.ts's own clamped positioning, not by any CSS containment here.
+--- */
+
+.table-hover-preview {
+  position: fixed;
+  z-index: 60;
+  width: clamp(180px, 17vw, 260px);
+  pointer-events: none;
+  filter: drop-shadow(0 22px 46px rgba(0, 0, 0, 0.55));
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.table-hover-preview .table-card {
+  width: 100%;
+  cursor: default;
+}
+
+.table-hover-preview--hidden {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table-hover-preview {
+    transition-duration: 0.01ms;
+  }
+}
+
+/*
+  --- Combat keyword icons (V2h "CARD STATE ICONOGRAPHY"): compact original pictograms for whichever
+  of Forge's own combatKeywords a card currently has — see card-icons.ts. Sits opposite the
+  summoning-sickness marker (top-left dot) so the two never collide.
+--- */
+
+.table-card-keywords {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  z-index: 2;
+  display: flex;
+  gap: 3px;
+}
+
+.table-card-keyword {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: #1b1710;
+  background: rgba(226, 165, 66, 0.92);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+/*
+  --- Combat relation tag (V2h "COMBAT READABILITY"): names what a declared attacker/blocker is
+  actually attacking/blocking — see combat-selection.ts's combatRelations. Sits in the space the
+  card's own combat-selected translateY already opens up, so it never collides with corner badges.
+--- */
+
+.table-card-combat-tag {
+  position: absolute;
+  left: 50%;
+  z-index: 3;
+  transform: translateX(-50%);
+  padding: 2px 9px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: rgba(12, 14, 19, 0.9);
+  color: #f2e6c8;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.table-battlefield-half--asphodel .table-card-combat-tag,
+.physical-board[data-role='opponent'] .table-card-combat-tag {
+  top: -22px;
+}
+
+.table-battlefield-half--human .table-card-combat-tag,
+.physical-board[data-role='self'] .table-card-combat-tag {
+  bottom: -22px;
+}
+
+/*
+  --- Commander tax badge (V2h "COMMANDER TAX VISIBILITY"): a small material token, bottom-right of
+  the commander's own card (never the same corner as counters (top-right), the keyword-icon row
+  (bottom-left), or the stack-count badge (unused here — commanders are always rendered individually,
+  never grouped) — see commander-tax.ts / board-renderer.ts's renderCommanderDock. Hidden entirely
+  when there is nothing to show (commanderTaxLabel returns null for a zero/absent tax).
+--- */
+
+.table-commander-tax {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 2;
+  padding: 2px 7px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: linear-gradient(160deg, #3d3120, #1c150c);
+  color: #f2dfae;
+  font-size: 0.72rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
 }
 
 @media (max-width: 900px) {

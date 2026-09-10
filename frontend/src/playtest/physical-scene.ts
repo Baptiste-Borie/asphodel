@@ -79,15 +79,8 @@ export function createPhysicalScene(inspect: (title: string, cards: AgentCardObs
         board.command.dataset.multiple = String(board.command.childElementCount > 1);
         board.command.dataset.zone = 'command'; board.command.dataset.playerId = player.playerId;
         board.hand.dataset.zone = 'hand'; board.hand.dataset.playerId = player.playerId;
-        for (const commander of player.commanders) {
-          const node = Array.from(board.command.querySelectorAll<HTMLElement>('[data-card-ref]')).find(node => node.dataset.cardRef === commander.cardRef);
-          if (node && commander.castsFromCommand > 0) {
-            const casts = document.createElement('small'); casts.className = 'physical-commander-casts';
-            casts.textContent = `Command casts: ${commander.castsFromCommand}`;
-            casts.title = 'Previous casts from the command zone. Forge determines the current cost.';
-            node.append(casts);
-          }
-        }
+        // Commander tax badge (V2h): now rendered directly by renderCommanderDock itself — see
+        // commander-tax.ts — so both Physical and Digital boards share the exact same presentation.
         renderBattlefieldHalf(board.permanents, player, callbacks, expand);
         renderLandZone(board.lands, player, callbacks, expand);
       }

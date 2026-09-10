@@ -17,5 +17,6 @@
 .physical-board[data-density=preview] [data-card-variant=battlefield] .table-card-caption { font-size: 9px; padding: 9px 3px 4px; }
 .physical-board[data-density=preview] [data-card-variant=battlefield] .table-card-stats { font-size: 10px; min-width: 0; padding: 1px 3px; bottom: -3px; }
 .physical-board[data-density=preview] .table-card-count { font-size: 10px; padding: 1px 3px; }
+.physical-board[data-density=preview] .table-card-keywords { display: none; }
 .physical-board[data-density=preview] [data-card-variant=battlefield] .table-card-count { bottom: 20px; }
 .physical-board[data-density=preview] [data-card-variant=battlefield]:has(.table-card-stats) .table-card-caption { padding-right: 22px; }
