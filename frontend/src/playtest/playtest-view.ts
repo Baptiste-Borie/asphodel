@@ -23,6 +23,7 @@ import { buildDockItems, decideCardAction, mapActionsToCards, splitCardActionMap
 import { computePreviewAction } from "./preview-action.js";
 import { groupManaPaymentOptions, type ManaPaymentGroups } from "./mana-payment-mapping.js";
 import { createManaPaymentOverlay } from "./mana-payment-overlay.js";
+import { shouldBridgeManaOverlayNull } from "./mana-payment-lifecycle.js";
 import { renderPhysicalDeclare } from "./physical-declare.js";
 import { createPhaseBanner, detectMajorPhaseTransition, phaseTransitionLabel } from "./phase-transitions.js";
 import { createCardReveal } from "./card-reveal.js";
@@ -992,18 +993,22 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       }
       return;
     }
-    // V2h "MANA/PAYMENT DECISION UI MUST NOT REMOUNT": between two steps of the SAME multi-step
-    // mana payment, the backend genuinely has no pending decision for a beat — Forge has accepted
-    // the previous mana choice and is still computing the next mana_payment decision (the remaining
-    // cost) on its own thread (see PlaytestSessionManager.getState: `pending` is simply absent while
-    // `session.provider.current()` hasn't produced the next decision yet). That is a real, accurate
+    // V2h "MANA/PAYMENT DECISION UI MUST NOT REMOUNT" / V2h.1 "OVERLAY LIFECYCLE": between two
+    // steps of the SAME multi-step mana payment, the backend genuinely has no pending decision for
+    // a beat — Forge has accepted the previous mana choice and is still computing the next
+    // mana_payment decision (the remaining cost) on its own thread. That is a real, accurate
     // "nothing to show yet" state, not "the payment ended" — closing the overlay for it and
     // reopening a beat later is exactly the close-then-reopen flicker this was built to avoid (see
-    // mana-payment-overlay.ts's own "never re-animate on every click" comment). So: while the
-    // overlay is still open and the session hasn't reached a terminal status, a null decision is
-    // bridged by simply leaving the overlay exactly as last rendered, never closed — only a REAL,
-    // different decision (or the session ending) actually closes it, just below.
-    if (manaOverlay.isOpen() && state.pendingDecision === null && !TERMINAL_STATUSES.has(state.status)) {
+    // mana-payment-overlay.ts's own "never re-animate on every click" comment).
+    //
+    // But `pendingDecision === null` alone is NOT proof of "still the same payment" — it is equally
+    // true once payment has genuinely ended and it is simply not the human's turn yet (the whole
+    // opponent turn), or their very next priority was auto-passed server-side and so never became a
+    // decision at all. Bridging on nullness alone left the overlay stuck open until a manual Cancel.
+    // `state.manaPaymentActive` (see its own doc comment, and `mana-payment-lifecycle.ts`) is the
+    // backend's reliable answer to "has a real decision — of any type, either seat, seen by the
+    // browser or not — actually happened since this payment step": only THAT closes the overlay.
+    if (shouldBridgeManaOverlayNull(state, manaOverlay.isOpen(), TERMINAL_STATUSES)) {
       return;
     }
     manaOverlay.close();

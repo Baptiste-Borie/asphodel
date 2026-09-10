@@ -1,19 +1,30 @@
 import type { PublicGameFrame } from "./types.js";
 
 /**
- * The one place these pacing constants live (V2e.5/V2h) — change them here to retune every
- * playback speed. Three importance tiers (V2h "AI PLAYBACK PACING", roughly following the spec's
- * suggested ranges):
- *   - LOW: no narratable event at all (e.g. a mana ability tapping a land mid-payment).
- *   - MEDIUM: a land played, or an activated ability — a real but modest step.
- *   - HIGH: a spell cast, an attack declaration, a block — the moments a human most needs a beat to
- *     actually register before the next thing happens.
+ * The one place these pacing constants live (V2e.5/V2h/V2h.2) — change them here to retune every
+ * playback speed. Three importance tiers (V2h "AI PLAYBACK PACING"):
+ *   - LOW: no narratable event at all (e.g. a mana ability tapping a land mid-payment, an untap, an
+ *     internal Forge decision with no visible consequence). Never worth pacing — see the Physical
+ *     Companion follow-up (V2h.2 "PACING") spec: "do not add several seconds to every priority
+ *     pass/every internal Forge decision/every untap/every tiny state update".
+ *   - MEDIUM: a land played, or an activated ability — a real but modest step (~1s: "movement /
+ *     placement, short settle").
+ *   - HIGH: a spell cast, an attack declaration, a block — the moments a human most needs real time
+ *     to actually register before the next thing happens (~3-4s: "clearly reveal the spell/card,
+ *     enough time to understand what was cast").
  * `OPPONENT_ACTION_DELAY_MS`/`OPPONENT_MINOR_DELAY_MS` are the pre-V2h names for the HIGH/LOW
- * tiers, kept as the exact values a caller (or a future speed setting) reads for those two tiers.
+ * tiers, kept as the exact values a caller (or a future Fast/Normal/Slow speed setting) reads for
+ * those two tiers.
+ *
+ * V2h.2 "PACING": a real physical playtest reported the whole opponent turn — land, spell cast,
+ * resolution, priority back to the human — completing before the human could even process what had
+ * happened. Retuned toward deliberately readable ("optimize for comprehension, not speed") as the
+ * new default; see `computePlaybackDelayMs`'s doc comment for why a HIGH-importance frame no longer
+ * shrinks under backlog the way MEDIUM still mildly does.
  */
-export const OPPONENT_ACTION_DELAY_MS = 900;
-export const OPPONENT_MEDIUM_DELAY_MS = 700;
-export const OPPONENT_MINOR_DELAY_MS = 600;
+export const OPPONENT_ACTION_DELAY_MS = 3500;
+export const OPPONENT_MEDIUM_DELAY_MS = 1000;
+export const OPPONENT_MINOR_DELAY_MS = 250;
 
 export type FrameImportance = "low" | "medium" | "high";
 
@@ -44,15 +55,28 @@ export function classifyFrameImportance(frame: Pick<PublicGameFrame, "event">): 
 }
 
 /**
- * Pure. Paces individual actions generously in the common case, but caps how long a big backlog
- * takes to catch up — order is always preserved, only the per-frame wait shrinks as the queue
- * grows (a "reasonable accelerated catch-up", never abandoning any frame).
+ * Pure. Paces individual actions generously in the common case. V2h.2 "PACING": a real physical
+ * playtest showed the previous across-the-board backlog shrink collapsing an entire opponent turn —
+ * land, cast, resolution — into well under a second once more than a couple of frames were queued,
+ * defeating the whole point of a human-readable timeline ("do not let several significant queued
+ * events visually collapse into each other simply because Forge has already computed future state").
+ * So the shrink is now tier-scoped, never applied uniformly:
+ *   - HIGH (a cast/attack/block) NEVER shrinks — the one thing a human most needs time to read is
+ *     exactly the one thing that must never be crushed by backlog. Slower-than-necessary is the
+ *     accepted tradeoff for now (a future Fast/Normal/Slow setting is the intended way to speed this
+ *     back up, not a silent backlog-driven shortcut).
+ *   - LOW (no narratable event) is already minimal and never worth pacing further either way —
+ *     always its flat, short delay, backlog or not.
+ *   - MEDIUM (land/activated ability) is the only tier still allowed a MILD catch-up, and only once
+ *     the backlog is genuinely large — order is always preserved regardless, only the per-frame wait
+ *     shrinks, and never below a still-readable floor.
  */
 export function computePlaybackDelayMs(frame: Pick<PublicGameFrame, "event">, remainingAfterThisFrame: number): number {
-  const base = IMPORTANCE_DELAY_MS[classifyFrameImportance(frame)];
-  if (remainingAfterThisFrame <= 2) return base;
-  if (remainingAfterThisFrame <= 6) return Math.round(base * 0.6);
-  return Math.max(150, Math.round(base * 0.3));
+  const importance = classifyFrameImportance(frame);
+  const base = IMPORTANCE_DELAY_MS[importance];
+  if (importance !== "medium") return base;
+  if (remainingAfterThisFrame <= 8) return base;
+  return Math.max(700, Math.round(base * 0.7));
 }
 
 export interface FramePlaybackCallbacks {

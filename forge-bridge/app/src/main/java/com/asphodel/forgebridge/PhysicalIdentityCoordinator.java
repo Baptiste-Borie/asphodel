@@ -61,7 +61,11 @@ final class PhysicalIdentityCoordinator {
     private List<Card> visibleZoneCards() {
         List<Card> cards = new ArrayList<>();
         for (ZoneType zone : TRACKED_ZONES) {
-            cards.addAll(player.getCardsIn(zone));
+            for (Card c : player.getCardsIn(zone)) {
+                if (!c.isToken()) {
+                    cards.add(c);
+                }
+            }
         }
         return cards;
     }
@@ -78,13 +82,22 @@ final class PhysicalIdentityCoordinator {
      * limitation (docs/physical-companion-v0.md §7), not silently guessed at: {@link #reconcile}
      * throws {@link PhysicalReconciliationException} rather than attempting an unsafe cross-zone
      * swap (which could relocate a genuinely-milled/drawn card into the wrong real zone).
+     *
+     * <p>Tokens ({@link Card#isToken()}) are never reported here, regardless of which zone they
+     * entered. A token is never physically hidden information -- it has no counterpart anywhere in
+     * the real, physically-shuffled deck, so there is nothing for the human to truthfully "declare"
+     * (a bogus round asking the human to type back the very name Forge already gave the token, e.g.
+     * any token-producing spell in physical mode, not just this one card). Excluding it here means
+     * it is also never added to {@code trackedCards} (see {@link #visibleZoneCards}), which is
+     * harmless: a card that is never reported as fresh never needs to be recognized as already-known
+     * later either.
      */
     Map<String, List<Card>> unreconciledNewCardsByZone() {
         Map<String, List<Card>> result = new LinkedHashMap<>();
         for (ZoneType zone : TRACKED_ZONES) {
             List<Card> fresh = new ArrayList<>();
             for (Card c : player.getCardsIn(zone)) {
-                if (!trackedCards.contains(c)) {
+                if (!c.isToken() && !trackedCards.contains(c)) {
                     fresh.add(c);
                 }
             }

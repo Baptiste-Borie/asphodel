@@ -11,6 +11,7 @@ import forge.game.mana.Mana;
 import forge.game.mana.ManaCostBeingPaid;
 import forge.game.player.Player;
 import forge.game.spellability.AbilityManaPart;
+import forge.game.spellability.AlternativeCost;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
 
@@ -56,12 +57,23 @@ final class ForgeManaPaymentChoiceEnumerator {
         if (ability == null || cost == null || effect || ability.isOffering() || ability.isEmerge()) {
             return false;
         }
+        // Madness is excluded from the general "any alternative cost" exclusion below: unlike
+        // Escape/Emerge/Offering (which bake extra non-mana CostParts -- exile from graveyard,
+        // sacrifice a creature, type restrictions -- into the SAME Cost object), a Madness cast's
+        // cost (built by vendor PlayEffect.resolve via Cost#Cost(String, boolean) from the card's
+        // plain "PlayCost$" mana-cost string) is structurally an ordinary CostPartMana with nothing
+        // else attached. getAlternativeCost() here is purely a post-hoc marker (stack description,
+        // "cast for Madness" bookkeeping), not evidence of a different payment shape, so there is no
+        // reason to force it to fall back to AuditedPlayerControllerAi the way genuinely
+        // differently-shaped alternative costs correctly still do.
+        if (ability.getAlternativeCost() != null && ability.getAlternativeCost() != AlternativeCost.Madness) {
+            return false;
+        }
         if (cost.isExiledCreatureCost()
                 || cost.isEnchantedCreatureCost()
                 || cost.getMaxWaterbend() != null
                 || ability.getMaxWaterbend() != null
                 || ability.getPayCosts().isMandatory()
-                || ability.getAlternativeCost() != null
                 || ability.hasParam("TapCreaturesForMana")) {
             return false;
         }

@@ -15,8 +15,11 @@ export interface CardReveal {
   hide(): void;
 }
 
-const REVEAL_MS = 1100;
-const FADE_MS = 260;
+// V2h.2 "PACING": bumped alongside frame-playback.ts's own retuning — a newly-arrived permanent is
+// part of the same "spell cast" comprehension window (~3-4s total, see OPPONENT_ACTION_DELAY_MS),
+// so its own big reveal now holds noticeably longer before settling into the condensed board.
+const REVEAL_MS = 1400;
+const FADE_MS = 300;
 
 export function createCardReveal(): CardReveal {
   const element = document.createElement("div");

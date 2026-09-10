@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { logCommanderCastDiagnostics } from "./commander-cast-diagnostics.js";
+import { buildCommanderCastSnapshot, logCommanderCastDiagnostics } from "./commander-cast-diagnostics.js";
 import type { AgentObservation, AgentSelfPlayerObservation, ForgePendingExternalDecision } from "../forge/forge-protocol.js";
 
 function observation(): AgentObservation {
@@ -69,6 +69,29 @@ it("produces no output when no commander is currently in the command zone — no
     delete process.env.ASPHODEL_DEBUG_COMMANDER_CAST;
   }
   assert.equal(called, false);
+});
+
+// V2h.2 "K'RRIK FORENSICS": buildCommanderCastSnapshot is the always-on, persisted-report path —
+// unconditional, no env var — so a real "Cast K'rrik" unavailability leaves an actual record.
+it("buildCommanderCastSnapshot: castOffered is true when some offered action's cardRef matches the commander", () => {
+  const decision = priorityDecision();
+  decision.actions.push({ actionId: "cast-krrik", type: "cast_spell", label: "Cast K'rrik, Son of Yawgmoth", cardRef: "krrik-1", cardName: "K'rrik, Son of Yawgmoth", sourceZone: "command", abilityText: null, manaCost: "{4}{B/P}{B/P}", requiresTargets: false });
+  const snapshot = buildCommanderCastSnapshot(observation(), decision);
+  assert.ok(snapshot);
+  assert.equal(snapshot!.commanders[0]!.castOffered, true);
+});
+
+it("buildCommanderCastSnapshot: castOffered is false when no offered action's cardRef matches the commander — the interesting case to investigate", () => {
+  const snapshot = buildCommanderCastSnapshot(observation(), priorityDecision());
+  assert.ok(snapshot);
+  assert.equal(snapshot!.commanders[0]!.name, "K'rrik, Son of Yawgmoth");
+  assert.equal(snapshot!.commanders[0]!.castOffered, false, "the fixture's priorityDecision() only offers 'Pass priority' — never any cast action");
+});
+
+it("buildCommanderCastSnapshot returns null when nothing commander-shaped is pending — never a false signal either way", () => {
+  const obs = observation();
+  obs.players[0]!.commanders = [{ ...obs.players[0]!.commanders[0]!, inCommandZone: false }];
+  assert.equal(buildCommanderCastSnapshot(obs, priorityDecision()), null);
 });
 
 it("never runs against a decision belonging to a different player than the one carrying commanders in the fixture (defensive: no crash, no output)", () => {

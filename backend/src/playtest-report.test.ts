@@ -135,8 +135,37 @@ it("V2g: a digital-mode report (playMode omitted) defaults to 'digital' in both 
     const decisionsJson = JSON.parse(await readFile(result.decisionsPath, "utf8"));
     assert.match(summary, /Play mode: digital/);
     assert.ok(!/## Physical declarations/.test(summary), "no physical declarations section when there are none");
+    assert.ok(!/## Commander cast availability/.test(summary), "no commander-cast section when there are no snapshots");
     assert.equal(decisionsJson.match.playMode, "digital");
     assert.deepEqual(decisionsJson.physicalDeclarations, []);
+    assert.deepEqual(decisionsJson.commanderCastSnapshots, []);
+  });
+});
+
+it("V2h.2 'K'RRIK FORENSICS': non-empty commanderCastSnapshots render a '## Commander cast availability' section, flagging NOT OFFERED, and both fields land in decisions.json", async () => {
+  await withTempDir(async reportsRoot => {
+    const recorder = new DecisionRecorder();
+    const commanderCastSnapshots = [
+      {
+        turn: 3, phase: "main1", activePlayerId: "player-1", priorityPlayerId: "player-1", stackSize: 0,
+        actingPlayerId: "player-1", life: 34,
+        commanders: [{ name: "K'rrik, Son of Yawgmoth", cardRef: "krrik-1", castsFromCommand: 0, commanderTaxGeneric: 0, castOffered: false }],
+        offeredActions: [{ type: "pass", label: "Pass priority", cardName: null, cardRef: null, manaCost: null, sourceZone: null }],
+      },
+    ];
+    const result = await writePlaytestReport({
+      startedAt: new Date("2026-09-05T22:30:00.000Z"), sessionId: "match-krrik", seed: 3,
+      humanDeckName: "Human Deck", agentDeckName: "Asphodel Deck",
+      humanPlayerId: "player-1", agentPlayerId: "player-2",
+      endedByHuman: true, snapshot: snapshot(), decisions: recorder.all(), reportsRoot,
+      commanderCastSnapshots,
+    });
+    const summary = await readFile(result.summaryPath, "utf8");
+    const decisionsJson = JSON.parse(await readFile(result.decisionsPath, "utf8"));
+
+    assert.match(summary, /## Commander cast availability/);
+    assert.match(summary, /Turn 3 \/ Main1 — K'rrik, Son of Yawgmoth \(tax 0, cast 0x before, life 34\): \*\*NOT OFFERED\*\*/);
+    assert.deepEqual(decisionsJson.commanderCastSnapshots, commanderCastSnapshots);
   });
 });
 

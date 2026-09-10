@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { it } from "node:test";
@@ -67,6 +67,19 @@ function physicalDecision(id: string, turn = 1, count = 1, candidates = [{ name:
     decisionId: id, type: "physical_identity_declare", playerId: "player-1",
     context: { turn, phase: "main1", activePlayerId: "player-1", priorityPlayerId: "player-1", stackSize: 0 },
     eventKind: "draw", count, candidates,
+  };
+}
+
+/** V2h.1: a `mana_payment` decision for the human seat, one activatable land option, never finishable outright (a real payment always needs at least one more step submitted before `canFinish`). */
+function manaPaymentDecision(id: string, turn = 1): Extract<Decision, { type: "mana_payment" }> {
+  return {
+    decisionId: id, type: "mana_payment", playerId: "player-1",
+    context: { turn, phase: "main1", activePlayerId: "player-1", priorityPlayerId: "player-1", stackSize: 0 },
+    source: { actionId: null, cardRef: "spell-1", cardName: "Some Spell", abilityText: null },
+    remainingCost: { text: "{1}", generic: 1, convertedManaCost: 1, shards: [] },
+    manaPool: { total: 0, byColor: {} },
+    options: [{ manaOptionId: `${id}-mana`, type: "activate_mana_ability", sourceCardRef: "land-1", sourceCardName: "Forest", abilityText: null, produces: ["G"], tapped: false, manaRef: null, color: null }],
+    canFinish: false,
   };
 }
 
@@ -459,6 +472,58 @@ it("V2g: a physical_identity_declare pending decision renders via describePhysic
   });
 });
 
+it("V2g.2 PHYSICAL DRAW PRESENTATION BUG: a pending draw's provisional Forge card is concealed in the DTO, never rendered as the human's real drawn card, until declared", async () => {
+  await withTempReports(async reportsRoot => {
+    // The exact reported repro: turn 1 settles the human's real (already-known) hand card, then at
+    // the human's first actual draw (turn 3) Forge silently places its own provisional pick
+    // ("Whip of Erebos") into hand before the human has declared anything at all.
+    const provisionalDrawCard = { cardRef: "provisional-1", name: "Whip of Erebos", zone: "hand" as const, ownerId: "player-1", controllerId: "player-1", faceDown: false, hidden: false, tapped: null, summoningSick: null, counters: null, power: null, toughness: null, typeLine: "Legendary Enchantment" };
+    const turn3DrawObservation = observation("player-1", "player-2", 3, [humanCard(), provisionalDrawCard]);
+    const { client } = scriptedTransport([
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: humanObservation(1), pendingDecision: priorityDecision("player-1", "d-1") }),
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: turn3DrawObservation, pendingDecision: physicalDecision("phys-draw-1", 3, 1, [{ name: "Mountain", remaining: 2 }]) }),
+      () => ({
+        sessionId: "s", status: "completed", progress, forgeAiStrategicFallbacks: [],
+        result: { gameId: "g", format: "commander", seed: 42, players: [], winnerId: "player-1", turns: 3, gameOver: true, draw: false, terminalReason: "AllOpponentsLost", commanderRulesActive: true },
+      }),
+    ]);
+    const manager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => client, createAgent: () => new FakeAgent(), reportsRoot });
+    const started = await manager.start({ humanDeck: { type: "fixture" }, asphodelDeck: { type: "fixture" }, playMode: "physical" });
+
+    // Settle turn 1's ordinary decision first — this is what makes "Human Secret Card Name" the
+    // known-good baseline the draw is diffed against.
+    let state = manager.getState(started.sessionId);
+    for (let i = 0; i < 50 && state.pendingDecision === null; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      state = manager.getState(started.sessionId);
+    }
+    assert.equal(state.pendingDecision!.decisionId, "d-1");
+    manager.submitChoice(started.sessionId, { decisionId: "d-1", kind: "action", choice: "pass", reason: "human_choice" });
+
+    for (let i = 0; i < 50 && manager.getState(started.sessionId).pendingDecision?.decisionId !== "phys-draw-1"; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    state = manager.getState(started.sessionId);
+    assert.equal(state.pendingDecision!.type, "physical_identity_declare");
+    assert.ok(state.observation, "the compact human observation mirror must still be present");
+    const hand = (state.observation!.players.find(p => p.role === "self") as AgentSelfPlayerObservation).hand;
+    assert.equal(hand.length, 2, "zone size must reflect the real draw — only identity is redacted");
+    const known = hand.find(c => c.cardRef === "human-card")!;
+    assert.equal(known.name, HUMAN_HAND_CARD, "the already-settled card must render exactly as before");
+    const pendingCard = hand.find(c => c.cardRef === "provisional-1")!;
+    assert.equal(pendingCard.name, null, "Forge's own provisional pick must never be presented as the human's real drawn card");
+    assert.equal(pendingCard.hidden, true);
+    const serialized = JSON.stringify(state);
+    assert.ok(!serialized.includes("Whip of Erebos"), "the provisional card's real name must not leak anywhere in the DTO (DOM/aria-label/tooltip all read from this same payload)");
+
+    manager.submitChoice(started.sessionId, { decisionId: "phys-draw-1", kind: "physical_identity", declaredNames: ["Mountain"], reason: "human_choice" });
+    for (let i = 0; i < 200 && manager.getState(started.sessionId).status !== "completed"; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    assert.equal(manager.getState(started.sessionId).status, "completed", "the physical declaration must still unblock the match normally");
+  });
+});
+
 it("V2g: getActiveState() (browser resume-after-refresh) preserves playMode 'physical' and the pending physical declaration exactly — a refresh never silently resumes a physical session as digital", async () => {
   await withTempReports(async reportsRoot => {
     const { client } = scriptedTransport([
@@ -505,5 +570,127 @@ it("V2g: end() while a physical declaration is pending resolves cleanly (mirrors
 
     const report = manager.getReport(started.sessionId);
     assert.ok(report.summaryPath.startsWith(reportsRoot));
+  });
+});
+
+it("V2h.1 A — manaPaymentActive survives a transient null between two steps of the SAME mana payment (Forge still computing the next step)", async () => {
+  await withTempReports(async reportsRoot => {
+    const { client } = scriptedTransport([
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: humanObservation(1), pendingDecision: manaPaymentDecision("mp-1", 1) }),
+      // Transient: Forge has accepted the first mana choice and is still computing the remaining
+      // cost — no pendingDecision at all for a beat, exactly like a real mid-payment gap.
+      () => ({ sessionId: "s", status: "running", progress, forgeAiStrategicFallbacks: [] }),
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: humanObservation(1), pendingDecision: manaPaymentDecision("mp-2", 1) }),
+    ]);
+    const manager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => client, createAgent: () => new FakeAgent(), reportsRoot });
+    const started = await manager.start({ humanDeck: { type: "fixture" }, asphodelDeck: { type: "fixture" } });
+
+    let state = manager.getState(started.sessionId);
+    for (let i = 0; i < 50 && state.pendingDecision?.decisionId !== "mp-1"; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      state = manager.getState(started.sessionId);
+    }
+    assert.equal(state.pendingDecision!.type, "mana_payment");
+    // Not yet answered — manaPaymentActive only ever reflects a decision Forge has actually
+    // PROCESSED (see its own doc comment), never a merely-pending one. It becomes true the instant
+    // mp-1 is submitted, below.
+
+    manager.submitChoice(started.sessionId, { decisionId: "mp-1", kind: "mana", choice: "mp-1-mana", reason: "human_choice" });
+
+    // Poll until the SECOND payment step is visible — the transient null in between must never have
+    // been observable as "payment over" (manaPaymentActive stays true throughout). Sleeps BEFORE
+    // each check, deliberately, so the very first read is never racing the submit()'s own
+    // still-in-flight microtasks (onDecision runs asynchronously, just after submission).
+    for (let i = 0; i < 50; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      const mid = manager.getState(started.sessionId);
+      if (mid.pendingDecision?.decisionId === "mp-2") break;
+      assert.equal(mid.manaPaymentActive, true, "a transient null mid-payment must never flip manaPaymentActive false");
+    }
+    const afterSecondStep = manager.getState(started.sessionId);
+    assert.equal(afterSecondStep.pendingDecision!.decisionId, "mp-2");
+    assert.equal(afterSecondStep.manaPaymentActive, true, "still the same payment sequence — the overlay must stay open");
+
+    await manager.end(started.sessionId);
+  });
+});
+
+it("V2h.1 B — manaPaymentActive flips false as soon as a real decision follows the final payment step, even for the OTHER seat, and even while pendingDecision stays null (this is the reported 'stuck until Cancel' bug)", async () => {
+  await withTempReports(async reportsRoot => {
+    const { client } = scriptedTransport([
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: humanObservation(1), pendingDecision: manaPaymentDecision("mp-1", 1) }),
+      // The payment is now genuinely done: the very next decision processed belongs to the OTHER
+      // seat entirely (Asphodel's turn) — never visible to the human's own pendingDecision, which
+      // stays null throughout, exactly like the real report (stuck open until a manual Cancel).
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: agentObservation(1), pendingDecision: priorityDecision("player-2", "ag-1") }),
+    ]);
+    const manager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => client, createAgent: () => new FakeAgent(), reportsRoot });
+    const started = await manager.start({ humanDeck: { type: "fixture" }, asphodelDeck: { type: "fixture" } });
+
+    let state = manager.getState(started.sessionId);
+    for (let i = 0; i < 50 && state.pendingDecision?.decisionId !== "mp-1"; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      state = manager.getState(started.sessionId);
+    }
+    assert.equal(state.pendingDecision!.type, "mana_payment");
+
+    manager.submitChoice(started.sessionId, { decisionId: "mp-1", kind: "mana", choice: "mp-1-mana", reason: "human_choice" });
+
+    // The agent's own decision (ag-1) is processed automatically — no test interaction needed.
+    // Poll until Asphodel's decision has actually been recorded, proving the game has genuinely
+    // moved past the payment, then assert the human-facing DTO reflects the real end.
+    for (let i = 0; i < 50 && manager.getState(started.sessionId).asphodelDecisionCount === 0; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    const settled = manager.getState(started.sessionId);
+    assert.equal(settled.pendingDecision, null, "reproduces the report exactly: no human decision is pending — the OLD nullness-only bridge would have kept the overlay open forever here");
+    assert.equal(settled.manaPaymentActive, false, "a real decision (even the OTHER seat's) has been processed since — the overlay must be allowed to close");
+
+    await manager.end(started.sessionId);
+  });
+});
+
+it("V2h.2 'K'RRIK FORENSICS': a human priority_action decision with a commander in the command zone is captured unconditionally and lands in the persisted report, even when auto-passed (never surfaced to the browser at all)", async () => {
+  await withTempReports(async reportsRoot => {
+    const observationWithKrrik: AgentObservation = {
+      ...humanObservation(3),
+      players: humanObservation(3).players.map(p => p.role === "self" ? {
+        ...p,
+        commanders: [{ cardRef: "krrik-1", name: "K'rrik, Son of Yawgmoth", inCommandZone: true, castsFromCommand: 0, commanderTaxGeneric: 0 }],
+      } : p),
+    };
+    const decisionWithoutCast: Extract<Decision, { type: "priority_action" }> = {
+      decisionId: "d-krrik", type: "priority_action", playerId: "player-1",
+      context: { turn: 3, phase: "main1", activePlayerId: "player-1", priorityPlayerId: "player-1", stackSize: 0 },
+      actions: [{ actionId: "pass", type: "pass", label: "Pass priority", cardRef: null, cardName: null, sourceZone: null, abilityText: null, manaCost: null, requiresTargets: false }],
+    };
+    const { client } = scriptedTransport([
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: observationWithKrrik, pendingDecision: decisionWithoutCast }),
+      () => ({
+        sessionId: "s", status: "completed", progress, forgeAiStrategicFallbacks: [],
+        result: { gameId: "g", format: "commander", seed: 42, players: [], winnerId: "player-1", turns: 3, gameOver: true, draw: false, terminalReason: "AllOpponentsLost", commanderRulesActive: true },
+      }),
+    ]);
+    const manager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => client, createAgent: () => new FakeAgent(), reportsRoot });
+    const started = await manager.start({ humanDeck: { type: "fixture" }, asphodelDeck: { type: "fixture" } });
+
+    // `decisionWithoutCast` offers ONLY "Pass priority" — Forge's own sole-legal-action shape — so
+    // `autoPassChoice` (priority-auto-pass.ts) resolves it immediately, server-side, without ever
+    // surfacing it to the browser as a `pendingDecision`. This is deliberate: it proves the capture
+    // is unconditional even for a decision the human never explicitly acted on (see `onDecision`
+    // firing for an auto-passed decision too, same as V2h.1's `manaPaymentActive`).
+    for (let i = 0; i < 200 && manager.getState(started.sessionId).status !== "completed"; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+
+    const report = manager.getReport(started.sessionId);
+    const decisionsJson = JSON.parse(await readFile(report.decisionsPath, "utf8"));
+    assert.equal(decisionsJson.commanderCastSnapshots.length, 1, "captured unconditionally — no ASPHODEL_DEBUG_COMMANDER_CAST toggle needed");
+    assert.equal(decisionsJson.commanderCastSnapshots[0].commanders[0].name, "K'rrik, Son of Yawgmoth");
+    assert.equal(decisionsJson.commanderCastSnapshots[0].commanders[0].castOffered, false, "no cast_spell action for krrik-1 was ever offered in this fixture");
+
+    const summary = await readFile(report.summaryPath, "utf8");
+    assert.match(summary, /## Commander cast availability/);
+    assert.match(summary, /K'rrik, Son of Yawgmoth.*\*\*NOT OFFERED\*\*/);
   });
 });

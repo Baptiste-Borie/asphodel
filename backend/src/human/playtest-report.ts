@@ -5,6 +5,7 @@ import type { AgentChoice } from "../agent/baseline-agent.js";
 import type { AgentObservation, ForgeExternalMatchSnapshot, ForgePendingExternalDecision, ForgePublicPlayerTelemetry } from "../forge/forge-protocol.js";
 import { describeDecision, formatPhase } from "./human-decision-render.js";
 import type { RecordedDecision } from "./decision-recorder.js";
+import type { CommanderCastSnapshot } from "./commander-cast-diagnostics.js";
 
 /** backend/playtest-reports/ — see also its .gitignore entry; nothing under it is ever committed. */
 const DEFAULT_REPORTS_ROOT = fileURLToPath(new URL("../../playtest-reports/", import.meta.url));
@@ -38,6 +39,12 @@ export interface PlaytestReportInput {
   /** V2g: "digital" when omitted, for every report written before this field existed. */
   playMode?: "digital" | "physical";
   physicalDeclarations?: readonly RecordedPhysicalDeclaration[];
+  /**
+   * V2h.2 "K'RRIK FORENSICS": one entry per HUMAN `priority_action` decision where a commander sat
+   * in the command zone, unconditional — see `commander-cast-diagnostics.ts`'s doc comment. Never
+   * folded into `decisions` (Asphodel's own choices only), same reasoning as `physicalDeclarations`.
+   */
+  commanderCastSnapshots?: readonly CommanderCastSnapshot[];
   /** Override for tests; defaults to backend/playtest-reports/. */
   reportsRoot?: string;
 }
@@ -141,6 +148,17 @@ function renderSummaryMarkdown(input: PlaytestReportInput): string {
     }
     lines.push("");
   }
+  if (input.commanderCastSnapshots?.length) {
+    lines.push("## Commander cast availability", "");
+    lines.push("One line per human priority window where a commander sat in the command zone. `NOT OFFERED` is the case worth investigating — see decisions.json for the exact offered-actions list at that moment.", "");
+    for (const snapshot of input.commanderCastSnapshots) {
+      for (const commander of snapshot.commanders) {
+        const flag = commander.castOffered ? "offered" : "NOT OFFERED";
+        lines.push(`- Turn ${snapshot.turn} / ${formatPhase(snapshot.phase)} — ${commander.name} (tax ${commander.commanderTaxGeneric ?? "unknown"}, cast ${commander.castsFromCommand}x before, life ${snapshot.life}): **${flag}**`);
+      }
+    }
+    lines.push("");
+  }
   return lines.join("\n");
 }
 
@@ -159,6 +177,7 @@ function renderDecisionsJson(input: PlaytestReportInput) {
     },
     decisions: input.decisions.map(({ reportId, timestamp, observation, decision, choice }) => ({ reportId, timestamp, observation, decision, choice })),
     physicalDeclarations: input.physicalDeclarations ?? [],
+    commanderCastSnapshots: input.commanderCastSnapshots ?? [],
   };
 }
 

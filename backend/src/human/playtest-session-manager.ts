@@ -15,10 +15,11 @@ import { DecisionRecorder } from "./decision-recorder.js";
 import { describeAgentAction, describeDecision, describePhysicalDeclare, type DecisionPrompt } from "./human-decision-render.js";
 import { sanitizeAgentObservation, type HumanSafePublicBoardObservation, type PublicGameFrame } from "./public-game-frame.js";
 import { describeObservationDelta } from "./public-event-delta.js";
-import { logCommanderCastDiagnostics } from "./commander-cast-diagnostics.js";
+import { buildCommanderCastSnapshot, logCommanderCastDiagnostics, type CommanderCastSnapshot } from "./commander-cast-diagnostics.js";
 import { writePlaytestReport, type PlaytestReportResult, type RecordedPhysicalDeclaration } from "./playtest-report.js";
 import { ManualPhysicalCardProvider } from "../physical/physical-card-provider.js";
 import { deckCompositionFrom, PhysicalLedger } from "../physical/physical-ledger.js";
+import { redactPendingPhysicalIdentity } from "../physical/physical-observation-redaction.js";
 
 /** The only two things the manager needs from a running bridge process — real or faked in tests. */
 export interface PlaytestBridge {
@@ -94,6 +95,18 @@ export interface WebPlaytestStateDTO {
   /** The HUMAN's own observation only — never Asphodel's. Null when it is not currently the human's turn. */
   observation: AgentObservation | null;
   pendingDecision: WebPendingDecisionDTO | null;
+  /**
+   * V2h.1 "MANA/PAYMENT OVERLAY LIFECYCLE": true from the moment the human's most recent DECISION
+   * (not merely the most recent DTO poll) was a `mana_payment` step, until a subsequent decision —
+   * of ANY type, for EITHER seat — is actually processed. A transient `pendingDecision: null` poll
+   * mid-sequence (Forge still computing the next payment step) leaves this `true`; the first decision
+   * genuinely following the payment — even one invisible to the frontend, like an auto-passed human
+   * priority or the very next Asphodel decision — flips it `false`. This is the one reliable signal
+   * that distinguishes "still the same payment" from "payment has truly ended", independent of
+   * whether `pendingDecision` itself happens to be null right now — see `session.manaPaymentActive`
+   * and its `onDecision` update below.
+   */
+  manaPaymentActive: boolean;
   publicEvents: PublicGameEvent[];
   /**
    * Ordered, human-safe snapshots of Asphodel's turn in progress (V2e.3) — never Asphodel's own
@@ -134,10 +147,32 @@ interface Session {
   physicalProvider: ManualPhysicalCardProvider | null;
   physicalLedger: PhysicalLedger | null;
   physicalDeclarations: RecordedPhysicalDeclaration[];
+  /**
+   * V2h.2 "K'RRIK FORENSICS": one entry per HUMAN `priority_action` decision where a commander sat
+   * in the command zone — unconditional (no `ASPHODEL_DEBUG_COMMANDER_CAST` toggle needed, unlike
+   * `commander-cast-diagnostics.ts`'s console path), so a real "Cast <commander>" unavailability is
+   * actually reviewable after the fact instead of requiring the toggle to have been set in advance.
+   * See `buildCommanderCastSnapshot`'s own doc comment and `playtest-report.ts`'s new section.
+   */
+  commanderCastSnapshots: CommanderCastSnapshot[];
   /** Last observation genuinely captured for the human seat — kept fresh across a pending physical
    *  declaration too (which carries no observation of its own in `getState()`'s DTO otherwise),
    *  so the compact human board mirror never goes blank while a declaration is pending. */
   lastObservation: AgentObservation | null;
+  /**
+   * V2g.2 "PHYSICAL DRAW PRESENTATION BUG": the human's last observation known to be FULLY
+   * reconciled — unlike `lastObservation` above, this deliberately does NOT advance when the
+   * decision that just resolved was itself a `physical_identity_declare` (its own leading
+   * observation is exactly the pre-reconciliation snapshot `redactPendingPhysicalIdentity` exists
+   * to redact — using it as next time's "known-good" baseline would make that redaction itself
+   * unreliable). The sole baseline for `redactPendingPhysicalIdentity` in `getState()`.
+   */
+  lastReconciledObservation: AgentObservation | null;
+  /**
+   * V2h.1 "MANA/PAYMENT OVERLAY LIFECYCLE" — see `WebPlaytestStateDTO.manaPaymentActive`'s doc
+   * comment. Updated unconditionally in `onDecision` below, for every decision of either seat.
+   */
+  manaPaymentActive: boolean;
   recorder: DecisionRecorder;
   events: PublicGameEvent[];
   frames: PublicGameFrame[];
@@ -204,7 +239,10 @@ export class PlaytestSessionManager {
       physicalProvider: playMode === "physical" ? new ManualPhysicalCardProvider() : null,
       physicalLedger: playMode === "physical" ? new PhysicalLedger(deckCompositionFrom(humanDeck)) : null,
       physicalDeclarations: [],
+      commanderCastSnapshots: [],
       lastObservation: null,
+      lastReconciledObservation: null,
+      manaPaymentActive: false,
       recorder: new DecisionRecorder(), events: [],
       frames: [], lastHumanHand: [], pendingFrameEvent: null, pendingFrameOwner: null, lastFrameObservationKey: null,
       lastNarratedObservation: null,
@@ -246,6 +284,12 @@ export class PlaytestSessionManager {
           // `observation`/`pendingDecision` fields expose the (by then unchanged) settled board the
           // instant it is genuinely their turn — no second, redundant frame is needed for that.
           onDecision: (owner, observation, decision, choice) => {
+            // V2h.1 "MANA/PAYMENT OVERLAY LIFECYCLE": unconditional, on EVERY decision (either seat,
+            // including one auto-passed for the human and so otherwise invisible to the frontend —
+            // see WebPlaytestStateDTO.manaPaymentActive's doc comment). This is what lets getState()
+            // tell "still the same payment sequence" apart from "a real decision has since moved the
+            // game past it", independent of whether `pendingDecision` itself is null right now.
+            session.manaPaymentActive = owner === "human" && decision.type === "mana_payment";
             if (owner === "agent" && session.pendingFrameOwner === "agent") {
               const safeObservation = sanitizeAgentObservation(observation, HUMAN_PLAYER_ID, session.lastHumanHand);
               const key = JSON.stringify(safeObservation);
@@ -264,9 +308,21 @@ export class PlaytestSessionManager {
               }
             }
             if (owner === "human") {
+              // V2h.2 "K'RRIK FORENSICS": unconditional (see CommanderCastSnapshot's own doc
+              // comment) — captured here, once per decision, rather than in getState() (polled
+              // many times per decision), so a real occurrence leaves exactly one reviewable entry.
+              if (decision.type === "priority_action") {
+                const snapshot = buildCommanderCastSnapshot(observation, decision);
+                if (snapshot) session.commanderCastSnapshots.push(snapshot);
+              }
               const self = observation.players.find(p => p.role === "self");
               if (self) session.lastHumanHand = self.hand;
               session.lastObservation = observation;
+              // V2g.2: a physical_identity_declare's OWN leading observation is exactly the
+              // pre-reconciliation snapshot (see `lastReconciledObservation`'s doc comment) — never
+              // promoted to "known-good", or the very next physical decision's redaction baseline
+              // would itself be tainted.
+              if (decision.type !== "physical_identity_declare") session.lastReconciledObservation = observation;
               session.pendingFrameEvent = null;
               session.pendingFrameOwner = "human";
               return;
@@ -288,6 +344,7 @@ export class PlaytestSessionManager {
         humanPlayerId: HUMAN_PLAYER_ID, agentPlayerId: AGENT_PLAYER_ID,
         endedByHuman: run.endedByHuman, snapshot: run.snapshot, decisions: session.recorder.all(),
         playMode: session.playMode, physicalDeclarations: session.physicalDeclarations,
+        commanderCastSnapshots: session.commanderCastSnapshots,
         ...(this.reportsRoot === undefined ? {} : { reportsRoot: this.reportsRoot }),
       });
       session.phase = run.endedByHuman ? "ended_by_human" : "completed";
@@ -327,10 +384,19 @@ export class PlaytestSessionManager {
     if (pending && pending.decision.type === "priority_action") {
       logCommanderCastDiagnostics(pending.observation, pending.decision);
     }
+    // V2g.2 "PHYSICAL DRAW PRESENTATION BUG": `physicalPending.observation` is built strictly BEFORE
+    // reconciliation (see docs/physical-companion-v0.md §2.1) — it is Forge's own provisional,
+    // undeclared pick for exactly the zone this decision is about, never the physical human's real
+    // card. Redacted here, once, at the single seam every consumer of this DTO (compact hand
+    // verifier, the full physical-scene hand render, aria-labels, ...) reads through, rather than in
+    // each frontend render call — see `redactPendingPhysicalIdentity`'s own doc comment.
+    const physicalObservation = physicalPending?.observation
+      ? redactPendingPhysicalIdentity(physicalPending.observation, physicalPending.request.eventKind, session.lastReconciledObservation)
+      : (session.lastObservation ?? null);
     return {
       sessionId: session.id, status: this.statusOf(session), playMode: session.playMode,
       humanDeckName: session.humanDeckName, asphodelDeckName: session.agentDeckName,
-      observation: physicalPending ? (physicalPending.observation ?? session.lastObservation ?? null) : (pending?.observation ?? null),
+      observation: physicalPending ? physicalObservation : (pending?.observation ?? null),
       pendingDecision: physicalPending ? {
         decisionId: physicalPending.request.decisionId, type: "physical_identity_declare", context: physicalPending.request.context,
         rendered: describePhysicalDeclare(physicalPending.request),
@@ -344,6 +410,7 @@ export class PlaytestSessionManager {
         combatPairings: (pending.decision.type === "attackers_selection" || pending.decision.type === "blockers_selection")
           ? pending.decision.selected.map(s => ({ cardRef: s.cardRef, relatedRef: s.relatedRef })) : null,
       } : null,
+      manaPaymentActive: session.manaPaymentActive,
       publicEvents: session.events,
       frames: session.frames,
       asphodelDecisionCount: session.recorder.all().length,

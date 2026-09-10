@@ -966,6 +966,29 @@ final class AsphodelDecisionBroker {
         return acceptedAbilities.containsKey(ability.getRootAbility());
     }
 
+    /**
+     * Marks {@code ability} as an accepted primary ability for the duration of a Forge-internally-
+     * triggered cast that never goes through {@code chooseSpellAbilityToPlay}/{@code
+     * playChosenSpellAbility} -- Madness, Cascade, Discover, and any other "you may cast this card"
+     * effect that Forge resolves via {@code PlayerController.playSaFromPlayEffect} directly (see
+     * vendor {@code PlayEffect}/{@code ChangeZoneEffect}/{@code DiscoverEffect}). Without this, {@link
+     * #isAcceptedPrimaryAbility} would never recognize such an ability, and its own X-value/optional-
+     * cost/mana-payment decisions would silently fall back to {@code AuditedPlayerControllerAi}
+     * instead of reaching the human -- even though the human already explicitly agreed to the cast
+     * via the (already-unconditionally-bridged) {@code confirmAction} "do you want to cast this?"
+     * prompt that always precedes {@code playSaFromPlayEffect}. See
+     * {@link PlayerControllerAsphodel#playSaFromPlayEffect}, which pairs every call with {@link
+     * #forgetAbilityFromPlayEffect} in a {@code finally} block so nothing leaks past that one cast.
+     */
+    synchronized void acceptAbilityFromPlayEffect(SpellAbility ability) {
+        acceptedAbilities.put(ability, new AcceptedAbility(ForgeLegalActionEnumerator.ActionType.CAST_SPELL, null));
+    }
+
+    /** Cleans up the bookkeeping added by {@link #acceptAbilityFromPlayEffect}. */
+    synchronized void forgetAbilityFromPlayEffect(SpellAbility ability) {
+        acceptedAbilities.remove(ability);
+    }
+
     synchronized String acceptedActionId(SpellAbility ability) {
         AcceptedAbility accepted = acceptedAbilities.get(ability.getRootAbility());
         return accepted == null ? null : accepted.actionId();

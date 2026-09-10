@@ -43,8 +43,11 @@ export interface PhaseBanner {
   reset(): void;
 }
 
-const VISIBLE_MS = 900;
-const FADE_MS = 320;
+// V2h.2 "PACING": a real physical playtest reported turns changing hands too fast to track — the
+// spec's own target for this exact banner is "visible 'ASPHODEL'S TURN' / 'YOUR TURN',
+// approximately 1.5-2.5 seconds of presentation". VISIBLE_MS + FADE_MS lands at ~2.1s.
+const VISIBLE_MS = 1700;
+const FADE_MS = 400;
 
 /**
  * A short, elegant, non-blocking text banner — fades/moves in, holds, fades out. Gameplay never

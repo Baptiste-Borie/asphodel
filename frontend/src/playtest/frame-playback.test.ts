@@ -58,13 +58,31 @@ it("decision must stay hidden (isIdle() false) for the entire stretch until pump
   assert.equal(queue.isIdle(), true, "idle once the queue has genuinely drained");
 });
 
-it("computePlaybackDelayMs preserves order-relevant pacing but shrinks for a big backlog, never below a sane floor", () => {
+// V2h.2 "PACING": a real physical playtest reported an entire opponent turn — land, spell cast,
+// resolution — collapsing to well under a second once a few frames were queued. HIGH-importance
+// frames (the one thing a human most needs time to read) must now NEVER shrink for backlog, no
+// matter how large; only MEDIUM is still allowed a mild, floored catch-up.
+it("a HIGH-importance frame (cast/attack/block) never shrinks for backlog, however large", () => {
   const meaningful = { event: { id: 1, turn: 1, phase: "main1", text: "Asphodel casts Krenko" } };
   const small = computePlaybackDelayMs(meaningful, 1);
-  const medium = computePlaybackDelayMs(meaningful, 4);
-  const large = computePlaybackDelayMs(meaningful, 20);
-  assert.ok(small >= medium && medium >= large, "delay should shrink (or stay equal) as the remaining backlog grows");
-  assert.ok(large >= 100, "even an accelerated catch-up must not collapse to ~0ms");
+  const large = computePlaybackDelayMs(meaningful, 50);
+  assert.equal(small, OPPONENT_ACTION_DELAY_MS);
+  assert.equal(large, OPPONENT_ACTION_DELAY_MS, "a significant event must never be visually collapsed just because Forge has already computed a big backlog");
+});
+
+it("a MEDIUM-importance frame (land/activated ability) mildly shrinks once the backlog is genuinely large, never below a readable floor", () => {
+  const medium = { event: { id: 1, turn: 1, phase: "main1", text: "Asphodel plays Forest" } };
+  const small = computePlaybackDelayMs(medium, 1);
+  const large = computePlaybackDelayMs(medium, 50);
+  assert.equal(small, OPPONENT_MEDIUM_DELAY_MS);
+  assert.ok(large < small, "a genuinely large backlog should still shrink the MEDIUM tier somewhat");
+  assert.ok(large >= 700, "even an accelerated catch-up must not collapse below a still-readable floor");
+});
+
+it("a LOW-importance frame (no narratable event) is always minimal, backlog or not — never worth pacing", () => {
+  const minor = { event: null };
+  assert.equal(computePlaybackDelayMs(minor, 1), OPPONENT_MINOR_DELAY_MS);
+  assert.equal(computePlaybackDelayMs(minor, 50), OPPONENT_MINOR_DELAY_MS);
 });
 
 it("a meaningful opponent action gets the longer OPPONENT_ACTION_DELAY_MS; a minor transition gets the shorter OPPONENT_MINOR_DELAY_MS", () => {
@@ -73,7 +91,10 @@ it("a meaningful opponent action gets the longer OPPONENT_ACTION_DELAY_MS; a min
   assert.equal(computePlaybackDelayMs(meaningful, 0), OPPONENT_ACTION_DELAY_MS);
   assert.equal(computePlaybackDelayMs(minor, 0), OPPONENT_MINOR_DELAY_MS);
   assert.ok(OPPONENT_ACTION_DELAY_MS > OPPONENT_MINOR_DELAY_MS, "a real action should linger noticeably longer than a minor visual step");
-  assert.ok(OPPONENT_ACTION_DELAY_MS >= 900 && OPPONENT_MINOR_DELAY_MS >= 500 && OPPONENT_MINOR_DELAY_MS <= 650, "matches the V2e.5 suggested starting values");
+  // V2h.2 "PACING": retuned toward the Physical Companion follow-up's explicit target — "approximately
+  // 3-4 seconds for a meaningful new card" — deliberately much slower than the old V2e.5 starting values.
+  assert.ok(OPPONENT_ACTION_DELAY_MS >= 3000 && OPPONENT_ACTION_DELAY_MS <= 4000, "matches the V2h.2 'SPELL CAST' target of ~3-4s");
+  assert.ok(OPPONENT_MINOR_DELAY_MS > 0 && OPPONENT_MINOR_DELAY_MS <= 350, "a tiny/untracked state update must stay near-instant, never several seconds");
 });
 
 it("classifyFrameImportance (V2h): a cast/attack/block is HIGH, a land play or activated ability is MEDIUM, no event is LOW", () => {

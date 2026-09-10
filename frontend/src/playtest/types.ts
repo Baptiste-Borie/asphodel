@@ -213,6 +213,14 @@ export interface WebPlaytestStateDTO {
   asphodelDeckName: string;
   observation: AgentObservation | null;
   pendingDecision: WebPendingDecisionDTO | null;
+  /**
+   * V2h.1 "MANA/PAYMENT OVERLAY LIFECYCLE": true while the human's most recently PROCESSED decision
+   * (not merely the most recent poll) was a `mana_payment` step — see `mana-payment-lifecycle.ts`
+   * and `PlaytestSessionManager`'s own doc comment on this same field. The one reliable "is this
+   * still the same payment sequence" signal, independent of whether `pendingDecision` is null right
+   * now (Forge computing the next step, or the human's next priority getting auto-passed).
+   */
+  manaPaymentActive: boolean;
   publicEvents: PublicGameEvent[];
   frames: PublicGameFrame[];
   asphodelDecisionCount: number;

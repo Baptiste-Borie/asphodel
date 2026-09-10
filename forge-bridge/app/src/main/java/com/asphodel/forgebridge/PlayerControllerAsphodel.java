@@ -200,7 +200,26 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
 
     @Override
     public boolean playSaFromPlayEffect(SpellAbility sa) {
-        return PlaySpellAbility.playSpellAbility(this, getPlayer(), sa);
+        // V2g investigation finding: Forge never routes a Madness/Cascade/Discover/impulse-draw
+        // "you may cast this card" effect through chooseSpellAbilityToPlay/playChosenSpellAbility --
+        // it calls this seam directly (vendor PlayEffect/ChangeZoneEffect/DiscoverEffect). Before this
+        // fix, executingPrimaryAbility stayed null (or, if set at all, referred to a DIFFERENT host
+        // card -- the enclosing ability that triggered this cast), so isExecutingExternalAction(sa)
+        // was always false for sa's own X-announcement/optional-cost/mana-payment: they silently fell
+        // back to AuditedPlayerControllerAi (Forge's own AI) instead of ever reaching the human, even
+        // though the human had just explicitly agreed to the cast via the ungated confirmAction "do
+        // you want to cast X?" prompt that always precedes this call. Mirrors playChosenSpellAbility's
+        // bookkeeping, scoped to exactly this one call (save/restore, not overwrite) so an enclosing
+        // primary ability's own state is intact afterward either way.
+        SpellAbility previouslyExecuting = executingPrimaryAbility;
+        executingPrimaryAbility = sa;
+        decisions.acceptAbilityFromPlayEffect(sa);
+        try {
+            return PlaySpellAbility.playSpellAbility(this, getPlayer(), sa);
+        } finally {
+            executingPrimaryAbility = previouslyExecuting;
+            decisions.forgetAbilityFromPlayEffect(sa);
+        }
     }
 
     @Override
