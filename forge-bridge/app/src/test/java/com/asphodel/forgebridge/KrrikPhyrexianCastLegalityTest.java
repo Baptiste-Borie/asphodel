@@ -33,6 +33,30 @@ import static org.junit.Assert.fail;
  * same {@link ForgeLegalActionEnumerator} the broker uses. No Magic payment rule is reimplemented
  * here or anywhere in the bridge: every assertion below is a direct consequence of real Forge
  * {@code Card}/{@code SpellAbility}/{@code ComputerUtilCost} behavior.</p>
+ *
+ * <p><b>Real-decklist follow-up:</b> the actual reported deck (the one this investigation traces
+ * back to) is a 100-card K'rrik list, not the minimal commander+40-basics fixture above. Building
+ * it verbatim against the pinned Forge revision ({@code 6356c1ad565029c82513c96e42ad5492c1b09c4e})
+ * originally threw {@link ForgeDeckFactory.CardsNotFoundException} for exactly one card:
+ * <b>"Barad-dûr"</b> — every other of the 69 distinct named cards resolved. That was never a real
+ * absence of Barad-dûr from Forge's card corpus ({@code cardsfolder/b/barad_dur.txt} exists, is
+ * well-formed, and its {@code Name:} line is the correct "Barad-dûr"); it was a lookup-path bug:
+ * {@code ForgeDataRepository} lazily resolves names via {@code
+ * CardStorageReader.attemptToLoadCard}, which derives a filename via a generic transliteration
+ * ({@code transformName}) that collapses any non a-z0-9 character — diacritics included — to a bare
+ * underscore instead of folding it to its base letter. "Barad-dûr" transformed to {@code
+ * barad_d_r}, matching no file, while the real vendor file is {@code barad_dur.txt}. Since {@code
+ * ForgeDataRepository}/{@code ForgeDeckFactory} are the exact same singletons {@link BridgeMain}
+ * uses for real matches, this was never merely a test artifact: any real Physical playtest deck
+ * naming "Barad-dûr" (a real, legal, Scryfall-listed printing — LTR #253) would have failed to
+ * build in production the same way.
+ *
+ * <p><b>Fixed</b> in {@code ForgeDataRepository.loadCardWithDiacriticFallback} — bridge code only,
+ * no vendor Forge file touched and no Magic rule changed: when the normal lookup fails for a name
+ * containing a non-ASCII character, it folds the diacritics itself, locates the matching
+ * cardsfolder script directly, and parses it with vendor Forge's own {@code CardRules.Reader}. See
+ * {@code ForgeDataRepositoryDiacriticFallbackTest} for a dedicated regression. The fixture below
+ * therefore keeps the real, unmodified "Barad-dûr" line — no substitution needed anymore.</p>
  */
 public class KrrikPhyrexianCastLegalityTest {
 
@@ -41,6 +65,86 @@ public class KrrikPhyrexianCastLegalityTest {
                 new ForgeDeckFactory.CardSpec(commander, 1, "commander"),
                 new ForgeDeckFactory.CardSpec(land, 40, "mainboard")
         ));
+        return new ForgeDeckFactory().build(spec);
+    }
+
+    /**
+     * The actual reported 100-card K'rrik deck, verbatim — including "Barad-dûr", now resolvable
+     * via {@code ForgeDataRepository}'s diacritic fallback (see the class doc comment).
+     */
+    private static Deck realKrrikDeck() {
+        List<ForgeDeckFactory.CardSpec> cards = new java.util.ArrayList<>();
+        cards.add(new ForgeDeckFactory.CardSpec("K'rrik, Son of Yawgmoth", 1, "commander"));
+        cards.add(new ForgeDeckFactory.CardSpec("Stir the Sands", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Blood Artist", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Mirkwood Bats", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Black Market Connections", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Blood Pact", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Dread Presence", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Harvester of Souls", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("High-Society Hunter", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Morbid Opportunist", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Phyrexian Arena", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Sign in Blood", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Teval's Judgment", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Vilis, Broker of Blood", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Yawgmoth, Thran Physician", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Exsanguinate", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Barad-dûr", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Barren Moor", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Bojuka Bog", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Command Tower", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Swamp", 31, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Alhammarret's Archive", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Cosmos Elixir", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Disciple of Bolas", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Kokusho, the Evening Star", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Agent of the Shadow Thieves", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Alesha's Legacy", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Gray Merchant of Asphodel", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Mithril Coat", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Swiftfoot Boots", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Arcane Signet", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Ashnod's Altar", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Cabal Ritual", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Charcoal Diamond", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Crowded Crypt", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Crypt Ghast", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Jet Medallion", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Mind Stone", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Pawn of Ulamog", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Phyrexian Altar", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Pitiless Plunderer", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Sol Ring", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Songs of the Damned", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Throne of Eldraine", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Endless Cockroaches", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Myojin of Grim Betrayal", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Nim Deathmantle", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Phyrexian Reclamation", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Reanimate", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Reassembling Skeleton", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Rise of the Dark Realms", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Tenacious Dead", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Thrilling Encore", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Tortured Existence", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Whip of Erebos", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Blasphemous Edict", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Drown in Ichor", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Eaten Alive", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Font of Agonies", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Murder", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("The Meathook Massacre", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Toxic Deluge", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Demon of Catastrophes", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Demon of Death's Gate", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Viscera Seer", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Desecrated Tomb", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("From Under the Floorboards", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Sengir Autocrat", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Grim Tutor", 1, "mainboard"));
+        cards.add(new ForgeDeckFactory.CardSpec("Razaketh, the Foulblooded", 1, "mainboard"));
+        ForgeDeckFactory.DeckSpec spec = new ForgeDeckFactory.DeckSpec("K'rrik Real Deck", cards);
         return new ForgeDeckFactory().build(spec);
     }
 
@@ -259,10 +363,15 @@ public class KrrikPhyrexianCastLegalityTest {
      * covers the full {7}, which is the reported symptom ("K'rrik only appears around 7 mana").
      */
     private static void assertKrrikLegalityAtLandCount(int landCount, boolean expectedLegal, long seed) throws InterruptedException {
-        PausedGame state = reachOwnMain1(
+        assertKrrikLegalityAtLandCount(
                 deck("K'rrik, Son of Yawgmoth", "Swamp"),
                 deck("Krenko, Tin Street Kingpin", "Mountain"),
-                seed);
+                landCount, expectedLegal, seed);
+    }
+
+    /** Same threshold check as above, but against a caller-supplied K'rrik deck (see {@link #realKrrikDeck()}). */
+    private static void assertKrrikLegalityAtLandCount(Deck p1Deck, Deck p2Deck, int landCount, boolean expectedLegal, long seed) throws InterruptedException {
+        PausedGame state = reachOwnMain1(p1Deck, p2Deck, seed);
         try {
             putUntappedSwampsInPlay(state.game(), state.actingPlayer(), landCount);
             assertEquals(40, state.actingPlayer().getLife());
@@ -307,5 +416,48 @@ public class KrrikPhyrexianCastLegalityTest {
     @Test
     public void krrikIsOfferedWithSevenRealLandsPayingFullManaCost() throws InterruptedException {
         assertKrrikLegalityAtLandCount(7, true, 4304L);
+    }
+
+    /**
+     * The same 4/5/6/7-mana threshold matrix as above, but against the actual reported 100-card
+     * K'rrik deck (see {@link #realKrrikDeck()}) instead of the minimal commander+40-basics fixture
+     * — the "real-match state a synthetic fixture doesn't represent" gap the V2h/V2h.2 notes in
+     * {@code commander-cast-diagnostics.ts} called out. The deck's other 66 nonland cards (rituals,
+     * tutors, reanimation, etc.) sit untouched in the library throughout: nothing here is drawn,
+     * played, or triggered before the acting player's own Main Phase 1 with an empty stack, so they
+     * cannot influence whether "Cast K'rrik..." is offered — only the controlled Swamp count and life
+     * total (both asserted below) can. Any legality mismatch against the synthetic-deck matrix above
+     * would mean the bug is sensitive to real deck composition and not just to raw mana/life inputs.
+     */
+    private static void assertKrrikLegalityAtLandCountRealDeck(int landCount, boolean expectedLegal, long seed) throws InterruptedException {
+        assertKrrikLegalityAtLandCount(
+                realKrrikDeck(),
+                deck("Krenko, Tin Street Kingpin", "Mountain"),
+                landCount, expectedLegal, seed);
+    }
+
+    @Test
+    public void krrikRealDeckIsNotOfferedWithThreeRealLands() throws InterruptedException {
+        assertKrrikLegalityAtLandCountRealDeck(3, false, 4400L);
+    }
+
+    @Test
+    public void krrikRealDeckIsOfferedWithFourRealLandsAndLifeForPhyrexian() throws InterruptedException {
+        assertKrrikLegalityAtLandCountRealDeck(4, true, 4401L);
+    }
+
+    @Test
+    public void krrikRealDeckIsOfferedWithFiveRealLandsAndLifeForPhyrexian() throws InterruptedException {
+        assertKrrikLegalityAtLandCountRealDeck(5, true, 4402L);
+    }
+
+    @Test
+    public void krrikRealDeckIsOfferedWithSixRealLandsAndLifeForPhyrexian() throws InterruptedException {
+        assertKrrikLegalityAtLandCountRealDeck(6, true, 4403L);
+    }
+
+    @Test
+    public void krrikRealDeckIsOfferedWithSevenRealLandsPayingFullManaCost() throws InterruptedException {
+        assertKrrikLegalityAtLandCountRealDeck(7, true, 4404L);
     }
 }
