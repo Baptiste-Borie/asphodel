@@ -29,7 +29,7 @@ type SelfZoneKey = NonNullable<(typeof EVENT_ZONE)[keyof typeof EVENT_ZONE]>;
 function concealCard(card: AgentCardObservation): AgentCardObservation {
   return {
     ...card,
-    name: null, hidden: true, typeLine: null, power: null, toughness: null, counters: null,
+    name: null, hidden: true, typeLine: null, power: null, toughness: null, basePower: null, baseToughness: null, counters: null,
     combatKeywords: null, selfAttackTriggers: null, token: false, ringBearer: false,
   };
 }

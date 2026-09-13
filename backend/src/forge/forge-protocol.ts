@@ -533,6 +533,9 @@ export interface AgentCardObservation {
   counters: Record<string, number> | null;
   power: number | null;
   toughness: number | null;
+  /** Forge current face's numeric printed reference; null for variable or concealed stats. */
+  basePower?: number | null;
+  baseToughness?: number | null;
   typeLine: string | null;
   /** Current public keyword allowlist; null for hidden non-battlefield cards, absent on older bridges. */
   combatKeywords?: string[] | null;

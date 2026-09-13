@@ -27,7 +27,7 @@ function selfHand(observation: AgentObservation): AgentCardObservation[] {
 
 it("conceals a hand card not present in the last reconciled observation (the reported Whip of Erebos leak)", () => {
   const known = card({ cardRef: "forest-1", zone: "hand", name: "Forest", typeLine: "Basic Land — Forest" });
-  const provisional = card({ cardRef: "provisional-1", zone: "hand", name: "Whip of Erebos", typeLine: "Legendary Enchantment" });
+  const provisional = card({ cardRef: "provisional-1", zone: "hand", name: "Whip of Erebos", typeLine: "Legendary Enchantment", basePower: 4, baseToughness: 5 });
   const lastReconciled = selfObservation([known]);
   const pending = selfObservation([known, provisional]);
 
@@ -40,6 +40,8 @@ it("conceals a hand card not present in the last reconciled observation (the rep
   const concealed = hand.find(c => c.cardRef === "provisional-1")!;
   assert.equal(concealed.name, null, "the undeclared provisional card's real name must never reach the DTO");
   assert.equal(concealed.hidden, true);
+  assert.equal(concealed.basePower, null);
+  assert.equal(concealed.baseToughness, null);
   assert.equal(concealed.typeLine, null, "no identifying field may survive concealment");
   assert.equal(JSON.stringify(redacted).includes("Whip of Erebos"), false, "the provisional name must not appear anywhere in the serialized observation");
 });

@@ -9,6 +9,22 @@ function frame(id: number, text: string | null = null): PublicGameFrame {
 
 const instant = async (): Promise<void> => { /* no real wait in tests */ };
 
+it('awaits the complete presentation before painting the next frame or exposing decisions', async () => {
+  const queue = new FramePlaybackQueue(); queue.enqueue([frame(1), frame(2)]);
+  const order: string[] = [];
+  let release!: () => void;
+  const done = queue.pump({
+    beforeFrame: async f => { order.push(`before${f.id}`); },
+    onFrame: f => { order.push(`paint${f.id}`); },
+    afterFrame: async f => { if (f.id === 1) await new Promise<void>(resolve => { release = resolve; }); order.push(`settled${f.id}`); },
+    onIdle: () => { order.push('decision'); },
+  });
+  await Promise.resolve(); await Promise.resolve();
+  assert.deepEqual(order, ['before1', 'paint1']); assert.equal(queue.isIdle(), false);
+  release(); await done;
+  assert.deepEqual(order, ['before1','paint1','settled1','before2','paint2','settled2','decision']);
+});
+
 it("plays queued frames in FIFO order, then signals idle exactly once", async () => {
   const queue = new FramePlaybackQueue();
   const played: number[] = [];

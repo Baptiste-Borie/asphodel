@@ -80,6 +80,10 @@ export function computePlaybackDelayMs(frame: Pick<PublicGameFrame, "event">, re
 }
 
 export interface FramePlaybackCallbacks {
+  /** Presentation hooks are awaited in order; Digital keeps the default timing. */
+  beforeFrame?: (frame: PublicGameFrame) => Promise<void>;
+  afterFrame?: (frame: PublicGameFrame, delayMs: number) => Promise<void>;
+  isCurrent?: () => boolean;
   /** Called once per frame, in order, with the board/timeline update it represents. */
   onFrame: (frame: PublicGameFrame) => void;
   /** Called once after the queue drains — the moment it is safe to reveal the live decision. */
@@ -128,15 +132,20 @@ export class FramePlaybackQueue {
     const wait = callbacks.delay ?? realDelay;
     try {
       while (this.queue.length > 0) {
+        if (callbacks.isCurrent && !callbacks.isCurrent()) { this.queue = []; return; }
         const frame = this.queue.shift()!;
+        if (callbacks.beforeFrame) await callbacks.beforeFrame(frame);
+        if (callbacks.isCurrent && !callbacks.isCurrent()) return;
         callbacks.onFrame(frame);
         // Always pause after a frame, including the last one — so the final action is actually
         // seen for a beat before the decision controls appear, rather than being instantly swapped.
-        await wait(computePlaybackDelayMs(frame, this.queue.length));
+        const duration = computePlaybackDelayMs(frame, this.queue.length);
+        if (callbacks.afterFrame) await callbacks.afterFrame(frame, duration);
+        else await wait(duration);
       }
     } finally {
       this.pumping = false;
     }
-    callbacks.onIdle();
+    if (!callbacks.isCurrent || callbacks.isCurrent()) callbacks.onIdle();
   }
 }

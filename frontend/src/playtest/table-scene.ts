@@ -29,6 +29,7 @@ export function renderPublicZones(container: HTMLElement, player: AgentPlayerObs
     const label = document.createElement('span');
     label.className = 'table-pile-label';
     label.textContent = `${zone} · ${count}`;
+    label.dataset.compact = `${{library: 'LIB', graveyard: 'GY', exile: 'EX'}[zone]} · ${count}`;
     pile.append(face, label);
     pile.disabled = zone === 'library' || !count;
     if (zone !== 'library') pile.onclick = () => inspect(`${player.name} · ${zone}`, cards, {playerId: player.playerId, zone});

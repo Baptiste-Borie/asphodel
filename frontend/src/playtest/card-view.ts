@@ -1,6 +1,7 @@
 import { battlefieldArtUri } from './card-art.js';
 import { cardDisplayName, counterBadges } from "./card-format.js";
 import { keywordIcons } from "./card-icons.js";
+import { statPlaque } from './card-state.js';
 import type { AgentCardObservation, CardPresentation } from "./types.js";
 
 export interface TableCardOptions {
@@ -191,7 +192,7 @@ export function createTableCard(
   // V2h "CARD STATE ICONOGRAPHY": only ever built from Forge's own already-curated
   // `combatKeywords` allowlist (see card-icons.ts) — never shown for a concealed card, which
   // reports no characteristics at all.
-  const keywordsRow = !concealed ? keywordIcons(card.combatKeywords) : null;
+  const keywordsRow = !concealed ? keywordIcons(card.combatKeywords, condensed && card.summoningSick === true) : null;
   if (keywordsRow) children.push(keywordsRow);
 
   const badges = counterBadges(card.counters);
@@ -222,7 +223,7 @@ export function createTableCard(
     const caption = document.createElement('span'); caption.className = 'table-card-caption'; caption.textContent = name;
     children.push(caption);
     if (card.power !== null && card.toughness !== null) {
-      const stats = document.createElement('span'); stats.className = 'table-card-stats'; stats.textContent = `${card.power}/${card.toughness}`; children.push(stats);
+      children.push(statPlaque(card));
     }
   }
   if (options.combatTag) {

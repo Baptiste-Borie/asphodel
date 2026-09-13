@@ -45,6 +45,7 @@ await page.route('**/playtests**', (route) => {
 await page.route('**/decks', (route) => route.fulfill({ json: { decks: [] } }));
 const svg = (text) => 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="480" height="672"><rect width="480" height="672" fill="#466554"/><text x="20" y="340" fill="white">${text}</text></svg>`);
 await page.route('**/cards/presentation', async (route) => {
+  if (process.env.CONFORMANCE_REAL_ART === '1') return route.continue();
   const names = route.request().postDataJSON().names;
   return route.fulfill({ json: { cards: Object.fromEntries(names.map((name) => [name, { name, imageUri: svg(name), artUri: svg(name), manaCost: null, manaValue: 0, typeLine: '', oracleText: '' }])) } });
 });
@@ -74,7 +75,7 @@ assert.equal(await human.locator('.table-commander-tax').textContent(), '+2');
 const handCard = human.locator('.physical-hand .table-card--hand').first();
 await handCard.hover();
 await page.waitForTimeout(250);
-const preview = page.locator('.table-hover-preview:not(.table-hover-preview--hidden)');
+const preview = page.locator('.table-preview:not([hidden])');
 await preview.waitFor();
 await page.screenshot({ path: `${output}/hover-preview-1920.png` });
 let box = await preview.boundingBox();
@@ -84,12 +85,54 @@ assert.ok(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width
 await page.mouse.move(0, 0);
 await page.waitForTimeout(200);
 await page.evaluate(() => { document.querySelector('.physical-hand .table-card--hand').scrollIntoView({ inline: 'end' }); });
-await handCard.hover({ position: { x: 1, y: 1 } });
+// Stay inside the rounded card silhouette (the extreme corner belongs to the hand container).
+await handCard.hover({ position: { x: 8, y: 8 } });
 await page.waitForTimeout(250);
 box = await preview.boundingBox();
-assert.ok(box && box.x >= 0 && box.x + box.width <= viewport.width, 'hover preview clamps inward near the viewport edge rather than being clipped');
+assert.ok(box && box.x >= 0 && box.x + box.width <= viewport.width, 'hover preview remains inside viewport');
 await page.mouse.move(0, 0);
 await page.waitForTimeout(250);
+
+// V2: hover state, independent P/T tones, overflow, pin/restore, current observation refresh.
+const opponent = page.locator('.physical-board[data-player-id="ai"]');
+const stateCard = card('Serra Angel', 'state-card', 'battlefield', 'Creature — Angel', {
+  power: 5, toughness: 2, basePower: 4, baseToughness: 4, summoningSick: true,
+  combatKeywords: ['flying','vigilance','menace','lifelink'], counters: {'+1/+1': 1},
+});
+observation.players[1].battlefield.push(stateCard);
+await page.waitForTimeout(1900);
+const angel = opponent.locator('[data-card-ref="state-card"]');
+await angel.hover();
+await page.waitForTimeout(150);
+assert.match(await preview.innerText(), /Current state/i);
+assert.match(await preview.innerText(), /Base 4 \/ 4/);
+assert.equal(await angel.locator('[data-tone="raised"]').textContent(), '5');
+assert.equal(await angel.locator('[data-tone="lowered"]').textContent(), '2');
+assert.equal(await angel.locator('.table-card-keyword-overflow').textContent(), '+2');
+await angel.locator('.table-card-keyword').first().hover();
+assert.equal(await page.locator('.card-state-tooltip:not([hidden])').count(), 1);
+await angel.click({button:'right'});
+await page.mouse.move(5,5);
+await page.waitForTimeout(350);
+assert.equal(await page.locator('.physical-inspection-pinned').count(), 1);
+await opponent.locator('[data-card-ref="aisol"]').hover();
+assert.match(await preview.innerText(), /Sol Ring/);
+await page.mouse.move(5,5); await page.waitForTimeout(350);
+assert.match(await preview.innerText(), /Serra Angel/);
+stateCard.power = 6;
+await page.waitForTimeout(500);
+assert.equal(await preview.locator('.inspection-state [data-tone="raised"]').textContent(), '6');
+for (const size of [{width:1920,height:1080},{width:1366,height:768}]) {
+  await page.setViewportSize(size); await page.waitForTimeout(350);
+  const rail = await preview.boundingBox(); const twin = await human.boundingBox();
+  assert.ok(twin.x + twin.width < rail.x, 'pinned inspector must not overlap digital twin');
+  await page.screenshot({path:`${output}/v2-inspection-${size.width}.png`});
+}
+await page.keyboard.press('Escape');
+assert.equal(await page.locator('.physical-inspection-pinned').count(), 0);
+await page.screenshot({path:`${output}/v2-normal-1366.png`});
+await page.setViewportSize({width:1920,height:1080});
+await page.screenshot({path:`${output}/v2-normal-1920.png`});
 
 // --- 3. Autocomplete: a broad candidate pool stays bounded and internally scrollable ------------
 const manyCandidates = Array.from({ length: 60 }, (_, i) => ({ name: `Fixture Card ${i}`, remaining: 1 }));
@@ -165,6 +208,29 @@ const attackTag = page.locator('.physical-board[data-player-id="ai"] [data-card-
 await attackTag.waitFor();
 assert.equal(await attackTag.textContent(), 'Attacking You', 'the attacker names its target directly on the card');
 await page.screenshot({ path: `${output}/combat-attack-tag.png` });
+
+// A queued instant gets a readable reveal; later frames and the human decision wait for it.
+await page.keyboard.press('Escape');
+const castObservation = structuredClone(observation);
+castObservation.game = {...castObservation.game, turn:3, activePlayerId:'ai', priorityPlayerId:'ai'};
+castObservation.stack = [{stackRef:'cast-bolt',position:0,sourceCardRef:'bolt',sourceCardName:'Lightning Bolt',controllerId:'ai',description:null,hidden:false,faceDown:false}];
+const resolvedObservation = structuredClone(castObservation); resolvedObservation.stack = [];
+state.frames = [
+  {id:1,observation:castObservation,event:{id:1,turn:3,phase:'main1',text:'Asphodel casts Lightning Bolt'}},
+  {id:2,observation:resolvedObservation,event:null},
+];
+state.observation = resolvedObservation;
+state.pendingDecision = {decisionId:'after-playback',type:'priority_action',context:{...resolvedObservation.game,stackSize:0},rendered:{kind:'menu',title:'Choose an action',items:[passItem]},selectedCardRefs:null};
+await page.locator('.table-card-reveal--visible .table-reveal-caption').waitFor();
+assert.equal(await page.getByRole('button',{name:'Pass priority',exact:true}).count(),0);
+await page.waitForTimeout(1500);
+assert.equal(await page.locator('.table-card-reveal--visible .table-reveal-caption').textContent(),'Asphodel casts Lightning Bolt');
+assert.equal(await page.getByRole('button',{name:'Stack · 1',exact:true}).count(),1);
+await page.screenshot({path:`${output}/v2-spell-playback.png`});
+await page.getByRole('button',{name:'Continue · Esc',exact:true}).click();
+await page.waitForFunction(() => document.querySelector('.table-root')?.getAttribute('data-playback') === 'idle');
+assert.match(await page.locator('.table-decision-dock').innerText(), /Pass priority/);
+assert.equal(await page.getByRole('button',{name:'Stack · 0',exact:true}).count(),1);
 
 assert.deepEqual(errors, []);
 await browser.close();

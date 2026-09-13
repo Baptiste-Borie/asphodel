@@ -17,7 +17,7 @@ export function renderPlayerSeat(container: HTMLElement, player: AgentPlayerObse
   plaque.append(name, state);
   container.replaceChildren(life, plaque);
   if (player.playerId === observation.game.priorityPlayerId) {
-    const priority = document.createElement('span'); priority.className = 'physical-priority-marker'; priority.title = 'Has priority'; priority.setAttribute('aria-label','Has priority'); container.append(priority);
+    const priority = document.createElement('span'); priority.className = 'physical-priority-marker'; priority.textContent = 'Priority'; priority.title = 'Has priority'; priority.setAttribute('aria-label','Has priority'); container.append(priority);
   }
   if (previousLife !== null && previousLife !== player.life) {
     const delta = document.createElement('small'); delta.className = 'physical-life-delta';

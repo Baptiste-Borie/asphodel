@@ -30,6 +30,9 @@ export interface AgentCardObservation {
   counters: Record<string, number> | null;
   power: number | null;
   toughness: number | null;
+  /** Forge current face's numeric printed reference; null for variable or concealed stats. */
+  basePower?: number | null;
+  baseToughness?: number | null;
   typeLine: string | null;
   combatKeywords?: string[] | null;
   selfAttackTriggers?: string[] | null;

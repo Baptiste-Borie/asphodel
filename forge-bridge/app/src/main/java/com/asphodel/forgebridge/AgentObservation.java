@@ -78,6 +78,8 @@ record AgentObservation(
             Map<String, Integer> counters,
             Integer power,
             Integer toughness,
+            Integer basePower,
+            Integer baseToughness,
             String typeLine,
             List<String> combatKeywords,
             List<String> selfAttackTriggers,

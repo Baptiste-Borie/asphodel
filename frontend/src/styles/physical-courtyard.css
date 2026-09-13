@@ -14,7 +14,7 @@
   --surface-raised: var(--stone-raised);
   --text-muted: var(--ink-muted);
   color: var(--ink);
-  background: #171d22 url('../assets/environments/courtyard-slate.png') center / 100% 100% no-repeat;
+  background: #171d22;
 }
 .table-root--physical[data-environment=courtyard]::before {
   inset: 0; border: 0; border-radius: 0; box-shadow: none;

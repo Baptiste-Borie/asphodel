@@ -12,6 +12,7 @@ import { element } from "../dom.js";
 import { collectVisibleCardNames, commandZoneCards, formatHudPhase, opponentPlayer, renderBattlefieldHalf, renderCommanderDock, renderCompactHand, renderHand, renderLandZone, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
 import { createCardPreviewPanel } from "./card-preview.js";
 import { createHoverPreview } from "./hover-preview.js";
+import { attachStateTooltip } from './state-tooltip.js';
 import { CardPresentationStore } from "./card-presentation-store.js";
 import { cardDisplayName } from "./card-format.js";
 import { combatRelations, combatSelectedCardRefs, type CombatRelation } from "./combat-selection.js";
@@ -28,6 +29,7 @@ import { renderPhysicalDeclare } from "./physical-declare.js";
 import { createPhaseBanner, detectMajorPhaseTransition, phaseTransitionLabel } from "./phase-transitions.js";
 import { createCardReveal } from "./card-reveal.js";
 import { newlyArrivedPermanents } from "./reveal-detection.js";
+import { presentationBeats } from './presentation-beats.js';
 import { computeSeatPresentations } from "./seat-presentation.js";
 import "../styles/physical-companion.css";
 import "../styles/physical-scene.css";
@@ -36,6 +38,7 @@ import "../styles/physical-seat.css";
 import "../styles/physical-cards.css";
 import "../styles/physical-controls.css";
 import "../styles/physical-flows.css";
+import '../styles/physical-v2.css';
 import type { AgentCardObservation, AgentChoice, AgentObservation, AgentSelfPlayerObservation, DeckInput, MenuItem, PublicGameEvent, StartPlaytestRequest, WebPendingDecisionDTO, WebPlaytestStateDTO } from "./types.js";
 
 const POLL_INTERVAL_MS = 300;
@@ -224,10 +227,13 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   let lastObservation: AgentObservation | null = null;
   const cardStore = new CardPresentationStore();
   const previewPanel = createCardPreviewPanel();
+  let inspectionActions: CardActionMap | undefined;
+  previewPanel.element.addEventListener('inspectionchange', () => updatePreviewActionable(inspectionActions));
   // V2h: a single global hover-magnify overlay, attached once for the life of the page — see
   // hover-preview.ts for why this must be a body-level portal rather than per-container CSS.
-  const hoverPreview = createHoverPreview();
+  const hoverPreview = createHoverPreview(previewPanel);
   hoverPreview.attach(document);
+  attachStateTooltip(root);
   const handActionMenu = createHandActionMenu();
   const manaOverlay = createManaPaymentOverlay();
   const zoneInspector = createZoneInspector((name) => cardStore.get(name));
@@ -678,6 +684,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
    * current decision, if any — entirely independent of tapped state.
    */
   function paintBoard(observation: AgentObservation, handActions?: HandActionCallbacks, boardActionMap?: CardActionMap, combatSelectedRefs?: ReadonlySet<string>, combatRelationMap?: ReadonlyMap<string, CombatRelation>): void {
+    inspectionActions = boardActionMap;
     // V2h "NEWLY PLAYED CARD REVEAL": one restrained large reveal for the first significant new
     // battlefield arrival this paint represents (a fast multi-ETB burst reveals only its first card
     // rather than stacking several at once — see reveal-detection.ts). Computed BEFORE updating
@@ -685,7 +692,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     // played-frame alike.
     const revealed = newlyArrivedPermanents(lastRevealObservation, observation)[0];
     lastRevealObservation = observation;
-    if (revealed) cardReveal.show(revealed, revealed.name ? cardStore.get(revealed.name) : null);
+    if (revealed && (currentPlayMode !== 'physical' || frameQueue.isIdle())) cardReveal.show(revealed, revealed.name ? cardStore.get(revealed.name) : null);
 
     const expand = Boolean(boardActionMap && boardActionMap.byCardRef.size > 0);
     const isCombatSelected = (card: AgentCardObservation) => combatSelectedRefs?.has(card.cardRef) ?? false;
@@ -753,6 +760,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     // Also refresh outside of a fresh click — e.g. the same card stays previewed across a poll
     // while the underlying decision (and so its legal actions) changed, or Asphodel's turn frame
     // playback supplies no boardActionMap at all and any stale control must disappear.
+    previewPanel.refresh(observation, name => cardStore.get(name));
     updatePreviewActionable(boardActionMap);
   }
 
@@ -888,14 +896,50 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
 
   /** Feeds any newly-arrived frames into the queue and (re)starts playback — safe to call every poll; a call while already playing is a harmless no-op re-entry that keeps draining the same shared queue. */
   function pumpFrames(): void {
+    const queue = frameQueue;
+    const pumpingSession = sessionId;
+    const current = () => queue === frameQueue && sessionId === pumpingSession && !gameSection.hidden;
+    const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+    let beats: ReturnType<typeof presentationBeats> = { spells: [], arrivals: [], unshownArrivals: [] };
     void frameQueue.pump({
+      isCurrent: current,
+      beforeFrame: currentPlayMode === 'physical' ? async frame => {
+        gameSection.dataset.playback = 'playing';
+        gameSection.classList.remove('physical-input-required');
+        decisionDock.replaceChildren();
+        lastDecisionKey = '';
+        inspectionActions = undefined;
+        previewPanel.setActionable(null, null);
+        handActionMenu.close();
+        beats = presentationBeats(lastRevealObservation, frame.observation);
+        const transition = detectMajorPhaseTransition(lastPhaseState, frame.observation.game, frame.observation.selfPlayerId);
+        if (transition) {
+          renderHud(frame.observation);
+          await pause(2100);
+        }
+      } : undefined,
       onFrame: (frame) => {
+        gameSection.dataset.playback = 'playing';
         livePlayerTargets = [];
         gameSection.classList.remove('physical-input-required');
         paintBoard(frame.observation);
         if (frame.event) pushPlayedEvent(frame.event);
       },
+      afterFrame: currentPlayMode === 'physical' ? async (frame, duration) => {
+        const reveals = [...beats.spells, ...beats.unshownArrivals];
+        for (const card of reveals) {
+          if (!current()) return;
+          await cardReveal.present(card, card.name ? cardStore.get(card.name) : null, frame.event?.text ?? `${card.name} · enters the battlefield`);
+        }
+        for (const card of beats.arrivals) {
+          if (!current()) return;
+          await cardReveal.settle(card, card.name ? cardStore.get(card.name) : null, gameSection);
+        }
+        if (reveals.length || beats.arrivals.length) await pause(200);
+        else await pause(duration);
+      } : undefined,
       onIdle: () => {
+        gameSection.dataset.playback = 'idle';
         if (latestState) revealLiveState(latestState);
       },
     });
@@ -909,6 +953,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       const state = await getPlaytestState(sessionId);
       if (sessionId !== pollingSession) return;
       latestState = state;
+      gameSection.dataset.connection = 'connected';
       currentPlayMode = state.playMode; // V2g: static for a session's lifetime, but always kept in sync with the backend's own DTO rather than trusted-once.
       if (state.humanDeckName && state.asphodelDeckName) setDeckInfo(state.humanDeckName, state.asphodelDeckName);
       frameQueue.enqueue(state.frames);
@@ -936,6 +981,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     } catch (error) {
       stopPolling();
       if (sessionId !== pollingSession) return;
+      gameSection.dataset.connection = 'disconnected';
       if (error instanceof ApiError && error.status === 404) { showSetup(); return; }
       decisionDock.textContent = error instanceof Error ? error.message : "Lost contact with the playtest.";
       const retry=document.createElement('button'); retry.textContent='Reconnect'; retry.onclick=()=> { pollTimer=setInterval(()=>void poll(),POLL_INTERVAL_MS); void poll(); }; decisionDock.append(retry);
@@ -1055,6 +1101,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   }
 
   async function submitChoice(choice: Parameters<typeof submitPlaytestChoice>[1]): Promise<void> {
+    if (currentPlayMode === 'physical' && !frameQueue.isIdle()) return;
     if (!sessionId || submitting) return;
     submitting = true;
     renderStatusLine("running");

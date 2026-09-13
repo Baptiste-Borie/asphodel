@@ -137,12 +137,19 @@ final class AgentObservationBuilder {
                 battlefield ? counters(card) : null,
                 battlefield && card.isCreature() ? card.getNetPower() : null,
                 battlefield && card.isCreature() ? card.getNetToughness() : null,
+                battlefield && identityVisible && !card.isFaceDown() && card.isCreature() ? numericPrintedStat(card.getBasePowerString()) : null,
+                battlefield && identityVisible && !card.isFaceDown() && card.isCreature() ? numericPrintedStat(card.getBaseToughnessString()) : null,
                 characteristicsVisible ? card.getType().toString() : null,
                 characteristicsVisible ? combatKeywords(card) : null,
                 characteristicsVisible ? selfAttackTriggers(card) : null,
                 card.isToken(),
                 card.isRingBearer()
         );
+    }
+
+    /** Current face's printed reference, never interpret * or a characteristic-defining formula. */
+    static Integer numericPrintedStat(String value) {
+        return value != null && value.matches("-?\\d+") ? Integer.valueOf(value) : null;
     }
 
     /** Fixed public keyword allowlist, evaluated on the current (including face-down) state. */

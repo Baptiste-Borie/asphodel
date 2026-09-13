@@ -38,7 +38,7 @@ export function createPhysicalScene(inspect: (title: string, cards: AgentCardObs
       const board = boards.get(seat.playerId)!;
       board.element.dataset.density = seat.density;
       board.focus.setAttribute('aria-pressed', String(focused === seat.playerId));
-      board.focus.textContent = focused === seat.playerId ? 'Focused' : 'Inspect';
+      board.focus.textContent = focused === seat.playerId ? 'Focused' : 'Focus';
     }
   };
   overview.onclick = () => { focused = null; layout(); };

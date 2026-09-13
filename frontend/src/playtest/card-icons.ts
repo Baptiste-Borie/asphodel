@@ -88,8 +88,24 @@ export function keywordIconSpecs(keywords: readonly string[] | null | undefined)
  * carries a full-word `title`/`aria-label` (e.g. "Vigilance") so the compact glyph is never the only
  * way to identify it.
  */
-export function keywordIcons(keywords: readonly string[] | null | undefined): HTMLElement | null {
+export const KEYWORD_HELP: Readonly<Record<string, string>> = {
+  flying: 'Can be blocked only by creatures with flying or reach.',
+  reach: 'Can block creatures with flying.',
+  vigilance: 'Attacking does not cause this creature to tap.',
+  menace: 'Cannot be blocked except by two or more creatures.',
+  deathtouch: 'Any amount of damage this deals to a creature is lethal damage.',
+  first_strike: 'Deals combat damage before creatures without first strike or double strike.',
+  double_strike: 'Deals damage in both the first-strike and regular combat damage steps.',
+  trample: 'Can assign excess combat damage to the player or permanent it is attacking.',
+  indestructible: 'Cannot be destroyed by lethal damage or effects that say destroy.',
+  lifelink: 'Damage this deals also causes its controller to gain that much life.',
+  defender: 'Cannot attack.',
+  sick: 'Recently controlled. Cannot attack or use abilities with the tap or untap symbol in their costs unless haste applies.',
+};
+
+export function keywordIcons(keywords: readonly string[] | null | undefined, sick = false): HTMLElement | null {
   const specs = keywordIconSpecs(keywords);
+  if (sick) specs.unshift({ keyword: 'sick', label: 'Summoning sickness', path: '<circle cx="8" cy="8" r="6" fill="none"/><path d="M8 4v4l3 2" fill="none"/>' });
   if (specs.length === 0) return null;
   const row = document.createElement("span");
   row.className = "table-card-keywords";
@@ -97,9 +113,20 @@ export function keywordIcons(keywords: readonly string[] | null | undefined): HT
     const badge = document.createElement("span");
     badge.className = "table-card-keyword";
     badge.title = spec.label;
+    badge.dataset.tooltip = `${spec.label} — ${KEYWORD_HELP[spec.keyword] ?? spec.label}`;
+    badge.tabIndex = 0;
     badge.setAttribute("aria-label", spec.label);
     badge.innerHTML = `<svg viewBox="0 0 16 16" width="11" height="11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${spec.path}</svg>`;
     row.append(badge);
+  }
+  if (specs.length > 3) {
+    const overflow = document.createElement('span');
+    overflow.className = 'table-card-keyword-overflow';
+    overflow.textContent = `+${specs.length - 3}`;
+    overflow.tabIndex = 0;
+    overflow.dataset.tooltip = specs.slice(3).map(spec => spec.label).join(' · ');
+    overflow.setAttribute('aria-label', overflow.dataset.tooltip);
+    row.append(overflow);
   }
   return row;
 }

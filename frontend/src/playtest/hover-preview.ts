@@ -1,4 +1,5 @@
 import { createTableCard, renderedCardState } from "./card-view.js";
+import type { CardPreviewPanel } from './card-preview.js';
 
 /**
  * V2h "GLOBAL HOVER CARD CLIPPING BUG": a single, global overlay appended directly to
@@ -46,7 +47,7 @@ function matchCard(target: EventTarget | null): HTMLElement | null {
   return card;
 }
 
-export function createHoverPreview(): HoverPreview {
+export function createHoverPreview(physicalInspector?: CardPreviewPanel): HoverPreview {
   const element = document.createElement("div");
   element.className = "table-hover-preview table-hover-preview--hidden";
   element.hidden = true;
@@ -78,6 +79,11 @@ export function createHoverPreview(): HoverPreview {
     if (!state) return;
     if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
     current = source;
+    if (physicalInspector && source.closest('.table-root--physical')) {
+      element.hidden = true;
+      physicalInspector.showHover(state.card, state.presentation);
+      return;
+    }
     // Upright regardless of the source's own tapped state — reading a card is not re-representing
     // board state the source card already shows (same choice `card-preview.ts` makes).
     const cardElement = createTableCard({ ...state.card, tapped: false }, state.presentation, { className: "table-hover-preview-card" });
@@ -88,6 +94,7 @@ export function createHoverPreview(): HoverPreview {
   }
 
   function hide(): void {
+    if (current?.closest('.table-root--physical')) physicalInspector?.leaveHover();
     current = null;
     element.classList.add("table-hover-preview--hidden");
     hideTimer = setTimeout(() => {
