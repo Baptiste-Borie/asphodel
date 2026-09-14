@@ -471,7 +471,9 @@ abstract class AuditedPlayerControllerAi extends PlayerControllerAi {
     @Override
     public boolean applyManaToCost(ManaCostBeingPaid toPay, SpellAbility ability, String prompt, ManaConversionMatrix matrix, boolean effect) {
         audit.recordStrategicFallback("applyManaToCost", "applyManaToCost", ability == null ? null : AgentObservationBuilder.cardRef(ability.getHostCard()), "Pinned Forge AI fallback; see controller audit");
-        return super.applyManaToCost(toPay, ability, prompt, matrix, effect);
+        // The pinned superclass is only an assert(false) placeholder around this
+        // native Forge helper. Keep the audited delegation without that assertion trap.
+        return forge.ai.ComputerUtilMana.payManaCost(toPay, ability, player, effect);
     }
 
     @Override

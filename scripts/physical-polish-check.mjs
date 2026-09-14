@@ -33,13 +33,17 @@ const state = {
   publicEvents: [], frames: [], asphodelDecisionCount: 0, endedByHuman: false, result: null, error: null,
 };
 let started = false;
+const submittedChoices = [];
 await page.route('**/playtests**', (route) => {
   const path = new URL(route.request().url()).pathname;
   if (path === '/playtests' && route.request().method() === 'POST') {
     started = true;
     return route.fulfill({ json: { sessionId: state.sessionId, status: state.status } });
   }
-  if (route.request().method() === 'POST') return route.fulfill({ json: { accepted: true } });
+  if (route.request().method() === 'POST') {
+    submittedChoices.push(route.request().postDataJSON());
+    return route.fulfill({ json: { accepted: true } });
+  }
   return route.fulfill({ json: started ? state : { active: false } });
 });
 await page.route('**/decks', (route) => route.fulfill({ json: { decks: [] } }));
@@ -142,6 +146,7 @@ state.pendingDecision = {
 };
 await page.waitForTimeout(500);
 const input = page.getByRole('combobox', { name: 'Declare a card', exact: true });
+assert.equal(await input.evaluate(el => el === document.activeElement), true, 'opening a declaration focuses its search after mounting');
 await input.fill('Fixture');
 await page.waitForTimeout(150);
 await page.screenshot({ path: `${output}/autocomplete-bounded.png` });
@@ -231,6 +236,49 @@ await page.getByRole('button',{name:'Continue · Esc',exact:true}).click();
 await page.waitForFunction(() => document.querySelector('.table-root')?.getAttribute('data-playback') === 'idle');
 assert.match(await page.locator('.table-decision-dock').innerText(), /Pass priority/);
 assert.equal(await page.getByRole('button',{name:'Stack · 0',exact:true}).count(),1);
+
+// An old DOM callback must never submit twice, even when polling repeats N after acceptance.
+const setPriority = id => {
+  state.pendingDecision = {decisionId:id,type:'priority_action',context:{...state.observation.game,stackSize:0},
+    rendered:{kind:'menu',title:'Choose an action',items:[{...passItem,choice:{...passItem.choice,decisionId:id}}]},selectedCardRefs:null};
+};
+setPriority('stabilization-N');
+await page.waitForTimeout(800);
+await page.evaluate(() => { window.stalePass = document.querySelector('.decision-option--pass'); });
+await page.locator('.decision-option--pass').click();
+await page.waitForTimeout(800);
+assert.equal(submittedChoices.filter(c=>c.decisionId==='stabilization-N').length,1);
+assert.equal(await page.locator('.decision-option--pass').count(),0,'consumed N must not remount');
+setPriority('stabilization-N+1');
+await page.waitForTimeout(800);
+await page.evaluate(() => window.stalePass.click());
+await page.waitForTimeout(100);
+assert.equal(submittedChoices.filter(c=>c.decisionId==='stabilization-N').length,1,'detached stale callback rejected');
+await page.locator('.decision-option--pass').click();
+await page.waitForTimeout(200);
+assert.equal(submittedChoices.filter(c=>c.decisionId==='stabilization-N+1').length,1);
+
+await page.evaluate(() => { window.bufferedSpace = new KeyboardEvent('keydown', {code:'Space',bubbles:true}); });
+setPriority('space-guard');
+state.pendingDecision.rendered.title='Space guard priority';
+await page.getByText('Space guard priority',{exact:true}).waitFor();
+await page.evaluate(() => { document.activeElement?.blur(); });
+await page.keyboard.press('Space');
+assert.equal(submittedChoices.filter(c=>c.decisionId==='space-guard').length,0,'newly mounted priority must resist rapid Space');
+await page.waitForTimeout(750);
+await page.evaluate(() => document.body.dispatchEvent(window.bufferedSpace));
+await page.waitForTimeout(100);
+assert.equal(submittedChoices.filter(c=>c.decisionId==='space-guard').length,0,'buffered old event cannot answer a new window');
+await page.keyboard.press('Space');
+await page.waitForTimeout(200);
+assert.equal(submittedChoices.filter(c=>c.decisionId==='space-guard').length,1,'a deliberate fresh key remains usable');
+for (const type of ['attackers_selection','blockers_selection']) {
+  await page.locator('.physical-board[data-player-id="ai"] .physical-board-focus').click();
+  state.pendingDecision={decisionId:type,type,context:{...state.observation.game,stackSize:0},
+    rendered:{kind:'menu',title:type,items:[]},selectedCardRefs:[],combatPairings:[]};
+  await page.getByText(type,{exact:true}).waitFor();
+  assert.equal(await human.getAttribute('data-density'),'primary','human combat automatically focuses the human board');
+}
 
 assert.deepEqual(errors, []);
 await browser.close();

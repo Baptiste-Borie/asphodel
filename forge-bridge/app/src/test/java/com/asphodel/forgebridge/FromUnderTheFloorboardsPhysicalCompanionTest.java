@@ -53,6 +53,82 @@ import static org.junit.Assert.fail;
  */
 public class FromUnderTheFloorboardsPhysicalCompanionTest {
 
+    @Test public void physicalCommanderCastThenMindStoneActivationPreservesKnownZones() throws InterruptedException {
+        AsphodelDecisionBroker broker = new AsphodelDecisionBroker(waiting -> { });
+        broker.physicalPlayerId = "player-1";
+        AtomicReference<Game> gameRef = new AtomicReference<>();
+        Thread worker = startExternalMatch(broker,
+                deckWithCommander("K'rrik, Son of Yawgmoth", List.of(
+                        new ForgeDeckFactory.CardSpec("Mind Stone", 1, "mainboard"),
+                        new ForgeDeckFactory.CardSpec("Swamp", 40, "mainboard"))),
+                deckWithCommander("Isamaru, Hound of Konda", List.of(new ForgeDeckFactory.CardSpec("Plains", 40, "mainboard"))),
+                51234L, gameRef);
+        boolean opening = false, castStone = false, castCommander = false, activated = false, drawn = false;
+        int drawDeclarations = 0, handBefore = -1, battlefieldBefore = -1, graveBefore = -1;
+        String stoneRef = null;
+        boolean commanderPayment = false, lifePayment = false;
+        try {
+            for (int i = 0; i < 500; i++) {
+                var snapshot = awaitDecision(broker).pendingDecision();
+                Player human = gameRef.get().getPlayers().get(0);
+                if (snapshot instanceof AsphodelDecisionBroker.PendingPhysicalIdentityDecision physical) {
+                    assertEquals("No known movement/command effect may request a declaration", "draw", physical.eventKind());
+                    if (activated) { drawDeclarations++; assertEquals(1, physical.count()); drawn = true; }
+                    broker.submitPhysicalIdentity(physical.decisionId(), !opening
+                            ? List.of("Mind Stone", "Swamp", "Swamp", "Swamp", "Swamp", "Swamp", "Swamp")
+                            : java.util.Collections.nCopies(physical.count(), "Swamp"));
+                    opening = true;
+                } else if (snapshot instanceof AsphodelDecisionBroker.PendingManaPaymentDecision mana) {
+                    if (castCommander && !activated) commanderPayment = true;
+                    var option = mana.options().stream().filter(o -> !"Mind Stone".equals(o.sourceCardName())).findFirst().orElse(mana.options().get(0));
+                    broker.submit(mana.decisionId(), option.manaOptionId(), AsphodelDecisionBroker.SubmissionKind.MANA);
+                } else if (snapshot instanceof AsphodelDecisionBroker.PendingSelectionDecision selection) {
+                    if ("mana_life_payment".equals(selection.selectionKind())) lifePayment = true;
+                    var option = selection.options().stream().filter(o -> "Yes".equals(o.label())).findFirst().orElse(selection.options().get(0));
+                    broker.submit(selection.decisionId(), option.objectId(), AsphodelDecisionBroker.SubmissionKind.OBJECT);
+                } else if (handleCombatDecisionIfPresent(broker, snapshot)) {
+                    // Decline combat; this fixture tests activation/cast and identity only.
+                } else if (snapshot instanceof AsphodelDecisionBroker.PendingDecision priority) {
+                    if (drawn) {
+                        assertEquals(handBefore + 1, human.getCardsIn(ZoneType.Hand).size());
+                        assertEquals(battlefieldBefore - 1, human.getCardsIn(ZoneType.Battlefield).size());
+                        assertEquals(graveBefore + 1, human.getCardsIn(ZoneType.Graveyard).size());
+                        final String expectedRef = stoneRef;
+                        assertTrue(human.getCardsIn(ZoneType.Graveyard).stream().anyMatch(c -> expectedRef.equals("card-" + c.getId()) && c.getName().equals("Mind Stone")));
+                        assertTrue(human.getCardsIn(ZoneType.Battlefield).stream().anyMatch(c -> c.isCommander()));
+                        break;
+                    }
+                    AsphodelDecisionBroker.ExternalAction action = null;
+                    if (!castStone) {
+                        action = priority.actions().stream().filter(a -> "cast_spell".equals(a.type()) && "Mind Stone".equals(a.cardName())).findFirst().orElse(null);
+                        if (action != null) { castStone = true; stoneRef = action.cardRef(); }
+                    }
+                    if (action == null && castStone && !castCommander) {
+                        action = priority.actions().stream().filter(a -> "cast_spell".equals(a.type()) && "command".equals(a.sourceZone())).findFirst().orElse(null);
+                        if (action != null) castCommander = true;
+                    }
+                    if (action == null && castCommander && !activated && human.getCardsIn(ZoneType.Battlefield).stream().anyMatch(c -> c.isCommander())) {
+                        action = priority.actions().stream().filter(a -> "activate_ability".equals(a.type()) && "Mind Stone".equals(a.cardName()) && String.valueOf(a.abilityText()).contains("Draw")).findFirst().orElse(null);
+                        if (action != null) {
+                            activated = true;
+                            handBefore = human.getCardsIn(ZoneType.Hand).size();
+                            battlefieldBefore = human.getCardsIn(ZoneType.Battlefield).size();
+                            graveBefore = human.getCardsIn(ZoneType.Graveyard).size();
+                        }
+                    }
+                    if (action == null && !activated) action = priority.actions().stream().filter(a -> "play_land".equals(a.type())).findFirst().orElse(null);
+                    if (action == null) action = priority.actions().stream().filter(a -> "pass".equals(a.type())).findFirst().orElseThrow();
+                    broker.submit(priority.decisionId(), action.actionId(), AsphodelDecisionBroker.SubmissionKind.ACTION);
+                } else fail("Unexpected decision: " + snapshot);
+            }
+            assertTrue("K'rrik must progress beyond priority through native or external payment",
+                    commanderPayment || broker.progress().manaPaymentsFallbackToAi() > 0);
+            assertTrue("Phyrexian life must be offered through the human decision broker", lifePayment);
+            assertTrue("Mind Stone's actual draw activation must resolve", activated && drawn);
+            assertEquals(1, drawDeclarations);
+        } finally { endAndJoin(gameRef.get(), worker); }
+    }
+
     private static Deck deckWithCommander(String commander, List<ForgeDeckFactory.CardSpec> mainboard) {
         List<ForgeDeckFactory.CardSpec> cards = new ArrayList<>();
         cards.add(new ForgeDeckFactory.CardSpec(commander, 1, "commander"));

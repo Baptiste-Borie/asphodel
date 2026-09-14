@@ -243,6 +243,22 @@ it("exposes and validates cancellation only when the pending Forge payment suppl
   assert.equal(decision.options.length, 0, 'agent mana options remain unchanged');
 });
 
+it('optional confirmations retain Forge source and question without changing choices', () => {
+  const d: Extract<Decision, {type:'yes_no'|'object_selection'|'ordering_selection'}> = {
+    decisionId:'trigger',type:'yes_no',playerId:'player-1',context:priorityDecision().context,
+    selectionKind:'optional_trigger',prompt:'Accept optional trigger?',
+    source:{actionId:null,cardRef:'source',cardName:'Public source',abilityText:'You may draw a card.'},
+    options:[{objectId:'yes',cardRef:null,label:'Yes',finish:false},{objectId:'no',cardRef:null,label:'No',finish:false}],
+    selected:[],minSelections:1,maxSelections:1,canFinish:false,
+  };
+  const prompt=describeDecision(observation(),d);
+  assert.equal(prompt.title,'Public source\nYou may draw a card.\nAccept optional trigger?');
+  assert.equal(prompt.kind,'menu');
+  if(prompt.kind==='menu') assert.deepEqual(prompt.items.map(i=>asClickable(i.choice).choice),['yes','no']);
+  d.source=null;
+  assert.equal(describeDecision(observation(),d).title,'Accept optional trigger?');
+});
+
 it('library picker uses only current explicit option labels, exact ids and Forge selection progress', () => {
   const d: Extract<Decision,{type:'object_selection'|'yes_no'|'ordering_selection'}>={
     decisionId:'search',type:'object_selection',playerId:'player-1',context:priorityDecision().context,selectionKind:'zone_change',prompt:'Choose a basic land',source:null,

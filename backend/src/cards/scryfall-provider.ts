@@ -220,7 +220,10 @@ export class ScryfallCardProvider implements CardProvider {
     // "default_cards", the only local bulk source that reliably carries those objects) before
     // giving up. A real card's name always wins above; this only ever fills a gap.
     this.tokenIndexPromise ??= this.loadTokenIndex();
-    return (await this.tokenIndexPromise).get(key) ?? null;
+    const tokens = await this.tokenIndexPromise;
+    // Forge's public generated names append " Token". Strip it only inside the
+    // layout-filtered token catalogue: never resolve the alias as a main-deck card.
+    return tokens.get(key) ?? (/ token$/.test(key) ? tokens.get(key.replace(/ token$/, "")) : null) ?? null;
   }
 
   async findBySetAndCollector(setCode: string, collectorNumber: string): Promise<ResolvedCard | null> {

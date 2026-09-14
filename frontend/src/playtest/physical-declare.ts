@@ -147,4 +147,7 @@ export function renderPhysicalDeclare(
   searchHost.replaceChildren(search);
   container.replaceChildren(heading, progress, slots, searchHost, footer);
   render();
+  requestAnimationFrame(() => {
+    if (search.isConnected && !searchHost.hidden) search.querySelector('input')?.focus();
+  });
 }

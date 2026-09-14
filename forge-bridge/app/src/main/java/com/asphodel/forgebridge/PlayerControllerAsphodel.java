@@ -602,8 +602,26 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
         getPlayer().pushPaidForSA(ability);
         ability.setManaCostBeingPaid(toPay);
         int externallySelected = 0;
+        int phyrexianLife = 0;
+        boolean declinedLife = false;
         try {
             while (!toPay.isPaid()) {
+                // Same native operations as Forge's InputPayManaOfCostPayment:
+                // reserve life while choosing, pay it only when the whole payment succeeds.
+                boolean blackWithLife = getPlayer().hasKeyword("PayLifeInsteadOf:B")
+                        && toPay.hasAnyKind(forge.card.mana.ManaAtom.BLACK);
+                if (!declinedLife && (toPay.containsPhyrexianMana() || blackWithLife)
+                        && getPlayer().canPayLife(phyrexianLife + 2, effect, ability)) {
+                    boolean payLife = yesNo("mana_life_payment", "Pay 2 life for one mana symbol?", ability);
+                    externallySelected++;
+                    if (payLife) {
+                        if (toPay.payPhyrexian()) ability.setSpendPhyrexianMana(true);
+                        else toPay.decreaseShard(forge.card.mana.ManaCostShard.BLACK, 1);
+                        phyrexianLife += 2;
+                        continue;
+                    }
+                    declinedLife = true;
+                }
                 List<ForgeManaPaymentChoiceEnumerator.Candidate> candidates =
                         manaPayments.enumerate(getPlayer(), ability, toPay);
                 if (candidates.isEmpty()) {
@@ -640,6 +658,7 @@ public final class PlayerControllerAsphodel extends AuditedPlayerControllerAi {
                 }
                 externallySelected++;
             }
+            if (phyrexianLife > 0) getPlayer().payLife(phyrexianLife, ability, effect);
             return true;
         } finally {
             if (ability.getManaCostBeingPaid() == toPay) {

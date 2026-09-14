@@ -11,6 +11,16 @@ export function isLandCard(card: Pick<AgentCardObservation, "typeLine">): boolea
   return card.typeLine !== null && /\bLand\b/.test(card.typeLine);
 }
 
+/** Stable presentation categories; never alters Forge's zone array. */
+export function orderPermanents(cards: readonly AgentCardObservation[]): AgentCardObservation[] {
+  const rank = (card: AgentCardObservation) => {
+    const type = (card.typeLine ?? '').split(/ [—-] /)[0]!;
+    return /\bCreature\b/.test(type) ? 0 : /\b(?:Planeswalker|Battle)\b/.test(type) ? 1
+      : /\bArtifact\b/.test(type) ? 2 : /\bEnchantment\b/.test(type) ? 3 : 4;
+  };
+  return [...cards].sort((a, b) => rank(a) - rank(b));
+}
+
 export interface BattlefieldPartition {
   lands: AgentCardObservation[];
   nonLands: AgentCardObservation[];

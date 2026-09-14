@@ -1,4 +1,5 @@
 import { createPhysicalScene } from './physical-scene.js';
+import { DecisionGate } from './decision-gate.js';
 import { decisionPresentationNames, renderDecisionCards, renderOpeningHandReview } from "./decision-cards.js";
 import { ApiError } from "../api/api-client.js";
 import "../styles/playtest.css";
@@ -256,6 +257,10 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   let candidateDecisionId: string | null = null;
   let playedEvents: PublicGameEvent[] = [];
   let latestState: WebPlaytestStateDTO | null = null;
+  let decisionGate = new DecisionGate();
+  let gateSession: string | null = null;
+  let combatFocusDecision: string | null = null;
+  let spaceReadyAt = 0;
   // V2g "Physical Companion": set once per game (at buildGameScreen time) from the chosen
   // StartPlaytestRequest.playMode, or from the resumed/polled WebPlaytestStateDTO.playMode — never
   // re-derived. Digital mode reads this closure variable but it is always "digital" there, so every
@@ -273,7 +278,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   let hudTurnEl: HTMLElement, hudPhaseEl: HTMLElement;
   let decisionDock: HTMLElement, menuPanel: HTMLElement, menuDeckInfo: HTMLElement;
   document.addEventListener('keydown', event => {
-    if (event.code !== 'Space' || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || gameSection.hidden || currentPlayMode !== 'physical' || submitting || !frameQueue.isIdle()) return;
+    if (event.code !== 'Space' || event.repeat || performance.now() < spaceReadyAt || event.timeStamp < spaceReadyAt || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || gameSection.hidden || currentPlayMode !== 'physical' || submitting || !frameQueue.isIdle()) return;
     const target = event.target as HTMLElement;
     if (target.closest('button, input, textarea, select, [contenteditable], summary, [role="dialog"]') || gameSection.querySelector('dialog[open], .table-mana-overlay:not([hidden]), .table-hand-menu:not([hidden])')) return;
     const pending = latestState?.pendingDecision;
@@ -882,12 +887,20 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
 
   /** Only while frame playback is genuinely idle — never mid-queue — do we paint the live board/decision, so the human never jumps ahead of a state they have not visually seen play out. */
   function revealLiveState(state: WebPlaytestStateDTO): void {
+    if (state.pendingDecision && (submitting || !decisionGate.allows(state.pendingDecision.decisionId))) {
+      state = { ...state, pendingDecision: null };
+    }
     const active = computeActiveMapping(state);
     livePlayerTargets = state.pendingDecision?.rendered.kind === 'menu' ? state.pendingDecision.rendered.items.filter(item => item.playerId) : [];
     gameSection.classList.toggle('physical-input-required', currentPlayMode === 'physical' && Boolean(state.pendingDecision) && !submitting);
     if (state.observation) {
       lastObservation = state.observation;
       renderTableIfChanged(state.observation, state.pendingDecision, active);
+      if (physicalScene && state.pendingDecision && /^(attackers|blockers)_selection$/.test(state.pendingDecision.type)
+          && combatFocusDecision !== state.pendingDecision.decisionId) {
+        combatFocusDecision = state.pendingDecision.decisionId;
+        physicalScene.focusPlayer(state.observation.selfPlayerId);
+      }
     }
     // V2g.1: which of `active`'s mapped items belong in the dock depends on Play Mode — see
     // `buildDockItems`'s doc comment for the exact Digital/Physical rule.
@@ -953,6 +966,8 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       const state = await getPlaytestState(sessionId);
       if (sessionId !== pollingSession) return;
       latestState = state;
+      if (gateSession !== sessionId) { gateSession = sessionId; decisionGate = new DecisionGate(); combatFocusDecision = null; }
+      decisionGate.observe(state.pendingDecision?.decisionId ?? null);
       gameSection.dataset.connection = 'connected';
       currentPlayMode = state.playMode; // V2g: static for a session's lifetime, but always kept in sync with the backend's own DTO rather than trusted-once.
       if (state.humanDeckName && state.asphodelDeckName) setDeckInfo(state.humanDeckName, state.asphodelDeckName);
@@ -1025,6 +1040,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     const key = JSON.stringify(state.pendingDecision) + (submitting ? ":submitting" : "");
     if (key === lastDecisionKey) return;
     lastDecisionKey = key;
+    if (state.pendingDecision) spaceReadyAt = performance.now() + 650;
     handActionMenu.close();
 
     // mana_payment (V2e.5.1): a dedicated visual overlay entirely replaces the generic decision
@@ -1103,11 +1119,18 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   async function submitChoice(choice: Parameters<typeof submitPlaytestChoice>[1]): Promise<void> {
     if (currentPlayMode === 'physical' && !frameQueue.isIdle()) return;
     if (!sessionId || submitting) return;
+    if (!decisionGate.consume(choice.decisionId)) return;
     submitting = true;
+    handActionMenu.close();
+    manaOverlay.close();
+    inspectionActions = undefined;
+    previewPanel.setActionable(null, null);
+    if (latestState) revealLiveState(latestState);
     renderStatusLine("running");
     try {
       await submitPlaytestChoice(sessionId, choice);
     } catch (error) {
+      decisionGate.retry(choice.decisionId);
       decisionDock.textContent = error instanceof Error ? error.message : "That choice was not accepted.";
     } finally {
       submitting = false;

@@ -121,7 +121,7 @@ export class BaselineAsphodelAgentV2b implements VersionedAsphodelAgent {
       }
       case "value_selection": {
         if (d.valueKind !== "x") break;
-        const scalable = /\bX\b.*\bdamage\b|\bdraw\s+X\b|create\s+X\b/i.test(d.source.abilityText ?? "");
+        const scalable = /\bX\s+damage\b|\b(?:loses?|gains?)\s+X\s+life\b|\bdraws?\s+X\b|\bcreates?\s+X\b/i.test(d.source.abilityText ?? "");
         // maxValue is the supplied legal bound. No mana estimate from land counts.
         const value = scalable ? d.maxValue : Math.max(d.minValue, Math.min(1, d.maxValue));
         return { decisionId: d.decisionId, kind: "value", choice: value, reason: scalable ? "use_legal_scaling_x" : "minimum_positive_legal_x" };

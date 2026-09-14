@@ -182,7 +182,8 @@ final class AsphodelDecisionBroker {
      * library), so there is no seam to intercept them proactively. Instead, EVERY call site that is
      * about to build an {@code AgentObservation} -- for either seat, since a mill/draw can happen on
      * either player's turn -- calls this first: it checks whether the physical seat's
-     * Hand/Battlefield/Graveyard/Exile/Command zones grew since the last checkpoint. Any such growth
+     * Hand/Battlefield/Graveyard/Exile zones contain an unknown physical identity. Commanders and
+     * engine command effects are never hidden-library arrivals. A genuine unknown arrival
      * means Forge silently placed a digitally-arbitrary card there; this blocks (on the same paused
      * game thread) for a physical_identity_declare round before the original decision -- or its
      * observation -- is ever built, and reconciles Forge's object for that slot to match.

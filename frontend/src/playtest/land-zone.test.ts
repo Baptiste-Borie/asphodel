@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { isLandCard, partitionBattlefield } from "./land-zone.js";
+import { isLandCard, partitionBattlefield, orderPermanents } from "./land-zone.js";
 import type { AgentCardObservation } from "./types.js";
 
 function card(overrides: Partial<AgentCardObservation> & { cardRef: string }): AgentCardObservation {
@@ -11,6 +11,12 @@ function card(overrides: Partial<AgentCardObservation> & { cardRef: string }): A
     ...overrides,
   };
 }
+
+it('orders physical permanents by category stably without changing the input zone', () => {
+  const cards = ['Enchantment', 'Artifact', 'Artifact Creature', 'Battle', 'Creature', 'Unknown'].map((typeLine, i) => card({cardRef: String(i), typeLine}));
+  assert.deepEqual(orderPermanents(cards).map(c => c.cardRef), ['2', '4', '3', '1', '0', '5']);
+  assert.deepEqual(cards.map(c => c.cardRef), ['0', '1', '2', '3', '4', '5']);
+});
 
 it("detects a land via typeLine containing the Magic card type \"Land\"", () => {
   assert.ok(isLandCard({ typeLine: "Basic Land — Forest" }));

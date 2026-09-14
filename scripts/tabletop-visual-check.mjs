@@ -21,7 +21,10 @@ await page.getByRole('button',{name:'Pass priority →',exact:true}).click({time
 await page.waitForTimeout(700);
 assert.equal(submissions.length,1); assert.equal(submissions[0].choice,'pass');
 // A card's action menu must survive its opening click and cancel without a submission.
-state.pendingDecision.rendered.items.push({label:'Cycle Forest (fixture)',cardRef:'h0',choice:{decisionId:'d',kind:'action',choice:'cycle',reason:'human_choice'}});
+// Accepted decisions are consumed: emulate Forge's NEXT priority window, not a mutation of d.
+state.pendingDecision.decisionId='d-next';
+state.pendingDecision.rendered.items=state.pendingDecision.rendered.items.map(item=>({...item,choice:{...item.choice,decisionId:'d-next'}}));
+state.pendingDecision.rendered.items.push({label:'Cycle Forest (fixture)',cardRef:'h0',choice:{decisionId:'d-next',kind:'action',choice:'cycle',reason:'human_choice'}});
 await page.waitForTimeout(700);
 await page.locator('.table-hand [data-card-ref="h0"]').click();
 assert.equal(await page.locator('.table-hand-menu:not([hidden])').count(),1);

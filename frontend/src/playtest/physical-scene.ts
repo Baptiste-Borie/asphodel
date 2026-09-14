@@ -43,6 +43,7 @@ export function createPhysicalScene(inspect: (title: string, cards: AgentCardObs
   };
   overview.onclick = () => { focused = null; layout(); };
   return { element, overview,
+    focusPlayer(playerId: string) { focused = playerId; layout(); },
     render(observation: AgentObservation, callbacks: BoardCallbacks, expand: boolean, targets: MenuItem[] = [], choose?: (items: MenuItem[], anchor: HTMLElement) => void) {
       current = observation;
       callbacks = { ...callbacks, battlefieldStyle: "condensed" };

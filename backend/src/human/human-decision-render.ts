@@ -225,7 +225,10 @@ export function describeDecision(observation: AgentObservation, d: ForgePendingE
         return { kind: 'card_picker', title: d.selectionKind === 'mulligan_bottom' ? 'Choose cards to bottom' : d.prompt,
           items, selected: d.selected, minSelections: d.minSelections, maxSelections: d.maxSelections };
       }
-      return { kind: "menu", title: d.prompt, items };
+      const title = d.type === 'yes_no'
+        ? [d.source?.cardName, d.source?.abilityText, d.prompt].filter(Boolean).join('\n')
+        : d.prompt;
+      return { kind: "menu", title, items };
     }
     case "physical_identity_declare":
       // Never reaches this function — see the DecisionPrompt "physical_declare" doc comment.

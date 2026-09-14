@@ -85,7 +85,7 @@ final class ForgeManaPaymentChoiceEnumerator {
     }
 
     boolean supportsAdjustedCost(ManaCostBeingPaid cost) {
-        return cost.getUnpaidShards().stream().allMatch(SUPPORTED_SHARDS::contains);
+        return cost.getUnpaidShards().stream().allMatch(shard -> SUPPORTED_SHARDS.contains(shard) || shard.isPhyrexian());
     }
 
     List<Candidate> enumerate(Player player, SpellAbility paidFor, ManaCostBeingPaid cost) {

@@ -28,15 +28,15 @@ import java.util.Set;
  */
 final class PhysicalIdentityCoordinator {
     private static final List<ZoneType> TRACKED_ZONES = List.of(
-            ZoneType.Hand, ZoneType.Battlefield, ZoneType.Graveyard, ZoneType.Exile, ZoneType.Command
+            ZoneType.Hand, ZoneType.Battlefield, ZoneType.Graveyard, ZoneType.Exile
     );
 
     private final Player player;
-    private Set<Card> trackedCards;
+    private final Set<Integer> trackedCards = new HashSet<>();
 
     PhysicalIdentityCoordinator(Player player) {
         this.player = player;
-        this.trackedCards = new HashSet<>(visibleZoneCards());
+        confirm(visibleZoneCards());
     }
 
     Player player() {
@@ -49,13 +49,13 @@ final class PhysicalIdentityCoordinator {
 
     /**
      * A real physical shuffle invalidates any assumption about the library's future order (spec
-     * V2g §12). Cards already visibly placed in a tracked zone are unaffected; this re-baselines
-     * against the zones exactly as they stand right now, synchronously on the same Forge game
-     * thread that just performed the shuffle (see {@code cheatShuffle}), so anything that reappears
-     * afterward (e.g. a London-mulligan redraw) is correctly treated as unreconciled again.
+     * V2g §12). Forget identities currently in that library only; preserve known cards on
+     * the stack and do not accidentally confirm an unrelated, still-undeclared zone arrival.
      */
     void recordShuffle() {
-        trackedCards = new HashSet<>(visibleZoneCards());
+        // Invalidate only shuffled library identities. A known spell may be on the stack,
+        // and an unrelated fresh draw may still be awaiting its declaration checkpoint.
+        for (Card card : player.getCardsIn(ZoneType.Library)) trackedCards.remove(card.getId());
     }
 
     private List<Card> visibleZoneCards() {
@@ -73,7 +73,7 @@ final class PhysicalIdentityCoordinator {
     /**
      * Cards that newly appeared in a tracked zone since the last checkpoint, grouped by the
      * physical event kind implied by which zone they appeared in. Iteration order is stable (Hand,
-     * Battlefield, Graveyard, Exile, Command) so several simultaneous events resolve
+     * Battlefield, Graveyard, Exile) so several simultaneous events resolve
      * deterministically, one physical declaration round at a time.
      *
      * <p>Each round's declaration and reconciliation is scoped to ONLY that round's own zone (see
@@ -97,7 +97,7 @@ final class PhysicalIdentityCoordinator {
         for (ZoneType zone : TRACKED_ZONES) {
             List<Card> fresh = new ArrayList<>();
             for (Card c : player.getCardsIn(zone)) {
-                if (!c.isToken() && !trackedCards.contains(c)) {
+                if (!c.isToken() && !c.isImmutable() && !c.isCommander() && !trackedCards.contains(c.getId())) {
                     fresh.add(c);
                 }
             }
@@ -114,7 +114,6 @@ final class PhysicalIdentityCoordinator {
             case Graveyard -> "mill";
             case Exile -> "exile_from_library";
             case Battlefield -> "library_to_battlefield";
-            case Command -> "library_to_command";
             default -> "library_event";
         };
     }
@@ -173,12 +172,17 @@ final class PhysicalIdentityCoordinator {
      * needed by a different zone's round within the same checkpoint (see {@link
      * #unreconciledNewCardsByZone}'s doc) -- a rare, explicitly documented V0 limitation.
      *
-     * <p>Known limitation: engine bookkeeping keyed off "entered this zone this turn" (e.g.
-     * descend/landfall-style turn trackers) is updated by the underlying {@code Zone.add} call as
-     * for any normal transfer, so it may double-count once across a reconciliation swap in rare
-     * cases. This does not affect zone membership, card identity, or counts.
+     * <p>Membership writes use Forge's rollback flag to avoid replaying Zone.add's turn/descend
+     * bookkeeping. This is not a second game event. Already-fired effects of arbitrary hidden
+     * library arrivals remain a limitation of the reactive V0 architecture.
      */
     List<Card> reconcile(List<Card> wrongCards, List<String> declaredNames) {
+        for (Card card : wrongCards) {
+            if (card.isCommander() || card.isImmutable()
+                    || (!card.isInZone(ZoneType.Library) && trackedCards.contains(card.getId()))) {
+                throw new PhysicalReconciliationException("Refusing to replace known card card-" + card.getId());
+            }
+        }
         if (wrongCards.size() != declaredNames.size()) {
             throw new IllegalArgumentException(
                     "physical reconciliation size mismatch: " + wrongCards.size()
@@ -220,12 +224,19 @@ final class PhysicalIdentityCoordinator {
                                 + "zones within one checkpoint, a rare, documented V0 limitation (see "
                                 + "docs/physical-companion-v0.md).");
             }
-            ejectZone.remove(eject);
-            library.remove(replacement);
-            ejectZone.add(replacement);
-            library.add(eject);
             claimedFromLibrary.add(replacement);
             reconciled.add(replacement);
+        }
+        // Preflight the entire declaration before any membership write. A missing later
+        // candidate must not leave a partially swapped game behind.
+        for (int i = 0; i < toEject.size(); i++) {
+            Card eject = toEject.get(i);
+            Card replacement = claimedFromLibrary.get(i);
+            Zone destination = eject.getZone();
+            destination.remove(eject);
+            library.remove(replacement);
+            destination.add(replacement, null, null, true);
+            library.add(eject, null, null, true);
         }
         return reconciled;
     }
@@ -244,7 +255,7 @@ final class PhysicalIdentityCoordinator {
      * treat them as a fresh, undeclared event.
      */
     void confirm(List<Card> cards) {
-        trackedCards.addAll(cards);
+        for (Card card : cards) trackedCards.add(card.getId());
     }
 
     /**

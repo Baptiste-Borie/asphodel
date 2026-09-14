@@ -2,7 +2,7 @@ import { computeBattlefieldScale } from "./battlefield-scale.js";
 import { groupCards, type CardGroup } from "./card-grouping.js";
 import { createTableCard } from "./card-view.js";
 import { commanderTaxLabel } from "./commander-tax.js";
-import { partitionBattlefield } from "./land-zone.js";
+import { partitionBattlefield, orderPermanents } from "./land-zone.js";
 import type { AgentCardObservation, AgentObservation, AgentPlayerObservation, CardPresentation } from "./types.js";
 
 export interface BoardCallbacks {
@@ -156,7 +156,7 @@ function renderCardRow(container: HTMLElement, groups: CardGroup[], callbacks: B
  */
 export function renderBattlefieldHalf(container: HTMLElement, player: AgentPlayerObservation, callbacks: BoardCallbacks, expand = false): void {
   const { nonLands } = partitionBattlefield(player.battlefield);
-  const groups = rowsFor(nonLands, expand);
+  const groups = rowsFor(callbacks.battlefieldStyle === 'condensed' ? orderPermanents(nonLands) : nonLands, expand);
   const scale = computeBattlefieldScale(groups.length);
   container.style.setProperty("--bf-card-width", `${scale.cardWidthPx}px`);
   container.style.setProperty("--bf-card-overlap", `${scale.overlapPx}px`);

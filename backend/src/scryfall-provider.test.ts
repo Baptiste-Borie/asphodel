@@ -331,6 +331,9 @@ describe("ScryfallCardProvider token/emblem/face presentation lookup (V2g.1)", (
 
     const card = await provider.findByExactName("Asphodel Test Fixture Token");
     assert.equal(card?.imageUri, "https://img.test/soldier-token.jpg");
+    assert.equal((await provider.findByExactName("Asphodel Test Fixture Token Token"))?.imageUri,
+      "https://img.test/soldier-token.jpg", 'Forge suffix aliases resolve only against actual token layouts');
+    assert.equal(await provider.findByExactName('Unknown Token'), null);
   });
 
   it("an unresolvable name (neither a real card nor any token/helper) returns null cleanly, never an error", async () => {

@@ -150,6 +150,14 @@ it("scaling X uses native legal bounds and unknown X remains conservative", () =
   assert.equal(choose(observation(), d).choice, 4);
   d.source.abilityText = null; assert.equal(choose(observation(), d).choice, 1);
 });
+it('recognizes generic damage, life, draw and token X benefits without exceeding Forge bounds', () => {
+  for (const abilityText of ['Deals X damage.', 'Each opponent loses X life.', 'You gain X life.', 'Draw X cards.', 'Create X 1/1 creature tokens.']) {
+    const d: Extract<Decision, { type: 'value_selection' }> = { ...base, type: 'value_selection', source: { ...source, abilityText }, prompt: null, valueKind: 'x', minValue: 0, maxValue: 4, suggestedValues: [] };
+    assert.equal(choose(observation(), d).choice, 4, abilityText);
+    d.maxValue = 0;
+    assert.equal(choose(observation(), d).choice, 0, 'Forge zero bound is authoritative');
+  }
+});
 it("modes penalize a self cost and yes/no declines unknown effects", () => {
   const d: Decision = { ...base, type: "mode_selection", source, prompt: null, minModes: 1, maxModes: 1, selectedModeIds: [], canFinish: false, finishModeId: null, modes: [{ modeId: "cost", label: "Draw cards and sacrifice a creature", description: null }, { modeId: "tokens", label: "Create two tokens", description: null }] };
   assert.equal(choose(observation(), d).choice, "tokens");
