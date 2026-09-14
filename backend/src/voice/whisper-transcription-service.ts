@@ -1,42 +1,131 @@
 /**
  * Fallback STT for browsers without native SpeechRecognition (Firefox, mainly — see
- * frontend/src/voice/mic-capture.ts). Runs whisper.cpp locally via `nodejs-whisper`:
- * 100% free/offline, no API key, no per-call cost. First call for a given model is slow
- * (whisper.cpp self-builds via cmake, then the model downloads to WHISPER_MODEL_PATH) —
- * expect the first request after a fresh `npm install` to take a couple of minutes.
+ * frontend/src/voice/mic-capture.ts). Runs whisper.cpp locally: 100% free/offline, no API
+ * key, no per-call cost.
  *
- * Model defaults to "base": multilingual (unlike the ".en" variants) and fast enough on
- * CPU for a short push-to-talk take. Bump WHISPER_MODEL to "small" if accuracy on French
- * Magic terms turns out too shaky — bigger, slower, more accurate.
+ * We shell out to the `whisper-cli` binary that `nodejs-whisper` vendors and builds on
+ * `npm install` (whisper.cpp compiled from source + a model-download script), but we do
+ * NOT use nodejs-whisper's own `nodewhisper()` helper to run it: its command builder only
+ * exposes a fixed whitelist of flags and has no passthrough for `-ac`/`-bo`/`-bs`, which
+ * are exactly the flags that matter for short push-to-talk commands (see WHISPER_AUDIO_CTX
+ * below) — profiling showed they're a 4-5x latency win nodejs-whisper can't express. We
+ * still depend on nodejs-whisper only for its vendored build artifacts (the compiled binary
+ * + models/download-ggml-model.sh), not its JS internals.
+ *
+ * Defaults below come from benchmarking realistic short French/Magic phrases ("je passe",
+ * "je caste K'rrik", "j'attaque avec K'rrik et Vilis", ...) on the homelab CPU:
+ *  - "tiny" instead of "base": ~2x faster encode, no meaningful accuracy loss for what the
+ *    resolver needs downstream (it ranks only currently-legal Forge actions against a small
+ *    candidate set, so it already tolerates phonetic STT noise on card names).
+ *  - a capped audio context (-ac): whisper.cpp always pads/encodes up to this many 20ms
+ *    frames regardless of actual clip length (1500 = the model's full 30s window), so encode
+ *    time does NOT scale down with a short clip unless you cap it explicitly. 512 frames ≈
+ *    10.24s — generous headroom over any realistic voice command — cuts encode time by
+ *    ~2.5-4x for free.
+ *  - greedy decoding (-bo 1 -bs 1) instead of whisper-cli's default 5-beam/best-of-5: shaves
+ *    another ~30% with no observed accuracy loss on short commands.
+ * Combined, these took the base-model default (~1.4-1.5s/phrase on this CPU) to ~200-450ms
+ * end-to-end — comfortably inside the 1-3s gameplay target. Override any of them per
+ * deployment without touching this file; see .env.example.
  */
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { nodewhisper } from "nodejs-whisper";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { VoiceTranscriptionError } from "../app-errors.js";
 import { stripWhisperTimestamps } from "./transcript-cleanup.js";
 import type { VoiceTranscriptionService } from "./voice-transcription-service.js";
 
-const MODEL_NAME = process.env.WHISPER_MODEL ?? "base";
+const execFileAsync = promisify(execFile);
+
+/** "tiny" trades a bit of raw accuracy for ~2x lower encode time than "base" — see module comment. */
+const MODEL_NAME = process.env.WHISPER_MODEL ?? "tiny";
 const MODEL_ROOT_PATH = process.env.WHISPER_MODEL_PATH ?? join(process.cwd(), ".whisper-models");
 /** French by default, matching speech-recognizer.ts's native recognizer — the lexicon (not the STT locale) is what understands mixed-in English Magic terms. */
 const LANGUAGE = process.env.WHISPER_LANGUAGE ?? "fr";
+const THREADS = process.env.WHISPER_THREADS ?? "4";
+/** Encoder context cap in 20ms frames (0 = full 30s window). See module comment. */
+const AUDIO_CTX = process.env.WHISPER_AUDIO_CTX ?? "512";
+/** Greedy decoding by default — see module comment. Raise these back toward whisper-cli's 5/5 default if accuracy ever needs it more than speed. */
+const BEAM_SIZE = process.env.WHISPER_BEAM_SIZE ?? "1";
+const BEST_OF = process.env.WHISPER_BEST_OF ?? "1";
+
+const MODEL_FILE_BY_NAME: Record<string, string> = {
+  tiny: "ggml-tiny.bin",
+  "tiny.en": "ggml-tiny.en.bin",
+  base: "ggml-base.bin",
+  "base.en": "ggml-base.en.bin",
+  small: "ggml-small.bin",
+  "small.en": "ggml-small.en.bin",
+  medium: "ggml-medium.bin",
+  "medium.en": "ggml-medium.en.bin",
+};
+
+const NODEJS_WHISPER_ROOT = dirname(fileURLToPath(import.meta.resolve("nodejs-whisper/package.json")));
+const WHISPER_CPP_ROOT = join(NODEJS_WHISPER_ROOT, "cpp", "whisper.cpp");
+const WHISPER_CLI_PATH = join(WHISPER_CPP_ROOT, "build", "bin", "whisper-cli");
+const DOWNLOAD_MODEL_SCRIPT = join(WHISPER_CPP_ROOT, "models", "download-ggml-model.sh");
+
+/** Mirrors nodejs-whisper's own autoDownloadModel(): fetch once, reuse the file on every call after. */
+async function ensureModelDownloaded(modelName: string, modelPath: string): Promise<void> {
+  try {
+    await access(modelPath);
+    return;
+  } catch {
+    // not present yet — download it below
+  }
+  await execFileAsync(DOWNLOAD_MODEL_SCRIPT, [modelName, MODEL_ROOT_PATH], { cwd: dirname(DOWNLOAD_MODEL_SCRIPT) });
+}
 
 export class WhisperTranscriptionService implements VoiceTranscriptionService {
   async transcribe(audio: Buffer, extension: string): Promise<string> {
     const dir = await mkdtemp(join(tmpdir(), "asphodel-voice-"));
     const inputPath = join(dir, `take.${extension}`);
+    const wavPath = join(dir, "take.wav");
 
     try {
       await writeFile(inputPath, audio);
-      const raw = await nodewhisper(inputPath, {
-        modelName: MODEL_NAME,
-        autoDownloadModelName: MODEL_NAME,
-        modelRootPath: MODEL_ROOT_PATH,
-        removeWavFileAfterTranscription: true,
-        whisperOptions: { language: LANGUAGE },
-      });
-      const transcript = stripWhisperTimestamps(raw);
+      await execFileAsync("ffmpeg", [
+        "-nostats",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        inputPath,
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        "-c:a",
+        "pcm_s16le",
+        wavPath,
+      ]);
+
+      const modelFile = MODEL_FILE_BY_NAME[MODEL_NAME];
+      if (!modelFile) throw new Error(`Unknown WHISPER_MODEL "${MODEL_NAME}"`);
+      const modelPath = join(MODEL_ROOT_PATH, modelFile);
+      await ensureModelDownloaded(MODEL_NAME, modelPath);
+
+      const { stdout } = await execFileAsync(WHISPER_CLI_PATH, [
+        "-t",
+        THREADS,
+        "-bo",
+        BEST_OF,
+        "-bs",
+        BEAM_SIZE,
+        "-ac",
+        AUDIO_CTX,
+        "-l",
+        LANGUAGE,
+        "-m",
+        modelPath,
+        "-f",
+        wavPath,
+      ]);
+
+      const transcript = stripWhisperTimestamps(stdout);
       if (!transcript) throw new Error("whisper.cpp produced no transcribable speech");
       return transcript;
     } catch (error) {
