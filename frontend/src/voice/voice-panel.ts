@@ -12,7 +12,8 @@
  */
 import type { DictionaryProposal, VoiceCandidate, VoiceResolutionResult } from "./voice-types.js";
 import type { VoiceRunner } from "./voice-runner.js";
-import { createSpeechRecognizer, isSpeechRecognitionSupported, type SpeechRecognizerHandle } from "./speech-recognizer.js";
+import { createVoiceRecognizer, isVoiceCaptureSupported } from "./voice-capture.js";
+import type { SpeechRecognizerHandle } from "./speech-recognizer.js";
 
 export interface VoicePanelHandle {
   element: HTMLElement;
@@ -204,8 +205,8 @@ export function createVoicePanel(runner: VoiceRunner): VoicePanelHandle {
   setListening(false);
   micButton.addEventListener("click", () => {
     if (listening) { recognizer?.stop(); setListening(false); return; }
-    if (!isSpeechRecognitionSupported()) { rawLine.textContent = "Speech recognition is not supported in this browser — type a transcript instead."; return; }
-    recognizer = createSpeechRecognizer({
+    if (!isVoiceCaptureSupported()) { rawLine.textContent = "Speech recognition is not supported in this browser — type a transcript instead."; return; }
+    recognizer = createVoiceRecognizer({
       onResult: handleTranscript,
       onError: (err) => { rawLine.textContent = `Mic error: ${err}`; },
       onEnd: () => setListening(false),

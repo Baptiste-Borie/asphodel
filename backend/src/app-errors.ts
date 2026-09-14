@@ -45,3 +45,21 @@ export class DeckNotFoundError extends AppError {
     super("Deck introuvable.", 404, "DECK_NOT_FOUND");
   }
 }
+
+export class MissingAudioError extends AppError {
+  constructor() {
+    super("Aucun fichier audio reçu.", 400, "MISSING_AUDIO");
+  }
+}
+
+export class AudioTooLargeError extends AppError {
+  constructor() {
+    super("Le fichier audio dépasse la taille maximale autorisée.", 413, "AUDIO_TOO_LARGE");
+  }
+}
+
+export class VoiceTranscriptionError extends AppError {
+  constructor(message = "La transcription vocale a échoué.") {
+    super(message, 502, "VOICE_TRANSCRIPTION_FAILED");
+  }
+}

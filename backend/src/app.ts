@@ -1,5 +1,6 @@
 import { ArchidektDeckSource, ArchidektDeckSourceError } from "./decks/archidekt-deck-source.js";
 import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
 import Fastify from "fastify";
 import { AppError } from "./app-errors.js";
 import type { CardProvider } from "./cards/card-provider.js";
@@ -13,6 +14,9 @@ import { DeckService } from "./decks/deck-service.js";
 import { PlaytestSessionManager } from "./human/playtest-session-manager.js";
 import { registerPlaytestRoutes } from "./human/playtest-routes.js";
 import { CardPresentationService, MAX_CARD_PRESENTATION_NAMES } from "./cards/card-presentation-service.js";
+import type { VoiceTranscriptionService } from "./voice/voice-transcription-service.js";
+import { WhisperTranscriptionService } from "./voice/whisper-transcription-service.js";
+import { registerVoiceRoutes } from "./voice/voice-routes.js";
 
 interface CardPresentationBody {
   names: string[];
@@ -39,6 +43,7 @@ export interface BuildAppOptions {
   cardProvider?: CardProvider;
   database?: DatabaseConnection;
   archidektSource?: ArchidektDeckSource;
+  voiceTranscriptionService?: VoiceTranscriptionService;
 }
 
 const deckIdParamsSchema = {
@@ -64,10 +69,12 @@ export async function buildApp(options: BuildAppOptions = {}) {
   const cardProvider = options.cardProvider ?? new ScryfallCardProvider();
   const deckService = new DeckService(database.db, cardProvider, options.archidektSource);
   const cardPresentationService = new CardPresentationService(cardProvider);
+  const voiceTranscriptionService = options.voiceTranscriptionService ?? new WhisperTranscriptionService();
 
   await app.register(cors, {
     origin: /^http:\/\/(?:localhost|127\.0\.0\.1):\d+$/,
   });
+  await app.register(multipart);
 
   if (ownsDatabase) {
     app.addHook("onClose", async () => {
@@ -214,6 +221,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   );
 
   registerPlaytestRoutes(app, new PlaytestSessionManager());
+  registerVoiceRoutes(app, voiceTranscriptionService);
 
   return app;
 }

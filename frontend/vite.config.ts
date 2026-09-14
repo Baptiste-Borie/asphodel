@@ -7,6 +7,7 @@ export default defineConfig({
       "/decks": "http://localhost:3000",
       "/playtests": "http://localhost:3000",
       "/cards": "http://localhost:3000",
+      "/voice": "http://localhost:3000",
     },
   },
 });

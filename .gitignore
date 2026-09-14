@@ -28,6 +28,9 @@ backend/data/scryfall-*.jsonl.gz.*.tmp
 # Local playtest reports (decision corpora with a real observation history) — never committed
 backend/playtest-reports/
 
+# Downloaded whisper.cpp ggml models (voice transcription fallback) — large binaries, refetched on demand
+backend/.whisper-models/
+
 # Logs
 logs/
 *.log

@@ -6,7 +6,8 @@
  * hear me and transcribe something". Also runs the heard transcript through
  * `transcript-normalizer.ts` so a filler-word/elision bug is visible without starting a game.
  */
-import { createSpeechRecognizer, isSpeechRecognitionSupported, type SpeechRecognizerHandle } from "./speech-recognizer.js";
+import { createVoiceRecognizer, isVoiceCaptureSupported } from "./voice-capture.js";
+import type { SpeechRecognizerHandle } from "./speech-recognizer.js";
 import { normalizeTranscript } from "./transcript-normalizer.js";
 import "../styles/voice-mic-test.css";
 
@@ -55,12 +56,12 @@ export function initVoiceMicTestView(container: HTMLElement): void {
   let heardCount = 0;
 
   function setSupportLine(): void {
-    if (isSpeechRecognitionSupported()) {
+    if (isVoiceCaptureSupported()) {
       supportLine.textContent = "Reconnaissance vocale disponible dans ce navigateur.";
       supportLine.classList.remove("voice-mic-test-support--unsupported");
       micButton.disabled = false;
     } else {
-      supportLine.textContent = "Reconnaissance vocale NON disponible dans ce navigateur (essayez Chrome/Edge desktop).";
+      supportLine.textContent = "Aucune méthode de capture vocale disponible dans ce navigateur (ni reconnaissance native, ni micro).";
       supportLine.classList.add("voice-mic-test-support--unsupported");
       micButton.disabled = true;
     }
@@ -96,7 +97,7 @@ export function initVoiceMicTestView(container: HTMLElement): void {
       setListening(false);
       return;
     }
-    recognizer = createSpeechRecognizer({
+    recognizer = createVoiceRecognizer({
       onResult: (transcript) => {
         const normalized = normalizeTranscript(transcript);
         addEntry({ raw: transcript, normalized: normalized.normalized, at: new Date() });
