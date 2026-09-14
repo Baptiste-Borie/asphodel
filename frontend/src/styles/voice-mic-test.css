@@ -1,0 +1,65 @@
+.voice-mic-test {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 0 48px;
+}
+
+.voice-mic-test-support {
+  margin: 4px 0 20px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.voice-mic-test-support--unsupported {
+  color: var(--offline);
+}
+
+.voice-mic-test-controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.voice-mic-test-button--active {
+  background: var(--offline);
+}
+
+.voice-mic-test-status {
+  margin: 0 0 18px;
+  font-size: 13px;
+  color: var(--text-muted);
+  min-height: 1.4em;
+}
+
+.voice-mic-test-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.voice-mic-test-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.voice-mic-test-entry-time {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.voice-mic-test-entry-raw {
+  font-size: 15px;
+}
+
+.voice-mic-test-entry-normalized {
+  font-size: 12px;
+  color: var(--accent);
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+}

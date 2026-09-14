@@ -32,6 +32,9 @@ import { createCardReveal } from "./card-reveal.js";
 import { newlyArrivedPermanents } from "./reveal-detection.js";
 import { presentationBeats } from './presentation-beats.js';
 import { computeSeatPresentations } from "./seat-presentation.js";
+import { VoiceRunner } from "../voice/voice-runner.js";
+import { createVoicePanel, type VoicePanelHandle } from "../voice/voice-panel.js";
+import { defaultVoiceVocabularyStorage } from "../voice/voice-vocabulary-store.js";
 import "../styles/physical-companion.css";
 import "../styles/physical-scene.css";
 import "../styles/physical-courtyard.css";
@@ -40,6 +43,7 @@ import "../styles/physical-cards.css";
 import "../styles/physical-controls.css";
 import "../styles/physical-flows.css";
 import '../styles/physical-v2.css';
+import '../styles/voice-panel.css';
 import type { AgentCardObservation, AgentChoice, AgentObservation, AgentSelfPlayerObservation, DeckInput, MenuItem, PublicGameEvent, StartPlaytestRequest, WebPendingDecisionDTO, WebPlaytestStateDTO } from "./types.js";
 
 const POLL_INTERVAL_MS = 300;
@@ -245,6 +249,12 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   let lastRevealObservation: AgentObservation | null = null;
   let opponentHand: HTMLElement, stackEl: HTMLElement;
   let physicalScene: ReturnType<typeof createPhysicalScene> | null = null;
+  // Voice Intent Resolver (V0) — Physical Companion only (see docs/voice-intent-resolver-v0.md).
+  // `voiceRunner` persists its approved vocabulary across games (browser-local storage), so it is
+  // created once, lazily, on first use rather than rebuilt per game; `voicePanel` (the DOM widget)
+  // is rebuilt per game screen like every other game-screen element.
+  let voiceRunner: VoiceRunner | null = null;
+  let voicePanel: VoicePanelHandle | null = null;
   let stackControl: HTMLButtonElement;
   let livePlayerTargets: MenuItem[] = [];
   let opponentPiles: HTMLElement, humanPiles: HTMLElement;
@@ -315,6 +325,8 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     cardReveal.hide();
     lastRevealObservation = null;
     physicalScene = null;
+    voicePanel?.stop();
+    voicePanel = null;
     zoneInspector.close();
     document.body.classList.remove("tabletop-active");
     previewPanel.close();
@@ -338,6 +350,8 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   function showEndScreen(): void {
     transitions.reset();
     physicalScene = null;
+    voicePanel?.stop();
+    voicePanel = null;
     zoneInspector.close();
     hoverPreview.hide();
     document.body.classList.remove("tabletop-active");
@@ -477,6 +491,24 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   function buildGameScreen(humanDeckName: string | null, asphodelDeckName: string | null): void {
     transitions.reset();
     physicalScene = currentPlayMode === "physical" ? createPhysicalScene(zoneInspector.open) : null;
+    // Voice Intent Resolver (V0): Physical Companion only — Digital never mounts this at all (spec
+    // "Do not clutter Digital mode"). The runner (approved vocabulary) is created once and reused
+    // across games in this tab; the panel (DOM widget) is rebuilt per game like every other
+    // game-screen element. `canAct` is a UX-only pre-check — the actual guard is `submitChoice`
+    // itself (DecisionGate + frame-playback + `submitting`), which is the SAME function a click
+    // already calls; voice never bypasses or duplicates it.
+    if (currentPlayMode === "physical") {
+      voiceRunner ??= new VoiceRunner({
+        getPendingDecision: () => latestState?.pendingDecision ?? null,
+        getObservation: () => latestState?.observation ?? null,
+        canAct: () => currentPlayMode === "physical" && frameQueue.isIdle() && !submitting && Boolean(latestState?.pendingDecision),
+        submit: (choice) => void submitChoice(choice),
+        storage: defaultVoiceVocabularyStorage(),
+      });
+      voicePanel = createVoicePanel(voiceRunner);
+    } else {
+      voicePanel = null;
+    }
     zoneInspector.close();
     gameSection.replaceChildren();
     gameSection.className = "table-root";
@@ -587,6 +619,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     handContainer.className = "table-hand";
 
     if (physicalScene) gameSection.append(physicalScene.element, physicalScene.overview);
+    if (voicePanel) gameSection.append(voicePanel.element);
     if (!physicalScene) gameSection.append(battlefield, handContainer);
     gameSection.append(rail, hud, phaseBanner.element, cardReveal.element, menuButton, menuPanel, previewPanel.element, decisionDock, handActionMenu.element, manaOverlay.element, zoneInspector.element);
   }
@@ -905,6 +938,10 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     // V2g.1: which of `active`'s mapped items belong in the dock depends on Play Mode — see
     // `buildDockItems`'s doc comment for the exact Digital/Physical rule.
     renderDecisionIfChanged(state, active ? buildDockItems(active, currentPlayMode) : null);
+    // Voice Intent Resolver (V0): this is exactly "the new authoritative state" a running compound
+    // plan (see voice-runner.ts's `advancePlan`) must wait for before resolving its next step — never
+    // called from anywhere else, so a plan never advances against playback-in-flight/stale state.
+    voicePanel?.refresh();
   }
 
   /** Feeds any newly-arrived frames into the queue and (re)starts playback — safe to call every poll; a call while already playing is a harmless no-op re-entry that keeps draining the same shared queue. */
