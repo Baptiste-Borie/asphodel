@@ -1,6 +1,7 @@
 import type { AgentChoice, AgentObservation, DictionaryProposal, LexiconEntry, VoiceCandidate, VoicePendingDecision, VoiceResolution, VoiceResolutionResult } from "./voice-types.js";
 import { DEFAULT_LEXICON, mergeLexicon } from "./voice-lexicon.js";
 import { classifyMenuItem } from "./voice-candidates.js";
+import { buildContextualVocabulary } from "./voice-context-vocabulary.js";
 import { resolveVoiceTranscript } from "./voice-resolver.js";
 import { loadApprovedVocabulary, saveApprovedVocabulary, type VoiceVocabularyStorage } from "./voice-vocabulary-store.js";
 
@@ -53,6 +54,16 @@ export class VoiceRunner {
 
   get approved(): readonly LexiconEntry[] {
     return this.approvedVocabulary;
+  }
+
+  /**
+   * The small, contextual card-name hint for the NEXT mic-capture take (see
+   * voice-context-vocabulary.ts) — built fresh from whatever is currently the pending decision and
+   * observation, exactly the same state `interpret()` itself would resolve against. Read once when
+   * starting to listen (see voice-panel.ts); never re-read mid-recording.
+   */
+  get contextualVocabulary(): string[] {
+    return buildContextualVocabulary(this.deps.getPendingDecision(), this.deps.getObservation());
   }
 
   /** Diagnostics only — what a still-running compound plan is waiting on, and why it stopped if it did. */

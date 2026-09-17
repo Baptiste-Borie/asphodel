@@ -24,6 +24,14 @@
  *    ~2.5-4x for free.
  *  - greedy decoding (-bo 1 -bs 1) instead of whisper-cli's default 5-beam/best-of-5: shaves
  *    another ~30% with no observed accuracy loss on short commands.
+ *  - no temperature fallback (-nf): whisper-cli's default retries a decode at higher temperature
+ *    when the greedy pass looks low-confidence (high entropy/low logprob) — each retry re-runs the
+ *    full decode. Benchmarking the contextual `--prompt` below (see whisper-prompt.ts) surfaced a
+ *    real case of this: one sample's otherwise-~200ms greedy decode became ~900ms with 2 fallback
+ *    retries once a prompt nudged its confidence down, with no better (in fact slightly worse)
+ *    transcript to show for it. `-nf` makes latency bounded and predictable regardless of what any
+ *    prompt does to decode confidence — a harmless no-op on the (already deterministic) no-prompt
+ *    path, since that path was never triggering a fallback anyway.
  * Combined, these took the base-model default (~1.4-1.5s/phrase on this CPU) to ~200-450ms
  * end-to-end — comfortably inside the 1-3s gameplay target. Override any of them per
  * deployment without touching this file; see .env.example.
@@ -36,7 +44,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { VoiceTranscriptionError } from "../app-errors.js";
 import { stripWhisperTimestamps } from "./transcript-cleanup.js";
-import type { VoiceTranscriptionService } from "./voice-transcription-service.js";
+import type { TranscriptionContext, VoiceTranscriptionService } from "./voice-transcription-service.js";
+import { buildWhisperPrompt } from "./whisper-prompt.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -51,6 +60,8 @@ const AUDIO_CTX = process.env.WHISPER_AUDIO_CTX ?? "512";
 /** Greedy decoding by default — see module comment. Raise these back toward whisper-cli's 5/5 default if accuracy ever needs it more than speed. */
 const BEAM_SIZE = process.env.WHISPER_BEAM_SIZE ?? "1";
 const BEST_OF = process.env.WHISPER_BEST_OF ?? "1";
+/** See module comment. `"false"` restores whisper-cli's own default fallback behavior. */
+const NO_FALLBACK = process.env.WHISPER_NO_FALLBACK !== "false";
 
 const MODEL_FILE_BY_NAME: Record<string, string> = {
   tiny: "ggml-tiny.bin",
@@ -79,8 +90,47 @@ async function ensureModelDownloaded(modelName: string, modelPath: string): Prom
   await execFileAsync(DOWNLOAD_MODEL_SCRIPT, [modelName, MODEL_ROOT_PATH], { cwd: dirname(DOWNLOAD_MODEL_SCRIPT) });
 }
 
+/**
+ * Pure — separated from `transcribe()` purely so tests can assert on the exact argv `execFile`
+ * receives (that `--prompt`/`--no-fallback` show up correctly, and that a hostile vocabulary entry
+ * stays one inert argv element) without shelling out to a real whisper-cli binary. Each element is
+ * always a plain array entry, never concatenated into a string — the same property that already
+ * makes `execFile` (vs. `exec`) immune to shell injection here.
+ */
+export function buildWhisperArgs(params: {
+  threads: string;
+  bestOf: string;
+  beamSize: string;
+  audioCtx: string;
+  language: string;
+  modelPath: string;
+  wavPath: string;
+  noFallback: boolean;
+  prompt: string | null;
+}): string[] {
+  const args = [
+    "-t",
+    params.threads,
+    "-bo",
+    params.bestOf,
+    "-bs",
+    params.beamSize,
+    "-ac",
+    params.audioCtx,
+    "-l",
+    params.language,
+    "-m",
+    params.modelPath,
+    "-f",
+    params.wavPath,
+  ];
+  if (params.noFallback) args.push("--no-fallback");
+  if (params.prompt) args.push("--prompt", params.prompt);
+  return args;
+}
+
 export class WhisperTranscriptionService implements VoiceTranscriptionService {
-  async transcribe(audio: Buffer, extension: string): Promise<string> {
+  async transcribe(audio: Buffer, extension: string, context?: TranscriptionContext): Promise<string> {
     const dir = await mkdtemp(join(tmpdir(), "asphodel-voice-"));
     const inputPath = join(dir, `take.${extension}`);
     const wavPath = join(dir, "take.wav");
@@ -108,22 +158,19 @@ export class WhisperTranscriptionService implements VoiceTranscriptionService {
       const modelPath = join(MODEL_ROOT_PATH, modelFile);
       await ensureModelDownloaded(MODEL_NAME, modelPath);
 
-      const { stdout } = await execFileAsync(WHISPER_CLI_PATH, [
-        "-t",
-        THREADS,
-        "-bo",
-        BEST_OF,
-        "-bs",
-        BEAM_SIZE,
-        "-ac",
-        AUDIO_CTX,
-        "-l",
-        LANGUAGE,
-        "-m",
+      const args = buildWhisperArgs({
+        threads: THREADS,
+        bestOf: BEST_OF,
+        beamSize: BEAM_SIZE,
+        audioCtx: AUDIO_CTX,
+        language: LANGUAGE,
         modelPath,
-        "-f",
         wavPath,
-      ]);
+        noFallback: NO_FALLBACK,
+        prompt: buildWhisperPrompt(context?.vocabulary),
+      });
+
+      const { stdout } = await execFileAsync(WHISPER_CLI_PATH, args);
 
       const transcript = stripWhisperTimestamps(stdout);
       if (!transcript) throw new Error("whisper.cpp produced no transcribable speech");

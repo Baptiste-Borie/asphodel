@@ -1,5 +1,5 @@
 /** Shared test-only fixtures for the voice module's tests. Not itself a *.test.ts — imported by the others. */
-import type { AgentCardObservation, AgentObservation, AgentSelfPlayerObservation, MenuItem, WebPendingDecisionDTO } from "../playtest/types.js";
+import type { AgentCardObservation, AgentCommanderObservation, AgentObservation, AgentSelfPlayerObservation, AgentStackItem, MenuItem, WebPendingDecisionDTO } from "../playtest/types.js";
 
 export function fakeCard(cardRef: string, name: string, overrides: Partial<AgentCardObservation> = {}): AgentCardObservation {
   return {
@@ -15,12 +15,15 @@ export function fakeObservation(opts: {
   opponentBattlefield?: AgentCardObservation[];
   selfName?: string;
   opponentName?: string;
+  selfCommand?: AgentCardObservation[];
+  selfCommanders?: AgentCommanderObservation[];
+  stack?: AgentStackItem[];
 } = {}): AgentObservation {
   const self: AgentSelfPlayerObservation = {
     role: "self", playerId: "player-1", name: opts.selfName ?? "You", life: 40, startingLife: 40,
     handSize: (opts.selfHand ?? []).length, librarySize: 0, graveyardSize: 0, exileSize: 0, commandZoneSize: 0,
     battlefieldSize: (opts.selfBattlefield ?? []).length, externalController: false,
-    battlefield: opts.selfBattlefield ?? [], graveyard: [], exile: [], command: [], commanders: [], hand: opts.selfHand ?? [],
+    battlefield: opts.selfBattlefield ?? [], graveyard: [], exile: [], command: opts.selfCommand ?? [], commanders: opts.selfCommanders ?? [], hand: opts.selfHand ?? [],
   };
   const opponent = {
     role: "opponent" as const, playerId: "player-2", name: opts.opponentName ?? "Asphodel", life: 40, startingLife: 40,
@@ -33,8 +36,16 @@ export function fakeObservation(opts: {
     game: { turn: 1, phase: "main1", activePlayerId: "player-1", priorityPlayerId: "player-1" },
     selfPlayerId: "player-1",
     players: [self, opponent],
-    stack: [],
+    stack: opts.stack ?? [],
   };
+}
+
+export function fakeCommander(cardRef: string, name: string, overrides: Partial<AgentCommanderObservation> = {}): AgentCommanderObservation {
+  return { cardRef, name, inCommandZone: true, castsFromCommand: 0, ...overrides };
+}
+
+export function fakeStackItem(stackRef: string, sourceCardName: string, overrides: Partial<AgentStackItem> = {}): AgentStackItem {
+  return { stackRef, position: 0, sourceCardRef: null, sourceCardName, controllerId: "player-1", description: null, faceDown: false, hidden: false, ...overrides };
 }
 
 export function fakeMenuItem(label: string, choiceId: string, opts: Partial<MenuItem> & { decisionId?: string } = {}): MenuItem {

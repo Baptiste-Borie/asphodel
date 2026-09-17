@@ -57,4 +57,66 @@ describe("POST /voice/transcribe", () => {
 
     await app.close();
   });
+
+  it("transmet le vocabulaire contextuel envoyé par le client au service de transcription", async () => {
+    const service = new FakeVoiceTranscriptionService();
+    const app = await createTestApp(service);
+    const form = new FormData();
+    form.append("vocabulary", JSON.stringify(["K'rrik, Son of Yawgmoth", "Vilis, Broker of Blood"]));
+    form.append("audio", Buffer.from("fake-opus-bytes"), { filename: "take.webm", contentType: "audio/webm" });
+
+    const response = await app.inject({ method: "POST", url: "/voice/transcribe", payload: form, headers: form.getHeaders() });
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(service.calls[0]?.context, { vocabulary: ["K'rrik, Son of Yawgmoth", "Vilis, Broker of Blood"] });
+
+    await app.close();
+  });
+
+  it("n'attache aucun contexte quand le client n'envoie pas de vocabulaire — comportement identique à avant", async () => {
+    const service = new FakeVoiceTranscriptionService();
+    const app = await createTestApp(service);
+    const { form, headers } = audioUpload();
+
+    await app.inject({ method: "POST", url: "/voice/transcribe", payload: form, headers });
+
+    assert.equal(service.calls[0]?.context, undefined);
+
+    await app.close();
+  });
+
+  it("ignore un champ vocabulary malformé (pas du JSON, pas un tableau, tableau vide) au lieu d'échouer la requête", async () => {
+    const service = new FakeVoiceTranscriptionService();
+    const app = await createTestApp(service);
+
+    for (const malformed of ["not json", JSON.stringify({ not: "an array" }), JSON.stringify([]), JSON.stringify([123, null, "  "])]) {
+      const form = new FormData();
+      form.append("vocabulary", malformed);
+      form.append("audio", Buffer.from("fake-opus-bytes"), { filename: "take.webm", contentType: "audio/webm" });
+      const response = await app.inject({ method: "POST", url: "/voice/transcribe", payload: form, headers: form.getHeaders() });
+      assert.equal(response.statusCode, 200);
+    }
+    assert.ok(service.calls.every((c) => c.context === undefined));
+
+    await app.close();
+  });
+
+  it("recap défensivement un vocabulaire client trop long/trop nombreux avant de le transmettre — jamais de confiance aveugle dans l'entrée réseau", async () => {
+    const service = new FakeVoiceTranscriptionService();
+    const app = await createTestApp(service);
+    const hugeTerm = "A".repeat(500);
+    const manyTerms = Array.from({ length: 50 }, (_, i) => `Card ${i}`);
+    const form = new FormData();
+    form.append("vocabulary", JSON.stringify([hugeTerm, ...manyTerms]));
+    form.append("audio", Buffer.from("fake-opus-bytes"), { filename: "take.webm", contentType: "audio/webm" });
+
+    await app.inject({ method: "POST", url: "/voice/transcribe", payload: form, headers: form.getHeaders() });
+
+    const vocabulary = service.calls[0]?.context?.vocabulary;
+    assert.ok(vocabulary);
+    assert.ok(vocabulary.length <= 12);
+    assert.ok(vocabulary.every((term) => term.length <= 80));
+
+    await app.close();
+  });
 });

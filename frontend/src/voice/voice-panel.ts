@@ -210,7 +210,7 @@ export function createVoicePanel(runner: VoiceRunner): VoicePanelHandle {
       onResult: handleTranscript,
       onError: (err) => { rawLine.textContent = `Mic error: ${err}`; },
       onEnd: () => setListening(false),
-    });
+    }, { vocabulary: runner.contextualVocabulary });
     if (!recognizer) { rawLine.textContent = "Speech recognition is not supported in this browser — type a transcript instead."; return; }
     recognizer.start();
     setListening(true);

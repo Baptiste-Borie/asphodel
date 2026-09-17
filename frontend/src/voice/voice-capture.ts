@@ -12,7 +12,10 @@ export function isVoiceCaptureSupported(): boolean {
   return isSpeechRecognitionSupported() || isMicCaptureSupported();
 }
 
-export function createVoiceRecognizer(callbacks: SpeechRecognizerCallbacks, options?: { lang?: string }): SpeechRecognizerHandle | null {
+export function createVoiceRecognizer(callbacks: SpeechRecognizerCallbacks, options?: { lang?: string; vocabulary?: readonly string[] }): SpeechRecognizerHandle | null {
+  // `vocabulary` only ever reaches the whisper.cpp fallback: the native Web Speech API path has no
+  // equivalent hook in this codebase (and grammar-constrained speech is explicitly out of scope for
+  // now — see docs/voice-intent-resolver-v0.md), so it's simply unused there, never an error.
   if (isSpeechRecognitionSupported()) return createSpeechRecognizer(callbacks, options);
-  return createMicCaptureRecognizer(callbacks);
+  return createMicCaptureRecognizer(callbacks, options);
 }

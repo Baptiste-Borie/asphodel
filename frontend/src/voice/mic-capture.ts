@@ -7,6 +7,12 @@
  * through the same `SpeechRecognizerCallbacks` contract as speech-recognizer.ts, so
  * callers can't tell which one is actually running (see voice-capture.ts).
  *
+ * `options.vocabulary` (built by voice-context-vocabulary.ts from whatever the caller already
+ * knows about the current game state) rides along as a "vocabulary" form field, JSON-encoded —
+ * purely a hint the backend turns into a whisper.cpp `--prompt`; this never changes what a result
+ * MEANS, only how likely whisper.cpp is to spell a card name right in the first place. Omitted
+ * entirely when there's nothing to send, so an empty context costs nothing extra on the wire.
+ *
  * Behavioral difference from the native recognizer: this is one-shot, not continuous.
  * `onResult` fires once, after `stop()`, once the upload+transcription round trip
  * completes — not live as the user talks.
@@ -31,7 +37,7 @@ function pickMimeType(): string | undefined {
 }
 
 /** `null` when getUserMedia/MediaRecorder aren't available at all — same degrade-honestly contract as createSpeechRecognizer. */
-export function createMicCaptureRecognizer(callbacks: SpeechRecognizerCallbacks): SpeechRecognizerHandle | null {
+export function createMicCaptureRecognizer(callbacks: SpeechRecognizerCallbacks, options?: { vocabulary?: readonly string[] }): SpeechRecognizerHandle | null {
   if (!isMicCaptureSupported()) return null;
 
   let mediaStream: MediaStream | null = null;
@@ -46,6 +52,10 @@ export function createMicCaptureRecognizer(callbacks: SpeechRecognizerCallbacks)
   async function transcribe(blob: Blob): Promise<void> {
     try {
       const form = new FormData();
+      // Sent before "audio": @fastify/multipart only guarantees a field is parsed by the time the
+      // file's own bytes are read if it comes first in the multipart body (see backend's
+      // voice-routes.ts) — this ordering is load-bearing, not cosmetic.
+      if (options?.vocabulary && options.vocabulary.length > 0) form.append("vocabulary", JSON.stringify(options.vocabulary));
       form.append("audio", blob, "take.webm");
       const response = await fetch("/voice/transcribe", { method: "POST", body: form });
       if (!response.ok) {

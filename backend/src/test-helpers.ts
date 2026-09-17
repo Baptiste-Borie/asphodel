@@ -1,7 +1,7 @@
 import type { CardProvider, ResolvedCard } from "./cards/card-provider.js";
 import { VoiceTranscriptionError } from "./app-errors.js";
 import { createDatabase } from "./db/client.js";
-import type { VoiceTranscriptionService } from "./voice/voice-transcription-service.js";
+import type { TranscriptionContext, VoiceTranscriptionService } from "./voice/voice-transcription-service.js";
 
 export class FakeCardProvider implements CardProvider {
   readonly calls: string[] = [];
@@ -50,15 +50,15 @@ export async function createTestDatabase() {
 
 /** Never shells out to whisper.cpp — keeps voice route tests fast and hermetic, same spirit as FakeCardProvider not calling Scryfall. */
 export class FakeVoiceTranscriptionService implements VoiceTranscriptionService {
-  readonly calls: Array<{ audio: Buffer; extension: string }> = [];
+  readonly calls: Array<{ audio: Buffer; extension: string; context: TranscriptionContext | undefined }> = [];
 
   constructor(
     private readonly transcript: string = "je passe la priorité",
     private readonly shouldFail = false,
   ) {}
 
-  async transcribe(audio: Buffer, extension: string): Promise<string> {
-    this.calls.push({ audio, extension });
+  async transcribe(audio: Buffer, extension: string, context?: TranscriptionContext): Promise<string> {
+    this.calls.push({ audio, extension, context });
     if (this.shouldFail) throw new VoiceTranscriptionError();
     return this.transcript;
   }
