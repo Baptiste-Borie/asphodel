@@ -16,62 +16,120 @@
 */
 .table-root::before { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: -1; }
 .table-root::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: -1; opacity: .15; background: repeating-linear-gradient(32deg, transparent 0 3px, #a1b39d0a 3px 4px); }
-.table-battlefield { margin: 70px 36px 0; }
+/*
+  Milestone-3 fix "RECLAIM THE SCREEN": this used to be 70px/36px — the whole point of the persistent
+  HUD/menu/history chrome living in `.table-hud`/`.table-rail-left`/`.table-menu-button` is that
+  they're `position: absolute` OVERLAYS on top of the viewports (see point 4 of the correction
+  brief), never a reason for the viewports themselves to leave dedicated clearance. A few px is
+  just breathing room against the screen edge.
+*/
+.table-battlefield { margin: 4px; }
 
 /*
-  Milestone-2 fix "PLAYER VIEWPORTS, NOT ROUNDED HALVES": a viewport is a plain rectangle — a
-  neutral 1px border, no capsule/arena `border-radius`, no background glow. Its own playmat art
-  (temporary; see digital-board-slot.ts's `digitalPlaymatAsset`) paints via a `::before` layer so
-  the two boards read as genuinely separate cameras rather than one shared felt cut in half. The
-  whole viewport is itself the click-to-focus target (see playtest-view.ts) — hence `cursor:
-  pointer` here rather than on some inner chrome. The active player
+  Milestone-2/3 fix "PLAYER VIEWPORTS, NOT ROUNDED HALVES, COMPACT COMPOSITION": a viewport is a
+  plain rectangle — a neutral 1px border, no capsule/arena `border-radius`, no background glow. Its
+  own playmat art (temporary; see digital-board-slot.ts's `digitalPlaymatAsset`) paints via a
+  `::before` layer so the two boards read as genuinely separate cameras rather than one shared felt
+  cut in half. The whole viewport is itself the click-to-focus target (see playtest-view.ts) —
+  hence `cursor: pointer` here rather than on some inner chrome. The active player
   (`observation.game.activePlayerId`, applied in digital-board-slot.ts — never a local guess) gets
-  ONLY a clearer border color; no background glow, per the correction brief.
+  ONLY a clearer border color; no background glow.
+
+  Milestone 3 shrinks every column/row here (and every card size below) versus Milestone 2 — full
+  card readability/inspection already exists via hover-preview, so overview information is meant to
+  be compact and dense, not printed-card-sized. `.table-life` is deliberately NOT a grid participant
+  any more (see below) — that's what lets the commander-dock column shrink to just commander cards
+  instead of sharing space with a big life plaque.
 */
-.table-battlefield-half { position: relative; display: grid; grid-template-columns: 180px minmax(0,1fr) 230px; grid-template-rows: minmax(150px, 1fr) 130px; gap: 6px 28px; padding: 14px 32px; border: 1px solid rgba(255,255,255,.09); cursor: pointer; }
+.table-battlefield-half { position: relative; display: grid; grid-template-columns: 92px minmax(0,1fr) 92px; grid-template-rows: minmax(90px, 1fr) 64px; gap: 4px 10px; padding: 8px 10px; border: 1px solid rgba(255,255,255,.09); cursor: pointer; }
 .table-battlefield-half::before { content: ''; position: absolute; inset: 0; z-index: -1; background-size: cover; background-position: center; opacity: .5; }
 .table-battlefield-half[data-playmat="courtyard-slate"]::before { background-image: url('../assets/environments/courtyard-slate.png'); }
 .table-battlefield-half[data-playmat="turquoise-ruins"]::before { background-image: url('../assets/environments/turquoise-ruins.png'); }
-.table-battlefield-half--asphodel { grid-template-rows: 115px minmax(150px,1fr); }
+.table-battlefield-half--asphodel { grid-template-rows: 64px minmax(90px,1fr); }
 .table-battlefield-half--active { border-color: var(--accent); background: none; box-shadow: none; }
-.table-battlefield-cards { grid-column: 2; grid-row: 1; flex-wrap: nowrap; align-content: center !important; align-items: center; justify-content: safe center; overflow: auto; padding: 16px 24px; }
+.table-battlefield-cards { grid-column: 2; grid-row: 1; flex-wrap: nowrap; align-content: center !important; align-items: center; justify-content: safe center; overflow: auto; padding: 4px 8px; }
 .table-battlefield-half--asphodel .table-battlefield-cards { grid-row: 2; }
-.table-battlefield-cards:empty::before { content: 'BATTLEFIELD'; color: #a5b3a126; letter-spacing: .4em; font-size: 11px; }
-.table-commander-dock { grid-column: 1; grid-row: 1 / 3; align-self: center; align-items: center; padding: 0 0 64px !important; border: 0 !important; flex-direction: row; justify-content: center !important; }
-.table-commander-dock .table-card, .table-commander-dock .table-card-slot { width: 128px; }
-.table-life { grid-column: 1; grid-row: 1 / 3; align-self: end; justify-self: center; z-index: 2; width: 154px; padding: 13px 8px; margin-bottom: 12px; text-align: center; border: 1px solid #807358; border-radius: 45% 45% 35% 35%; background: linear-gradient(135deg,#303731,#111817); box-shadow: 0 9px 25px #0008, inset 0 0 0 4px #121917; transition: box-shadow .5s, border-color .5s; }
-.table-life-value { font-family: Georgia,serif; font-weight: 400; font-size: 42px; color: #eee7d5 !important; }
-.table-life-name { font-size: 10px; letter-spacing: .2em; }
-.table-battlefield-half--active .table-life { border-color: #ead09a; box-shadow: 0 0 32px #c9b17a30, inset 0 0 0 4px #121917; }
-.table-battlefield-half--active .table-life::after { content: 'YOUR TURN'; position: absolute; left: 0; right: 0; bottom: -20px; font-size: 9px; letter-spacing: .2em; color: #e1c991; }
-.table-battlefield-half--asphodel.table-battlefield-half--active .table-life::after { content: 'ASPHODEL’S TURN'; }
-.table-land-zone { grid-column: 2; grid-row: 2; max-width: none; width: 100%; padding: 8px 24px; justify-content: safe center; border: 0 !important; background: radial-gradient(ellipse,#b3bb9810,transparent 70%); }
+.table-battlefield-cards:empty::before { content: 'BATTLEFIELD'; color: #a5b3a126; letter-spacing: .3em; font-size: 9px; }
+/* Milestone 3: board cards read via full hover/inspection already — cap their overview width well
+   below the shared `--bf-card-width` scale (battlefield-scale.ts, unchanged/still shared with
+   Physical). Physical always wins this same selector anyway via its own more specific
+   `.physical-board .table-battlefield-cards .table-card-slot` rule (physical-scene.css), so this
+   is Digital-only in practice despite being a bare selector. */
+.table-battlefield-cards .table-card, .table-battlefield-cards .table-card-slot { width: min(var(--bf-card-width, 160px), 108px); }
+.table-commander-dock { grid-column: 1; grid-row: 1 / 3; align-self: center; align-items: center; padding: 4px !important; border: 0 !important; flex-direction: row; flex-wrap: wrap; justify-content: center !important; }
+.table-commander-dock .table-card, .table-commander-dock .table-card-slot { width: 72px; }
+/*
+  Milestone 3 "LIFE: COMPACT, TOP-LEFT, NOT A GRID CELL": no longer shares the left grid column with
+  the commander dock (that column is now commander-only) — a small absolute badge pinned to the
+  viewport's own top-left corner, same idea as a HUD chip. `position: relative` here (rather than
+  static) is load-bearing for `.table-life-delta` (tabletop.css): that indicator positions itself
+  `absolute; left: 50%` relative to the NEAREST positioned ancestor, which must be this badge itself
+  now that it's no longer centered in a whole grid column.
+*/
+.table-life { position: absolute; top: 6px; left: 6px; z-index: 2; display: flex; align-items: baseline; gap: 6px; padding: 3px 9px; text-align: left; border: 1px solid #807358; border-radius: 5px; background: #171b1bdd; box-shadow: 0 3px 8px #0007; transition: border-color .3s; }
+.table-life-value { font-family: Georgia,serif; font-weight: 400; font-size: 19px; color: #eee7d5 !important; }
+.table-life-name { font-size: 8px; letter-spacing: .12em; color: #b4ac94; }
+.table-battlefield-half--active .table-life { border-color: #ead09a; }
+/* Milestone-3 fix "LANDS AND HAND SHARE THE BAND, NEVER STACK": the hand used to be a full-width
+   absolute overlay sitting ON TOP of this same row, hiding the lands underneath it. Both are now
+   plain grid items placed in the SAME cell (`grid-column: 2`, this row) but pinned to opposite
+   ends (`justify-self: start` here, `end` on `.table-viewport-hand`) — lands on the left, hand on
+   the right, side by side, never overlapping. */
+.table-land-zone { grid-column: 2; grid-row: 2; justify-self: start; max-width: 55%; width: auto; padding: 2px 8px; justify-content: flex-start; border: 0 !important; background: radial-gradient(ellipse,#b3bb9810,transparent 70%); }
 .table-battlefield-half--asphodel .table-land-zone { grid-row: 1; }
 .table-land-zone:hover { max-width: none; overflow-x: auto; }
-.table-land-zone .table-card, .table-land-zone .table-card-slot { width: 82px; }
-.table-land-zone .table-card-slot--tapped { width: 115px; }
-.table-land-zone .table-card-slot:not(:first-child) { margin-left: -24px; }
-.table-land-zone:hover .table-card-slot:not(:first-child), .table-land-zone:focus-within .table-card-slot:not(:first-child) { margin-left: 4px; }
-.table-public-zones { grid-column: 3; grid-row: 1 / 3; align-self: center; display: flex; flex-wrap: wrap; justify-content: center; gap: 20px 13px; }
-.table-pile { width: 88px; padding: 0; border: 0; background: transparent; color: #bcb9aa; cursor: pointer; }
+.table-land-zone .table-card, .table-land-zone .table-card-slot { width: 50px; }
+.table-land-zone .table-card-slot--tapped { width: 70px; }
+.table-land-zone .table-card-slot:not(:first-child) { margin-left: -16px; }
+.table-land-zone:hover .table-card-slot:not(:first-child), .table-land-zone:focus-within .table-card-slot:not(:first-child) { margin-left: 3px; }
+/*
+  Milestone 3 "LIBRARY / GRAVEYARD / EXILE: COMPACT, RIGHT EDGE, IN ORDER": `renderPublicZones`
+  (table-scene.ts) already iterates `['library','graveyard','exile']` in exactly that order — this
+  is purely the compact vertical stack those three piles render into, replacing the old wrapped
+  flex row of much larger piles.
+*/
+.table-public-zones { grid-column: 3; grid-row: 1 / 3; align-self: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+.table-pile { width: 54px; padding: 0; border: 0; background: transparent; color: #bcb9aa; cursor: pointer; }
 .table-pile:disabled { opacity: 1; cursor: default; }
-.table-pile-face { display: grid; place-items: center; width: 78px; height: 108px; border: 1px solid #837858; border-radius: 6px; box-shadow: 3px 3px #222921,4px 4px #736b51,7px 7px #18201b,8px 8px #736b5155, 6px 12px 16px #0008; font-size: 11px; overflow: hidden; }
+.table-pile-face { display: grid; place-items: center; width: 48px; height: 66px; border: 1px solid #837858; border-radius: 5px; box-shadow: 2px 2px #222921,3px 3px #736b51,5px 5px #18201b; font-size: 9px; overflow: hidden; }
 .table-pile-face img { width: 100%; height: 100%; object-fit: cover; }
 .table-pile-face--empty { border: 1px dashed #acaa8b30; box-shadow: none; color: #acaa8b45; }
-.table-pile-label { display: block; margin-top: 13px; font-size: 9px; text-transform: uppercase; letter-spacing: .1em; white-space: nowrap; }
-.table-pile:not(:disabled):hover .table-pile-face { outline: 1px solid #e0c68e; transform: translateY(-4px); }
+.table-pile-label { display: block; margin-top: 4px; font-size: 7px; text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
+.table-pile:not(:disabled):hover .table-pile-face { outline: 1px solid #e0c68e; transform: translateY(-3px); }
 .table-card-back { display: grid; place-items: center; color: #b7a175; background: radial-gradient(ellipse,#3a4940,#172522 65%); border: 1px solid #80765b; box-shadow: inset 0 0 0 5px #111c19, inset 0 0 0 6px #80765b60; }
-.table-opponent-hand { position: absolute; top: -116px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; pointer-events: none; }
-.table-opponent-hand > span { width: 75px; height: 104px; border-radius: 6px; margin-left: -34px; transform: rotate(var(--fan-angle)); box-shadow: 0 8px 15px #0007; }
-.table-opponent-hand small { position: absolute; top: 112px; width: 100%; text-align: center; color: #939b8c; font-size: 10px; letter-spacing: .1em; }
+/*
+  Milestone 3 "A VIEWPORT OWNS ITS HAND TOO": replaces the old global `.table-hand` (a fixed ~190px
+  band, a flex SIBLING of `.table-battlefield` that ate into the whole screen's height) and the old
+  global `.table-opponent-hand` (a fan floating above the whole battlefield via a negative offset).
+  Both are gone — `digital-board-slot.ts` gives every viewport its own `.table-viewport-hand`.
+
+  Fix: this used to be `position: absolute`, full width, sitting ON TOP of the land row underneath
+  it (z-index over everything) — a real hand of several cards is taller than the land row and simply
+  hid the lands behind it. It's now a genuine grid item sharing that SAME row/cell as
+  `.table-land-zone`, pinned to the opposite (`end`) side — lands on the left, hand on the right,
+  laid out side by side rather than stacked. `--human` shares the bottom band (self, real cards,
+  bottom-anchored/rise-on-hover as before); `--asphodel` shares the top band (hidden fan + count) —
+  reusing the exact same modifier classes the mirrored battlefield/land rows already use, so no new
+  role-based coupling is introduced (see digitalPlaymatAsset's own doc comment).
+*/
+.table-viewport-hand { grid-column: 2; z-index: 3; justify-self: end; max-width: 55%; display: flex; justify-content: flex-end; pointer-events: none; }
+.table-viewport-hand > * { pointer-events: auto; }
+.table-battlefield-half--human .table-viewport-hand { grid-row: 2; align-self: end; align-items: flex-end; }
+/* Nudged down: pinning the hand to the column's right edge (`justify-self: end`, above) puts it
+   right under the persistent top-right HUD text — this clears it without touching the HUD itself. */
+.table-battlefield-half--asphodel .table-viewport-hand { grid-row: 1; align-self: start; align-items: flex-start; margin-top: 40px; }
+/* Digital's own hand-card size — Physical's `.physical-hand .table-card--hand` is untouched (see
+   tabletop.css's shared base rule), since only a Digital viewport ever carries this class. */
+.table-viewport-hand .table-card--hand { width: 96px; margin-left: -40px; }
+.table-viewport-hand .table-card--hand:hover, .table-viewport-hand .table-card--hand:focus-visible { transform: translateY(-16px) rotate(0) scale(1.08); }
+.table-viewport-hand.table-hand--crowded { justify-content: flex-start; overflow-x: auto; max-width: 100%; }
+.table-viewport-hand .table-card-back { width: 42px; height: 58px; border-radius: 4px; margin-left: -19px; transform: rotate(var(--fan-angle)); box-shadow: 0 4px 8px #0007; }
+.table-viewport-hand .table-card-back:first-child { margin-left: 0; }
+.table-viewport-hand small { align-self: center; margin-left: 8px; color: #939b8c; font-size: 9px; letter-spacing: .06em; white-space: nowrap; }
 .table-wordmark { position: absolute; left: 6px; top: -47px; font: 14px Georgia,serif; letter-spacing: .35em; color: #c6b98f; }
 .table-hud { left: auto; right: 108px; top: 26px; transform: none; align-items: flex-end; }
 .table-hud-turn { font-size: 10px; color: #b4ac94; }
 .table-hud-phase { font-family: Georgia,serif; text-transform: none; letter-spacing: .02em; font-size: 19px; color: #e5dfcf; }
-.table-hand { height: 190px; padding: 0 280px; align-items: flex-start; padding-top: 12px; }
-.table-card--hand { width: 178px; margin-left: -71px; transform: translateY(var(--fan-rise)) rotate(var(--fan-angle)); transform-origin: 50% 100%; box-shadow: 0 10px 22px #000b; }
-/* V2h: the big in-place growth here used to get clipped by ancestor overflow — the actual magnified read is now the global hover-preview portal (hover-preview.ts); this stays a small "picked up" cue only. */
-.table-card--hand:hover, .table-card--hand:focus-visible { z-index: 20; transform: translateY(-26px) rotate(0) scale(1.05); }
 .table-card { box-shadow: 0 8px 14px #0009; transition: transform .3s cubic-bezier(.2,.7,.2,1), box-shadow .2s, border-color .2s; }
 /* V2f.1 §4: a restrained but immediately-readable warm amber/gold glow — soft border + one
    controlled outer ring, distinct from `.table-card--selected`'s paler `--accent` outline so
@@ -79,7 +137,15 @@
 .table-card--playable { border-color: #e2a542; box-shadow: 0 0 0 2px #e2a54277, 0 0 16px 3px #e2a54240, 0 8px 16px #0009; }
 .table-card--playable:hover { border-color: #f2c26b; box-shadow: 0 0 0 2px #f2c26b99, 0 0 20px 4px #f2c26b55, 0 8px 16px #0009; }
 .table-card--summoning-sick { animation: none; filter: saturate(.9); }
-.table-decision-dock { position: absolute; right: 55px; bottom: 35px; width: 230px; max-height: 245px; overflow-y: auto; padding: 15px; border-top: 1px solid #bba57366; text-align: left; align-items: stretch; background: linear-gradient(#17201be6,#0c1513ed); border-radius: 4px 4px 16px 16px; }
+/*
+  Milestone 3 "DECISION DOCK: NEAR THE PLAYER IT ACTUALLY BELONGS TO": decisions are always the
+  human's own (the backend only ever exposes `pendingDecision` on the human's turn — see
+  playtest-view.ts) — this stays a global overlay (reparenting it into the human's own viewport risks
+  orphaning it in Physical mode, which reuses this same element but is laid out entirely
+  differently), but now sits closer to the human viewport's own corner instead of an offset tuned
+  for the old fixed-height global hand band that no longer exists.
+*/
+.table-decision-dock { position: absolute; right: 40px; bottom: 90px; width: 230px; max-height: 220px; overflow-y: auto; padding: 15px; border-top: 1px solid #bba57366; text-align: left; align-items: stretch; background: linear-gradient(#17201be6,#0c1513ed); border-radius: 4px 4px 16px 16px; z-index: 4; }
 .table-decision-dock:empty { display: none; }
 .table-decision-dock .decision-context { display: none; }
 .table-decision-dock button { width: 100%; }
@@ -104,27 +170,13 @@
 .table-mana-overlay-cost { font: 30px Georgia,serif; color: #efdfb8; }
 .table-mana-source-card { width: 140px; }
 .table-preview { right: 300px; }
-@media (max-height: 900px) { .table-battlefield { margin-top: 58px; } .table-battlefield-half { grid-template-rows: minmax(130px,1fr) 94px; padding-top: 4px; padding-bottom: 4px; } .table-battlefield-half--asphodel { grid-template-rows: 94px minmax(130px,1fr); } .table-land-zone .table-card,.table-land-zone .table-card-slot { width: 64px; } .table-hand { height: 148px; } .table-battlefield-cards .table-card,.table-battlefield-cards .table-card-slot { width: min(var(--bf-card-width),125px); } .table-commander-dock .table-card,.table-commander-dock .table-card-slot { width: 105px; } .table-life { padding: 7px; } }
-@media (max-width: 1200px) { .table-battlefield { margin-left: 8px; margin-right: 8px; } .table-battlefield-half { grid-template-columns: 130px minmax(0,1fr) 170px; gap: 6px; padding-left: 8px; padding-right: 8px; } .table-public-zones { gap: 12px 4px; } .table-pile { width: 70px; } .table-pile-face { width: 60px; height: 84px; } .table-life { width: 115px; } .table-hand { padding-left: 175px; padding-right: 220px; } .table-card--hand { width: 155px; margin-left: -85px; } .table-decision-dock { right: 20px; width: 190px; } .table-rail-left { left: 24px; width: 145px; } }
-@media (max-width: 760px) { .table-root { min-width: 660px; min-height: 700px; overflow: auto; } .table-battlefield-half { grid-template-columns: 105px minmax(0,1fr) 100px; } .table-public-zones { gap: 10px; } .table-pile { width: 44px; } .table-pile-face { width: 40px; height: 56px; } .table-pile-label { font-size: 7px; } .table-life { width: 88px; } .table-hud { right: 75px; } .table-wordmark { font-size: 10px; } }
+@media (max-width: 1200px) { .table-battlefield-half { grid-template-columns: 76px minmax(0,1fr) 76px; gap: 4px 6px; padding-left: 6px; padding-right: 6px; } .table-public-zones { gap: 6px; } .table-pile { width: 44px; } .table-pile-face { width: 38px; height: 52px; } .table-decision-dock { right: 20px; width: 190px; } .table-rail-left { left: 24px; width: 145px; } }
+@media (max-width: 760px) { .table-root { min-width: 660px; min-height: 700px; overflow: auto; } .table-battlefield-half { grid-template-columns: 60px minmax(0,1fr) 60px; } .table-public-zones { gap: 4px; } .table-pile { width: 34px; } .table-pile-face { width: 30px; height: 42px; } .table-pile-label { font-size: 6px; } .table-hud { right: 75px; } .table-wordmark { font-size: 10px; } }
 @media (prefers-reduced-motion: reduce) { .table-root *, .table-root *::before, .table-root *::after { animation: none !important; transition: none !important; } }
 .table-decision-dock .decision-title { font: 20px Georgia,serif; color: #e6d8b9; }
 .table-action-hint { margin: 0 0 12px; font-size: 11px; color: #aeb5a4; line-height: 1.5; }
 .table-decision-dock--complex { right: 40px; bottom: 220px; width: min(560px,70vw); max-height: 55vh; padding: 24px; border: 1px solid #8b7955; box-shadow: 0 15px 60px #0009; }
-.table-hand--crowded { justify-content: flex-start; overflow-x: auto; overflow-y: clip; padding-top: 90px; height: 270px; }
-.table-hand--crowded .table-card--hand:hover, .table-hand--crowded .table-card--hand:focus-visible { transform: translateY(-24px) scale(1.04); }
 .table-card:focus-visible, .table-pile:focus-visible { outline: 2px solid #f2dda8; outline-offset: 4px; }
-@media (max-height: 900px) and (min-width: 1201px) {
-  .table-public-zones { flex-wrap: nowrap; gap: 12px; }
-  .table-pile { width: 62px; }
-  .table-pile-face { width: 58px; height: 81px; }
-  .table-pile-label { font-size: 8px; }
-}
-/* Empty hand space must never intercept the adjacent action dock. */
-.table-hand { pointer-events: none; }
-.table-hand > .table-card { pointer-events: auto; }
-.table-hand--crowded { pointer-events: auto; }
-.table-decision-dock { z-index: 4; }
 /* Color choices are contextual controls belonging to the payment surface. */
 .table-hand-menu { z-index: 35; }
 .table-decision-dock--cards { position:absolute; inset: 12% 12% auto; width:auto; max-height:76vh; padding:26px; z-index:8; border:1px solid #a18b5e; background:#14201bf5; box-shadow:0 25px 100px #000a; text-align:center; }
@@ -147,66 +199,54 @@
 .opening-hand-fan { display:flex; align-items:flex-end; justify-content:center; flex-wrap:nowrap; padding:38px 12px 6px; }
 
 /*
-  Milestone-2 fix "CLICK THE VIEWPORT, REAL RELAYOUT": no more per-viewport Focus button — clicking
+  Milestone 2/3 fix "CLICK THE VIEWPORT, REAL RELAYOUT": no per-viewport Focus button — clicking
   anywhere non-interactive on a viewport (see playtest-view.ts's click handler, which excludes any
   actual card/zone/button/decision target first) focuses it directly, same as EDHPlay/SpellTable's
   camera panes. `.table-battlefield--focused` turns the column stack into a row: the focused
-  viewport keeps its full grid at real size and takes the freed room (`flex: 1 1 auto`, ~80% of the
-  row), while the other viewport genuinely re-lays out as a small, independently-scrollable
-  flex-column preview docked on the right (own real elements at a smaller CSS size — never a
-  `transform: scale()` copy of itself). Nothing is ever removed from the DOM; every card in the
-  preview stays exactly as clickable as before. A future N-player layout only ever adds more such
-  receded previews to this same row — it never changes how one viewport lays itself out.
+  viewport keeps its full grid at real (overview) size and takes the freed room (`flex: 1 1 auto`,
+  ~80% of the row) — the `:not(.table-battlefield-half--focused)` exclusion below means the focused
+  viewport is UNTOUCHED by any of the receded-preview rules, so it needs no separate "restore"
+  block. The other viewport genuinely re-lays out as a small, independently-scrollable flex-column
+  preview docked on the right (own real elements at a smaller CSS size — never a `transform:
+  scale()` copy of itself). Nothing is ever removed from the DOM; every card in the preview stays
+  exactly as clickable as before. A future N-player layout only ever adds more such receded
+  previews to this same row — it never changes how one viewport lays itself out.
 */
 .table-battlefield--focused { flex-direction: row; align-items: stretch; }
 
-.table-battlefield--focused .table-battlefield-half {
+.table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) {
   order: 2;
-  flex: 0 0 240px;
+  flex: 0 0 200px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 10px;
+  gap: 6px;
+  /* Clears the persistent top-right HUD/stack-control overlay (styles/tabletop.css), which sits in
+     this exact screen corner regardless of focus state — the preview column must never render
+     underneath it. */
+  padding: 130px 8px 8px;
   overflow-y: auto;
 }
-.table-battlefield--focused .table-battlefield-half .table-life { width: 110px; padding: 8px; margin-bottom: 0; }
-.table-battlefield--focused .table-battlefield-half .table-life-value { font-size: 26px; }
-.table-battlefield--focused .table-battlefield-half .table-commander-dock .table-card,
-.table-battlefield--focused .table-battlefield-half .table-commander-dock .table-card-slot { width: 56px; }
-.table-battlefield--focused .table-battlefield-half .table-battlefield-cards .table-card,
-.table-battlefield--focused .table-battlefield-half .table-battlefield-cards .table-card-slot { width: min(var(--bf-card-width, 160px), 58px); }
-.table-battlefield--focused .table-battlefield-half .table-land-zone .table-card,
-.table-battlefield--focused .table-battlefield-half .table-land-zone .table-card-slot { width: 38px; }
-.table-battlefield--focused .table-battlefield-half .table-public-zones { gap: 6px; }
-.table-battlefield--focused .table-battlefield-half .table-pile { width: 42px; }
-.table-battlefield--focused .table-battlefield-half .table-pile-face { width: 38px; height: 52px; }
-.table-battlefield--focused .table-battlefield-half .table-pile-label { font-size: 7px; }
+.table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-life { position: static; margin-bottom: 4px; }
+.table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-life-value { font-size: 16px; }
+.table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-commander-dock .table-card,
+.table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-commander-dock .table-card-slot { width: 42px; }
+.table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-battlefield-cards .table-card,
+.table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-battlefield-cards .table-card-slot { width: min(var(--bf-card-width, 160px), 46px); }
+.table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-land-zone .table-card,
+.table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-land-zone .table-card-slot { width: 30px; }
+.table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-public-zones { gap: 4px; }
+.table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-pile { width: 34px; }
+.table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-pile-face { width: 30px; height: 42px; }
+.table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-pile-label { font-size: 6px; }
+.table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-viewport-hand .table-card--hand { width: 34px; margin-left: -15px; }
+.table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-viewport-hand .table-card-back { width: 22px; height: 30px; margin-left: -10px; }
+/* The preview's own hand no longer needs to hug the viewport's top/bottom screen edge (that was
+   only ever to clear the OTHER viewport's cards in overview) — as a normal flex-column item here
+   it just flows after the public zones, clear of the persistent top-right HUD/stack overlay. */
+.table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-viewport-hand { position: static; margin-top: 4px; }
 
-/* The focused viewport itself: explicitly restores every property the general receded rule above
-   also sets (same selector specificity — this must win on source order, not by accident). */
-.table-battlefield--focused .table-battlefield-half--focused {
-  order: 1;
-  flex: 1 1 auto;
-  display: grid;
-  align-items: initial;
-  gap: 6px 28px;
-  padding: 14px 32px;
-  overflow-y: visible;
-  cursor: default;
-}
-.table-battlefield--focused .table-battlefield-half--focused .table-life { width: 154px; padding: 13px 8px; margin-bottom: 12px; }
-.table-battlefield--focused .table-battlefield-half--focused .table-life-value { font-size: 42px; }
-.table-battlefield--focused .table-battlefield-half--focused .table-public-zones { gap: 20px 13px; }
-.table-battlefield--focused .table-battlefield-half--focused .table-commander-dock .table-card,
-.table-battlefield--focused .table-battlefield-half--focused .table-commander-dock .table-card-slot { width: 128px; }
-.table-battlefield--focused .table-battlefield-half--focused .table-battlefield-cards .table-card,
-.table-battlefield--focused .table-battlefield-half--focused .table-battlefield-cards .table-card-slot { width: var(--bf-card-width, 160px); }
-.table-battlefield--focused .table-battlefield-half--focused .table-land-zone .table-card,
-.table-battlefield--focused .table-battlefield-half--focused .table-land-zone .table-card-slot { width: 82px; }
-.table-battlefield--focused .table-battlefield-half--focused .table-pile { width: 88px; }
-.table-battlefield--focused .table-battlefield-half--focused .table-pile-face { width: 78px; height: 108px; }
-.table-battlefield--focused .table-battlefield-half--focused .table-pile-label { font-size: 9px; }
+.table-battlefield--focused .table-battlefield-half--focused { order: 1; flex: 1 1 auto; cursor: default; }
 
 .table-focus-return { position: absolute; top: 16px; left: 16px; z-index: 6; pointer-events: auto; padding: 6px 16px; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: #cdbf95; background: #171b1bf0; border: 1px solid #80735880; border-radius: 4px; cursor: pointer; }
 .table-focus-return:hover { border-color: #e0c68e; color: #f2dda8; }

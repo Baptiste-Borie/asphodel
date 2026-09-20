@@ -5,14 +5,14 @@ import { ApiError } from "../api/api-client.js";
 import "../styles/playtest.css";
 import "../styles/tabletop.css";
 import "../styles/table-scene.css";
-import { createZoneInspector, renderHiddenHand, renderStack } from "./table-scene.js";
+import { createZoneInspector, renderStack } from "./table-scene.js";
 import { createDigitalBoardSlot, digitalSeatLabel, renderDigitalBoardSlot, type DigitalBoardSlot } from "./digital-board-slot.js";
 import { digitalPlayerOrder, type DigitalView } from "./digital-layout.js";
 import { VisualTransitions } from "./visual-transitions.js";
 import { apiRequest } from "../api/api-client.js";
 import { endPlaytest, getActivePlaytest, getPlaytestReport, getPlaytestState, startPlaytest, submitPlaytestChoice } from "../api/playtest-api.js";
 import { element } from "../dom.js";
-import { collectVisibleCardNames, commandZoneCards, formatHudPhase, opponentPlayer, renderCompactHand, renderHand, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
+import { collectVisibleCardNames, commandZoneCards, formatHudPhase, opponentPlayer, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
 import { createCardPreviewPanel } from "./card-preview.js";
 import { createHoverPreview } from "./hover-preview.js";
 import { attachStateTooltip } from './state-tooltip.js';
@@ -249,7 +249,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   let lastPhaseState: { turn: number; phase: string; activePlayerId: string } | null = null;
   const cardReveal = createCardReveal();
   let lastRevealObservation: AgentObservation | null = null;
-  let opponentHand: HTMLElement, stackEl: HTMLElement;
+  let stackEl: HTMLElement;
   let physicalScene: ReturnType<typeof createPhysicalScene> | null = null;
   // Voice Intent Resolver (V0) — Physical Companion only (see docs/voice-intent-resolver-v0.md).
   // `voiceRunner` persists its approved vocabulary across games (browser-local storage), so it is
@@ -281,14 +281,21 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   // Persistent game-screen elements, built once per game — never torn down by a poll, so the
   // pinned preview, menu state and any hover survive polling. Each section only re-renders when
   // its own underlying data actually changed (or, for frame playback, once per played frame).
-  let actionsEl: HTMLElement, handContainer: HTMLElement;
-  // V-milestone1: one generic slot per player board (see digital-board-slot.ts) instead of a
-  // hardcoded asphodel/human pair of element variables — see buildGameScreen/paintBoard.
+  let actionsEl: HTMLElement;
+  // Milestone 2/3: one generic slot per player board (see digital-board-slot.ts) instead of a
+  // hardcoded asphodel/human pair of element variables — see buildGameScreen/paintBoard. Each slot
+  // now owns its own hand surface too (Milestone 3) — there is no global handContainer/opponentHand
+  // left anywhere in Digital mode.
   let digitalBoardSlots: DigitalBoardSlot[] = [];
   let hudTurnEl: HTMLElement, hudPhaseEl: HTMLElement;
   let decisionDock: HTMLElement, menuPanel: HTMLElement, menuDeckInfo: HTMLElement;
+  // Milestone 3 "DIGITAL KEYBOARD PARITY": this used to bail out for anything but Physical mode.
+  // Every other condition here is already play-mode-agnostic (repeat/modifier keys, an interactive
+  // focus target, an open dialog/menu/mana-overlay, mid-submission, frame playback in flight) — the
+  // SAME safety conditions and the SAME `submitChoice(pass.choice)` path Physical already used, so
+  // Digital gains Space-to-pass for free rather than via a second implementation.
   document.addEventListener('keydown', event => {
-    if (event.code !== 'Space' || event.repeat || performance.now() < spaceReadyAt || event.timeStamp < spaceReadyAt || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || gameSection.hidden || currentPlayMode !== 'physical' || submitting || !frameQueue.isIdle()) return;
+    if (event.code !== 'Space' || event.repeat || performance.now() < spaceReadyAt || event.timeStamp < spaceReadyAt || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || gameSection.hidden || submitting || !frameQueue.isIdle()) return;
     const target = event.target as HTMLElement;
     if (target.closest('button, input, textarea, select, [contenteditable], summary, [role="dialog"]') || gameSection.querySelector('dialog[open], .table-mana-overlay:not([hidden]), .table-hand-menu:not([hidden])')) return;
     const pending = latestState?.pendingDecision;
@@ -592,11 +599,10 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     const history = document.createElement('details'); history.className = 'table-history';
     const historyTitle = document.createElement('summary'); historyTitle.textContent = 'Recent actions';
     history.append(historyTitle, actionsEl); rail.append(history);
-    opponentHand = document.createElement('div'); opponentHand.className = 'table-opponent-hand';
     stackEl = document.createElement('div'); stackEl.className = 'table-stack'; stackEl.hidden = true;
     stackEl.setAttribute('aria-label', 'Spell stack');
     const wordmark = document.createElement('div'); wordmark.className = 'table-wordmark'; wordmark.textContent = 'ASPHODEL';
-    battlefield.append(opponentHand, wordmark);
+    battlefield.append(wordmark);
     stackControl = document.createElement('button'); stackControl.type = 'button'; stackControl.className = 'table-stack-control'; stackControl.textContent = 'Stack · 0';
     const stackDrawer = document.createElement('aside'); stackDrawer.className = 'table-stack-drawer'; stackDrawer.hidden = true; stackDrawer.setAttribute('aria-label', 'Spell stack');
     const closeStack = document.createElement('button'); closeStack.textContent = 'Close stack ×';
@@ -635,12 +641,9 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     decisionDock = document.createElement("div");
     decisionDock.className = "table-decision-dock";
 
-    handContainer = document.createElement("div");
-    handContainer.className = "table-hand";
-
     if (physicalScene) gameSection.append(physicalScene.element, physicalScene.overview);
     if (voicePanel) gameSection.append(voicePanel.element);
-    if (!physicalScene) gameSection.append(battlefield, handContainer);
+    if (!physicalScene) gameSection.append(battlefield);
     gameSection.append(rail, hud, tableViewButton, phaseBanner.element, cardReveal.element, menuButton, menuPanel, previewPanel.element, decisionDock, handActionMenu.element, manaOverlay.element, zoneInspector.element);
   }
 
@@ -792,23 +795,20 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     stackControl.textContent = `Stack · ${observation.stack.length}`;
     if (physicalScene) { physicalScene.render(observation, boardCallbacksForThisRender, expand, livePlayerTargets, (items, anchor) => handleManaSourceActivate("", items, anchor)); return; }
 
-    // Milestone 2: one loop over generic viewports (see digital-board-slot.ts) instead of a
-    // duplicated opponent/self block — `digitalPlayerOrder` (digital-layout.ts) is the only place
-    // deciding which player fills which viewport, ready for a future N-player viewport list.
+    // Milestone 2/3: one loop over generic, self-contained viewports (see digital-board-slot.ts)
+    // instead of a duplicated opponent/self block reaching into global hand elements —
+    // `digitalPlayerOrder` (digital-layout.ts) is the only place deciding which player fills which
+    // viewport, ready for a future N-player viewport list. `renderDigitalBoardSlot` itself decides
+    // self-hand vs hidden-hand from `player.role` — this loop only ever supplies `handActions`,
+    // never picks the render function (see digital-board-slot.ts's doc comment). Reaching this
+    // branch already means Digital mode (the `physicalScene` early-return above covers Physical
+    // entirely), so there is no play-mode check left to make here.
     const players = digitalPlayerOrder(observation);
     digitalBoardSlots.forEach((slot, index) => {
       const player = players[index];
       if (!player) return;
-      renderDigitalBoardSlot(slot, player, observation, boardCallbacksForThisRender, expand, (name) => cardStore.get(name), zoneInspector.open);
+      renderDigitalBoardSlot(slot, player, observation, boardCallbacksForThisRender, expand, (name) => cardStore.get(name), zoneInspector.open, handActions);
       renderLifeWithDelta(slot.life, digitalSeatLabel(player, observation), player.life);
-      if (player.role === "opponent") renderHiddenHand(opponentHand, player.handSize);
-      // V2g: the human has real physical cards, so their own hand is never a clickable digital
-      // surface in Physical mode — a compact "HAND · N" indicator (+ collapsible verifier) instead.
-      // Digital mode's `renderHand` call is untouched.
-      if (player.role === "self") {
-        if (currentPlayMode === "physical") renderCompactHand(handContainer, player.hand);
-        else renderHand(handContainer, player.hand, (name) => cardStore.get(name), handActions);
-      }
     });
     });
     // Also refresh outside of a fresh click — e.g. the same card stays previewed across a poll
