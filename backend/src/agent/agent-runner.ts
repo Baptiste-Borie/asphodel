@@ -1,8 +1,8 @@
 import type { ForgeExternalMatchClient } from "../forge/forge-external-match-client.js";
-import type { AgentObservation, ForgeDeckSpec, ForgeExternalMatchSnapshot, ForgePendingExternalDecision } from "../forge/forge-protocol.js";
+import type { AgentObservation, ForgeDeckSpec, ForgeExternalMatchSnapshot, ForgeMatchSeatController, ForgePendingExternalDecision } from "../forge/forge-protocol.js";
 import { validateChoice, type AgentChoice, type AsphodelAgent } from "./baseline-agent.js";
 
-export type AgentMatchTransport = Pick<ForgeExternalMatchClient, "startSpecs" | "get" | "cancel" | "submitDecision" | "submitTarget" | "submitMode" | "submitValue" | "submitOptionalCost" | "submitCostObject" | "submitManaOption" | "submitSelection" | "submitPhysicalIdentity">;
+export type AgentMatchTransport = Pick<ForgeExternalMatchClient, "startMatch" | "get" | "cancel" | "submitDecision" | "submitTarget" | "submitMode" | "submitValue" | "submitOptionalCost" | "submitCostObject" | "submitManaOption" | "submitSelection" | "submitPhysicalIdentity">;
 export interface AgentTraceEntry {
   turn: number;
   phase: string;
@@ -16,6 +16,13 @@ export interface AgentRunOptions {
   maxIdlePolls?: number;
   pollIntervalMs?: number;
   signal?: AbortSignal;
+  /**
+   * Per-seat controller, in `decks` order. Omitted keeps the historical two-deck default
+   * (`agent` plays seat 0, Forge's own native AI plays seat 1) — the bridge only supplies that
+   * default for exactly two decks, so any 3+ deck match must pass this explicitly (e.g. all
+   * "external" for every seat to be Asphodel-controlled).
+   */
+  seats?: ForgeMatchSeatController[];
   /** Read-only diagnostic hook after an accepted submission; never policy input. */
   onDecision?: (observation: AgentObservation, decision: ForgePendingExternalDecision, choice: AgentChoice) => void;
 }
@@ -67,17 +74,26 @@ export class AgentRunError extends Error {
   }
 }
 
-/** Owns one external match. Errors/abort/watchdogs cancel it; bridge process lifecycle belongs to caller. */
+/**
+ * Owns one external match, for any number of decks (>= 2) — one `agent` policy answers every
+ * "external" seat's decisions in turn, purely from each decision's own `observation.selfPlayerId`,
+ * never from a fixed notion of "self" vs "the opponent". Errors/abort/watchdogs cancel it; bridge
+ * process lifecycle belongs to caller.
+ */
 export async function runAgentMatch(client: AgentMatchTransport, agent: AsphodelAgent,
-  decks: [ForgeDeckSpec, ForgeDeckSpec], options: AgentRunOptions = {}) {
+  decks: ForgeDeckSpec[], options: AgentRunOptions = {}) {
   const timeoutMs = options.timeoutMs ?? 120_000;
   const maxDecisions = options.maxDecisions ?? 5000;
   const maxIdlePolls = options.maxIdlePolls ?? 5000;
   const pollIntervalMs = options.pollIntervalMs ?? 2;
+  if (decks.length < 2) throw new Error("agent_invalid_deck_count");
   if (![timeoutMs, maxDecisions, maxIdlePolls].every(n => Number.isSafeInteger(n) && n > 0)
       || !Number.isSafeInteger(pollIntervalMs) || pollIntervalMs < 0) throw new Error("agent_invalid_run_limits");
   options.signal?.throwIfAborted();
-  const { sessionId } = await client.startSpecs(...decks, options.seed === undefined ? {} : { seed: options.seed });
+  const { sessionId } = await client.startMatch(decks, {
+    ...(options.seed === undefined ? {} : { seed: options.seed }),
+    ...(options.seats === undefined ? {} : { seats: options.seats }),
+  });
   const started = Date.now();
   const trace: AgentTraceEntry[] = [];
   const seen = new Set<string>();

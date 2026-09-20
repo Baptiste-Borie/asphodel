@@ -5,6 +5,7 @@ import forge.deck.Deck;
 import forge.game.Game;
 import forge.game.GameEndReason;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,8 +19,8 @@ final class ExternalMatchSession {
     private final String sessionId;
     private final String format;
     private final long seed;
-    private final Deck playerDeck;
-    private final Deck aiDeck;
+    /** One entry per seat, in player order. */
+    private final List<Deck> decks;
     /** One entry per seat, in player order: "external" (Asphodel/human via the shared broker) or "forge_ai". */
     private final List<String> seats;
     private final AsphodelDecisionBroker decisions;
@@ -37,8 +38,7 @@ final class ExternalMatchSession {
             String sessionId,
             String format,
             long seed,
-            Deck playerDeck,
-            Deck aiDeck,
+            List<Deck> decks,
             List<String> seats,
             String mulliganPlayerId,
             String physicalPlayerId
@@ -46,8 +46,7 @@ final class ExternalMatchSession {
         this.sessionId = sessionId;
         this.format = format;
         this.seed = seed;
-        this.playerDeck = playerDeck;
-        this.aiDeck = aiDeck;
+        this.decks = List.copyOf(decks);
         this.seats = List.copyOf(seats);
         // One decision broker for the whole session: Forge's single-threaded game loop only ever
         // asks one controller for one decision at a time, so a shared broker cannot receive two
@@ -183,15 +182,15 @@ final class ExternalMatchSession {
     private void runGame() {
         try {
             // Generic label: an "external" seat may be Asphodel (V2a/V2b) or a human (V2c) — never assume which.
-            LobbyPlayer seatOne = createSeatPlayer(seats.get(0), "External Player 1");
-            LobbyPlayer seatTwo = createSeatPlayer(seats.get(1), "External Player 2");
+            List<LobbyPlayer> lobbyPlayers = new ArrayList<>();
+            for (int index = 0; index < seats.size(); index++) {
+                lobbyPlayers.add(createSeatPlayer(seats.get(index), "External Player " + (index + 1)));
+            }
             Map<String, Object> gameResult = new ForgeGameRunner().runExternal(
                     format,
                     seed,
-                    playerDeck,
-                    aiDeck,
-                    seatOne,
-                    seatTwo,
+                    decks,
+                    lobbyPlayers,
                     this::gameCreated
             );
             synchronized (this) {

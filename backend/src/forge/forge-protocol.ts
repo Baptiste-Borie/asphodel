@@ -16,7 +16,8 @@ export interface ForgeDeckSpec {
  * Per-seat match controller, in player order. "external" is driven by whatever calls the
  * submit_external_decision RPCs (a human provider or an agent); "forge_ai" is Forge's own AI.
  * Omitting `seats` on start_external_match keeps the historical single-external-seat shape
- * (`["external", "forge_ai"]`).
+ * (`["external", "forge_ai"]`), which only applies when there are exactly two decks — a seat list
+ * for 3+ decks must be given explicitly.
  */
 export type ForgeMatchSeatController = "external" | "forge_ai";
 
@@ -45,8 +46,9 @@ export interface ForgeRequestMap {
     type: "start_external_match";
     format: "commander";
     seed?: number;
-    decks: [ForgeDeckSpec, ForgeDeckSpec];
-    seats?: [ForgeMatchSeatController, ForgeMatchSeatController];
+    /** At least two decks, one per seat, in player order. Still exactly two for every seat/human/physical shape below; a 3+ deck match only ever uses `seats: ["external", ...]` with no mulligan/physical seat targeting today. */
+    decks: ForgeDeckSpec[];
+    seats?: ForgeMatchSeatController[];
     mulliganPlayerId?: string;
     /**
      * V2g Physical Companion: the seat whose hidden-zone events (opening hand, draw, mill, scry,

@@ -165,7 +165,7 @@ public class FromUnderTheFloorboardsPhysicalCompanionTest {
         LobbyPlayerAsphodel seatOne = new LobbyPlayerAsphodel("External P1", broker);
         LobbyPlayerAi seatTwo = ForgeGameRunner.createAiLobbyPlayer("Forge AI P2");
         Thread worker = new Thread(() ->
-                new ForgeGameRunner().runExternal("commander", seed, p1Deck, p2Deck, seatOne, seatTwo, gameRef::set),
+                new ForgeGameRunner().runExternal("commander", seed, List.of(p1Deck, p2Deck), List.of(seatOne, seatTwo), gameRef::set),
                 "floorboards-physical-test-worker");
         worker.setDaemon(true);
         worker.start();

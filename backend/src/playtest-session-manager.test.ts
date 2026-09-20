@@ -99,7 +99,7 @@ function scriptedTransport(steps: (() => ForgeExternalMatchSnapshot)[]): { clien
   return {
     cancelCount: () => cancelCount,
     client: {
-      startSpecs: async () => ({ sessionId: "s", status: "running" as const }),
+      startMatch: async () => ({ sessionId: "s", status: "running" as const }),
       get: async () => steps[Math.min(index++, steps.length - 1)]!(),
       cancel: async () => { cancelCount++; return { sessionId: "s", status: "cancelled" as const, cancelled: true as const }; },
       submitDecision: submit, submitTarget: submit, submitMode: submit, submitValue: submit,
@@ -293,7 +293,7 @@ it("getActiveState() lets a browser reconnect (e.g. after F5) to the one running
       () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: humanObservation(1), pendingDecision: priorityDecision("player-1", "d-1") }),
     ]);
     let startCalls = 0;
-    const countingClient: AgentMatchTransport = { ...client, startSpecs: (...args) => { startCalls++; return client.startSpecs(...args); } };
+    const countingClient: AgentMatchTransport = { ...client, startMatch: (...args) => { startCalls++; return client.startMatch(...args); } };
     const manager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => countingClient, createAgent: () => new FakeAgent(), reportsRoot });
     const started = await manager.start({ humanDeck: { type: "fixture" }, asphodelDeck: { type: "fixture" } });
 

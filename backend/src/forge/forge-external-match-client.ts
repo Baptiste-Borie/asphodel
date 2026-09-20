@@ -12,8 +12,8 @@ export interface ForgeExternalMatchStartOptions {
   mulliganPlayerId?: string;
   /** V2g Physical Companion: see `ForgeRequestMap["start_external_match"]`. */
   physicalPlayerId?: string;
-  /** Defaults to ["external", "forge_ai"] — the historical single-external-seat match. */
-  seats?: [ForgeMatchSeatController, ForgeMatchSeatController];
+  /** Defaults to ["external", "forge_ai"] — the historical single-external-seat match; only valid for exactly two decks (see `startMatch`). */
+  seats?: ForgeMatchSeatController[];
 }
 
 export class ForgeExternalMatchClient {
@@ -39,6 +39,15 @@ export class ForgeExternalMatchClient {
     aiDeck: ForgeDeckSpec,
     options: ForgeExternalMatchStartOptions = {},
   ) {
+    return this.startMatch([playerDeck, aiDeck], options);
+  }
+
+  /** N-deck/N-seat start, in player order — `startSpecs` is the historical two-deck convenience wrapper over this. */
+  startMatch(
+    decks: ForgeDeckSpec[],
+    options: ForgeExternalMatchStartOptions = {},
+  ) {
+    if (decks.length < 2) throw new Error("forge_external_match_requires_at_least_two_decks");
     return this.bridge.request({
       type: "start_external_match",
       format: "commander",
@@ -46,7 +55,7 @@ export class ForgeExternalMatchClient {
       ...(options.seats === undefined ? {} : { seats: options.seats }),
       ...(options.mulliganPlayerId ? { mulliganPlayerId: options.mulliganPlayerId } : {}),
       ...(options.physicalPlayerId ? { physicalPlayerId: options.physicalPlayerId } : {}),
-      decks: [playerDeck, aiDeck],
+      decks,
     });
   }
 

@@ -17,8 +17,7 @@ final class ExternalMatchManager {
     synchronized Map<String, Object> start(
             String format,
             long seed,
-            Deck playerDeck,
-            Deck aiDeck,
+            List<Deck> decks,
             List<String> seats,
             String mulliganPlayerId,
             String physicalPlayerId
@@ -28,8 +27,7 @@ final class ExternalMatchManager {
                 "match-" + sessionIds.incrementAndGet(),
                 format,
                 seed,
-                playerDeck,
-                aiDeck,
+                decks,
                 seats,
                 mulliganPlayerId,
                 physicalPlayerId

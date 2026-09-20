@@ -65,7 +65,7 @@ it("routes a decision for the human to the human provider exactly once, and for 
   const human = new FakeHuman(), agent = new FakeAgent();
   let cancelled = 0;
   const client: AgentMatchTransport = {
-    startSpecs: async () => ({ sessionId: "s", status: "running" }),
+    startMatch: async () => ({ sessionId: "s", status: "running" }),
     get: (() => {
       let call = 0;
       return async () => {
@@ -94,7 +94,7 @@ it("fails hard on a decision for an unrecognized playerId instead of guessing an
   const human = new FakeHuman(), agent = new FakeAgent();
   let cancelled = 0;
   const client: AgentMatchTransport = {
-    startSpecs: async () => ({ sessionId: "s", status: "running" }),
+    startMatch: async () => ({ sessionId: "s", status: "running" }),
     get: async () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: observation("player-3", "player-2", 1), pendingDecision: priorityDecision("player-3", 1) }),
     cancel: async () => { cancelled++; return { sessionId: "s", status: "cancelled", cancelled: true }; },
     submitDecision: async () => ({ accepted: true }), submitTarget: async () => ({ accepted: true }), submitMode: async () => ({ accepted: true }),
@@ -114,7 +114,7 @@ it("a stale re-poll of the same decisionId is not re-submitted to the chooser", 
   const human = new FakeHuman(), agent = new FakeAgent();
   let call = 0;
   const client: AgentMatchTransport = {
-    startSpecs: async () => ({ sessionId: "s", status: "running" }),
+    startMatch: async () => ({ sessionId: "s", status: "running" }),
     get: async () => {
       call++;
       // The same pending decision is returned twice in a row before Forge advances.
@@ -136,7 +136,7 @@ it("cancellation on a mid-flight abort clears the broker's pending state via cli
   let cancelled = 0;
   const abort = new AbortController();
   const client: AgentMatchTransport = {
-    startSpecs: async () => ({ sessionId: "s", status: "running" }),
+    startMatch: async () => ({ sessionId: "s", status: "running" }),
     get: async () => {
       // Aborts once a session already exists, mirroring a real Ctrl+C mid-match.
       abort.abort(new Error("stop"));
@@ -203,7 +203,7 @@ it("a human-requested end is not an error: returns endedByHuman with the last sn
   let cancelled = 0, call = 0;
   const agentDecisions: string[] = [];
   const client: AgentMatchTransport = {
-    startSpecs: async () => ({ sessionId: "s", status: "running" }),
+    startMatch: async () => ({ sessionId: "s", status: "running" }),
     get: async () => {
       call++;
       if (call === 1) return { sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: observation("player-2", "player-1", 1), pendingDecision: priorityDecision("player-2", 1) };
@@ -231,7 +231,7 @@ it("a human-requested end never submits the ending prompt's decision to Forge an
   const human = new EndingHuman();
   let submitted = 0;
   const client: AgentMatchTransport = {
-    startSpecs: async () => ({ sessionId: "s", status: "running" }),
+    startMatch: async () => ({ sessionId: "s", status: "running" }),
     get: async () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: observation("player-1", "player-2", 1), pendingDecision: priorityDecision("player-1", 1) }),
     cancel: async () => ({ sessionId: "s", status: "cancelled", cancelled: true }),
     submitDecision: async () => { submitted++; return { accepted: true }; }, submitTarget: async () => ({ accepted: true }), submitMode: async () => ({ accepted: true }),
@@ -264,7 +264,7 @@ it("a sole forced pass never reaches the human provider: the orchestrator auto-s
   const submittedDecisionIds: string[] = [];
   let call = 0;
   const client: AgentMatchTransport = {
-    startSpecs: async () => ({ sessionId: "s", status: "running" }),
+    startMatch: async () => ({ sessionId: "s", status: "running" }),
     get: async () => {
       call++;
       if (call === 1) return { sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: observation("player-1", "player-2", 1), pendingDecision: soleAndPass };
@@ -317,7 +317,7 @@ it("V2e.6.1 §17: the agent loop guard (wired into runHumanVsAgentMatch) exclude
   const human = new FakeHuman();
   let call = 0;
   const client: AgentMatchTransport = {
-    startSpecs: async () => ({ sessionId: "s", status: "running" }),
+    startMatch: async () => ({ sessionId: "s", status: "running" }),
     get: async () => {
       call++;
       const turn5 = observation("player-2", "player-1", 5, [cardX, cardY]);

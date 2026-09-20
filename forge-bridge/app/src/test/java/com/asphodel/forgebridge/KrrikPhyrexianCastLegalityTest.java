@@ -175,7 +175,7 @@ public class KrrikPhyrexianCastLegalityTest {
         AtomicReference<Game> gameRef = new AtomicReference<>();
 
         Thread worker = new Thread(() ->
-                new ForgeGameRunner().runExternal("commander", seed, p1Deck, p2Deck, seatOne, seatTwo, gameRef::set),
+                new ForgeGameRunner().runExternal("commander", seed, List.of(p1Deck, p2Deck), List.of(seatOne, seatTwo), gameRef::set),
                 "krrik-test-worker");
         worker.setDaemon(true);
         worker.start();

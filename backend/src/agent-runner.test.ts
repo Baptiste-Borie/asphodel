@@ -22,7 +22,7 @@ function transport(snapshot = paused()) {
   let submissions = 0, cancelled = 0, polls = 0, starts = 0;
   const submit = async () => { submissions++; return { accepted: true as const }; };
   const client: AgentMatchTransport = {
-    startSpecs: async () => { starts++; return { sessionId: "session", status: "running" }; },
+    startMatch: async () => { starts++; return { sessionId: "session", status: "running" }; },
     get: async () => { polls++; return snapshot; },
     cancel: async () => { cancelled++; return { sessionId: "session", status: "cancelled", cancelled: true }; },
     submitDecision: submit, submitTarget: submit, submitMode: submit, submitValue: submit,

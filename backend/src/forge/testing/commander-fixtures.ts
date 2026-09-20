@@ -32,6 +32,22 @@ export const green = [
   "Scryb Sprites", "Southern Elephant", "Spiked Baloth", "Spined Karok", "Sporecap Spider",
   "Swordwise Centaur", "Tajuru Snarecaster",
 ];
+// A third singleton pool, for a 3-player fixture (see `thirdCommanderFixture`) — kept separate from
+// `commanderFixtures()`'s own 2-tuple return type so every existing 2-deck caller is untouched.
+export const blue = [
+  "Aarakocra Sneak", "Aberrant Researcher", "Abhorrent Oculus", "Aboleth Spawn", "Academy Drake",
+  "Academy Elite", "Academy Loremaster", "Academy Researchers", "Academy Wall", "Acquisition Octopus",
+  "Advanced Hoverguard", "Aegis Sculptor", "Aegis Turtle", "Aerial Guide", "Aerie Worshippers",
+  "Aeromoeba", "Aeronaut Tinkerer", "Aether Adept", "Aether Channeler", "Aether Figment",
+  "Aether Swooper", "Aether Theorist", "Aetherplasm", "Agent of Kotis", "Agent of Raffine",
+  "Air Marshal", "Alluring Siren", "Amoeboid Changeling", "Amphin Cutthroat", "Amphin Mutineer",
+  "Amphin Pathmage", "Ancient Crab", "Animating Faerie", "Anthroplasm", "Aphetto Alchemist",
+  "Aphetto Grifter", "Aphetto Runecaster", "Apprentice Sorcerer", "Apprentice Wizard", "Aquamoeba",
+  "Aquamorph Entity", "Aquatic Alchemist", "Aquus Steed", "Arcane Artisan", "Arcane Investigator",
+  "Archaeomancer", "Archaeomender", "Archivist", "Archivist of Gondor", "Archmage Emeritus",
+  "Arctic Aven", "Arctic Merfolk", "Argent Sphinx", "Armguard Familiar", "Armored Skaab",
+  "Armored Whirl Turtle", "Artificer's Assistant",
+];
 function deck(commander: string, land: string, creatures: string[]): ForgeDeckSpec {
   if (creatures.length !== 57 || new Set(creatures).size !== 57) throw new Error("Invalid singleton fixture");
   return { name: `${commander} 100-card controller validation`, cards: [
@@ -44,3 +60,5 @@ export const commanderFixtures = (): [ForgeDeckSpec, ForgeDeckSpec] => [
   deck("Krenko, Tin Street Kingpin", "Mountain", red),
   deck("Ghalta, Primal Hunger", "Forest", green),
 ];
+/** The third seat for a 3-player fixture: `[...commanderFixtures(), thirdCommanderFixture()]`. */
+export const thirdCommanderFixture = (): ForgeDeckSpec => deck("Talrand, Sky Summoner", "Island", blue);

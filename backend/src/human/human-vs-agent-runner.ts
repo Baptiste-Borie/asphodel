@@ -71,7 +71,7 @@ export async function runHumanVsAgentMatch(
   if (![timeoutMs, maxDecisions, maxIdlePolls].every(n => Number.isSafeInteger(n) && n > 0)
       || !Number.isSafeInteger(pollIntervalMs) || pollIntervalMs < 0) throw new Error("human_vs_agent_invalid_run_limits");
   options.signal?.throwIfAborted();
-  const { sessionId } = await client.startSpecs(...decks, {
+  const { sessionId } = await client.startMatch(decks, {
     ...(options.seed === undefined ? {} : { seed: options.seed }),
     seats: ["external", "external"],
     mulliganPlayerId: humanPlayerId,

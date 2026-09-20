@@ -49,10 +49,8 @@ final class ForgeGameRunner {
                         requestedFormat,
                         seed,
                         timeoutSeconds,
-                        playerOneDeck,
-                        playerTwoDeck,
-                        playerOne,
-                        playerTwo,
+                        List.of(playerOneDeck, playerTwoDeck),
+                        List.of(playerOne, playerTwo),
                         game::set
                 ),
                 game,
@@ -60,23 +58,20 @@ final class ForgeGameRunner {
         );
     }
 
+    /** N-player external match (>= 2 decks/lobbyPlayers, in player order) — `run` is the two-player convenience wrapper over this. */
     Map<String, Object> runExternal(
             String requestedFormat,
             long seed,
-            Deck playerOneDeck,
-            Deck playerTwoDeck,
-            LobbyPlayer playerOne,
-            LobbyPlayer playerTwo,
+            List<Deck> decks,
+            List<LobbyPlayer> lobbyPlayers,
             Consumer<Game> onGameCreated
     ) {
         return runOnCurrentThread(
                 requestedFormat,
                 seed,
                 120,
-                playerOneDeck,
-                playerTwoDeck,
-                playerOne,
-                playerTwo,
+                decks,
+                lobbyPlayers,
                 onGameCreated
         );
     }
@@ -85,21 +80,22 @@ final class ForgeGameRunner {
             String requestedFormat,
             long seed,
             int simulationTimeoutSeconds,
-            Deck playerOneDeck,
-            Deck playerTwoDeck,
-            LobbyPlayer playerOne,
-            LobbyPlayer playerTwo,
+            List<Deck> decks,
+            List<LobbyPlayer> lobbyPlayers,
             Consumer<Game> onGameCreated
     ) {
+        if (decks.size() < 2 || decks.size() != lobbyPlayers.size()) {
+            throw new IllegalArgumentException("A Forge match requires at least two decks, one per lobby player.");
+        }
         // GameType localizes its display names during static initialization, so
         // Forge's locale/resources must exist before this class is first used.
         GameType gameType = parseGameType(requestedFormat);
         MyRandom.setRandom(new Random(seed));
 
-        List<RegisteredPlayer> registeredPlayers = List.of(
-                createPlayer(playerOneDeck, gameType, playerOne, 0),
-                createPlayer(playerTwoDeck, gameType, playerTwo, 1)
-        );
+        List<RegisteredPlayer> registeredPlayers = new ArrayList<>();
+        for (int index = 0; index < decks.size(); index++) {
+            registeredPlayers.add(createPlayer(decks.get(index), gameType, lobbyPlayers.get(index), index));
+        }
 
         GameRules rules = new GameRules(gameType);
         rules.setAppliedVariants(EnumSet.of(gameType));

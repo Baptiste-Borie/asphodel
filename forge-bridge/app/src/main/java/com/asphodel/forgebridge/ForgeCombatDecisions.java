@@ -35,6 +35,13 @@ final class ForgeCombatDecisions {
     }
 
     String unsupported(Player player, Combat combat, boolean attack) {
+        // Intentional 2-player-only scope, not a bug: manual attacker/blocker declaration through
+        // this class has only ever been validated against exactly one attacker/one defending
+        // player. A 3+ player table falls back to Forge's own native AI for this one decision
+        // (declareAttackers/declareBlockers only — every other decision, including combat damage
+        // assignment, target/mana/priority choices, already goes through the generic paths above
+        // and is unaffected). Multiplayer-aware manual combat (choosing which of several possible
+        // defending players/planeswalkers to attack) is future work, not addressed here.
         if (player.getGame().getPlayers().size() != 2) return "Multiplayer combat";
         if (!(player.getController() instanceof PlayerControllerAsphodel))
             return "Another player declares this combat";

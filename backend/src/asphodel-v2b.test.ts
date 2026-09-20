@@ -196,7 +196,7 @@ it("harness runs fixed seeds sequentially, reuses transport, and continues after
   const started: number[] = []; let active = false, submitted = false, cancelled = 0;
   const submit = async () => { submitted = true; return { accepted: true as const }; };
   const client: AgentMatchTransport = {
-    startSpecs: async (_, __, options) => { assert.equal(active, false); active = true; submitted = false; started.push(options?.seed ?? -1); return { sessionId: "s", status: "running" }; },
+    startMatch: async (_, options) => { assert.equal(active, false); active = true; submitted = false; started.push(options?.seed ?? -1); return { sessionId: "s", status: "running" }; },
     get: async (): Promise<ForgeExternalMatchSnapshot> => {
       if (started.at(-1) === 2) throw new Error("simulated transport failure");
       if (!submitted) return { sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: observation(), pendingDecision: { ...base, type: "priority_action", actions: [pass] } };

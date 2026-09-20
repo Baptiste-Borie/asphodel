@@ -229,34 +229,39 @@ public final class BridgeMain {
         }
         JsonElement decksElement = request.get("decks");
         if (decksElement == null || !decksElement.isJsonArray()
-                || decksElement.getAsJsonArray().size() != 2) {
+                || decksElement.getAsJsonArray().size() < 2) {
             return error(
                     requestId,
                     "INVALID_PAYLOAD",
-                    "start_external_match requires exactly two decks.",
+                    "start_external_match requires at least two decks.",
                     null
             );
         }
+        int seatCount = decksElement.getAsJsonArray().size();
 
-        List<String> seats = parseSeats(request.get("seats"));
+        List<String> seats = parseSeats(request.get("seats"), seatCount);
         if (seats == null) {
             return error(
                     requestId,
                     "INVALID_PAYLOAD",
-                    "start_external_match seats must be exactly two of \"external\" or \"forge_ai\".",
+                    seatCount == 2
+                            ? "start_external_match seats must be exactly two of \"external\" or \"forge_ai\"."
+                            : "start_external_match seats must be given explicitly for 3+ decks, "
+                                    + "one of \"external\"/\"forge_ai\" per deck.",
                     null
             );
         }
 
         EXTERNAL_MATCHES.ensureCanStart();
         ForgeDeckFactory factory = new ForgeDeckFactory();
-        Deck playerDeck = factory.build(parseDeckSpec(decksElement.getAsJsonArray().get(0)));
-        Deck aiDeck = factory.build(parseDeckSpec(decksElement.getAsJsonArray().get(1)));
+        List<Deck> decks = new ArrayList<>();
+        for (JsonElement deckElement : decksElement.getAsJsonArray()) {
+            decks.add(factory.build(parseDeckSpec(deckElement)));
+        }
         Map<String, Object> started = EXTERNAL_MATCHES.start(
                 format,
                 getLong(request, "seed", 12345L),
-                playerDeck,
-                aiDeck,
+                decks,
                 seats,
                 request.has("mulliganPlayerId") ? request.get("mulliganPlayerId").getAsString() : null,
                 request.has("physicalPlayerId") ? request.get("physicalPlayerId").getAsString() : null
@@ -264,12 +269,16 @@ public final class BridgeMain {
         return success(requestId, "start_external_match", started);
     }
 
-    /** Defaults to the historical single-external-seat shape when the field is absent. */
-    private static List<String> parseSeats(JsonElement seatsElement) {
+    /**
+     * Defaults to the historical single-external-seat shape when the field is absent, but only for
+     * exactly two decks — a 3+ deck match has no historical default and must say explicitly, per
+     * seat, whether Asphodel/an external caller or Forge's own native AI controls it.
+     */
+    private static List<String> parseSeats(JsonElement seatsElement, int seatCount) {
         if (seatsElement == null || seatsElement.isJsonNull()) {
-            return ExternalMatchManager.DEFAULT_SEATS;
+            return seatCount == 2 ? ExternalMatchManager.DEFAULT_SEATS : null;
         }
-        if (!seatsElement.isJsonArray() || seatsElement.getAsJsonArray().size() != 2) {
+        if (!seatsElement.isJsonArray() || seatsElement.getAsJsonArray().size() != seatCount) {
             return null;
         }
         List<String> seats = new ArrayList<>();
