@@ -16,7 +16,6 @@ export interface DigitalBoardSlot {
   battlefieldCards: HTMLElement;
   landZone: HTMLElement;
   publicZones: HTMLElement;
-  focusToggle: HTMLButtonElement;
 }
 
 /**
@@ -35,12 +34,14 @@ export function digitalPlaymatAsset(positionClass: 'asphodel' | 'human'): string
 }
 
 /**
- * One player's visual area on the Obsidian Table (playmat + battlefield + commander dock + land
- * zone + public piles) — everything a `table-battlefield-half` owns besides the hand, which stays
- * playtest-view.ts's responsibility since a human's real hand and an opponent's hidden fan are
- * genuinely different surfaces, not just different players (see paintBoard). `positionClass` is
- * purely today's fixed visual position ("asphodel" = far/mirrored seat, "human" = near seat) — a
- * future N-player layout replaces only `digital-layout.ts`'s seat assignment, never this function.
+ * One player's visual area (playmat + battlefield + commander dock + land zone + public piles) —
+ * everything a `table-battlefield-half` owns besides the hand, which stays playtest-view.ts's
+ * responsibility since a human's real hand and an opponent's hidden fan are genuinely different
+ * surfaces, not just different players (see paintBoard). The viewport itself is the click target
+ * for focusing this player (see playtest-view.ts's `applyDigitalFocus`) — there is no separate
+ * Focus button. `positionClass` is purely today's fixed visual position ("asphodel" = top seat,
+ * "human" = bottom seat) — a future N-player layout replaces only `digital-layout.ts`'s ordering,
+ * never this function.
  */
 export function createDigitalBoardSlot(positionClass: 'asphodel' | 'human', extraClassName = ''): DigitalBoardSlot {
   const half = document.createElement('div');
@@ -52,13 +53,8 @@ export function createDigitalBoardSlot(positionClass: 'asphodel' | 'human', extr
   const battlefieldCards = area('table-battlefield-cards');
   const landZone = area('table-land-zone');
   const publicZones = area('table-public-zones');
-  const focusToggle = document.createElement('button');
-  focusToggle.type = 'button';
-  focusToggle.className = 'table-focus-toggle';
-  focusToggle.setAttribute('aria-pressed', 'false');
-  focusToggle.textContent = 'Focus';
-  half.append(life, commanderDock, battlefieldCards, landZone, publicZones, focusToggle);
-  return { half, life, commanderDock, battlefieldCards, landZone, publicZones, focusToggle };
+  half.append(life, commanderDock, battlefieldCards, landZone, publicZones);
+  return { half, life, commanderDock, battlefieldCards, landZone, publicZones };
 }
 
 /** Pure. The label shown on a player's life plaque — reuses Physical Scene's own naming so both scenes agree on what to call a seat, generalizing past the hardcoded "ASPHODEL"/"YOU" strings without changing today's 2-player output (`seatName` already returns exactly "Asphodel"/"You" for a 1v1). */

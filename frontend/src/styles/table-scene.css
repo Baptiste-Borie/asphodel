@@ -5,24 +5,35 @@
   background: radial-gradient(ellipse at 50% 45%, #28332e 0, #171f1e 42%, #0b1112 76%);
   isolation: isolate;
 }
-.table-root::before { content: ''; position: absolute; inset: 18px; border: 1px solid #bca57630; border-radius: 42% / 12%; box-shadow: 0 0 0 9px #0003, inset 0 0 100px #0008; pointer-events: none; z-index: -1; }
+/*
+  Milestone-2 fix "NO ORNAMENTAL SHARED TABLE": `content: ''` here is load-bearing for Physical mode
+  too — physical-courtyard.css/physical-v2.css only ever override individual properties of this SAME
+  pseudo-element (background/border/shadow), never redeclare `content`, so removing it would silently
+  stop Physical's own background from rendering at all. What changed is everything Digital used to
+  layer on top of it (the inset oval "table edge" border + box-shadow) — gone; Digital's background
+  is now nothing but this ambient radial-gradient plus the plain grain in `::after`, no big shared
+  table shape.
+*/
+.table-root::before { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: -1; }
 .table-root::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: -1; opacity: .15; background: repeating-linear-gradient(32deg, transparent 0 3px, #a1b39d0a 3px 4px); }
 .table-battlefield { margin: 70px 36px 0; }
-.table-battlefield::after { left: 240px; right: 240px; background: linear-gradient(90deg, transparent, #c7ae794d, transparent); }
-.table-battlefield-half { position: relative; display: grid; grid-template-columns: 180px minmax(0,1fr) 230px; grid-template-rows: minmax(150px, 1fr) 130px; gap: 6px 28px; padding: 14px 32px; border-radius: 80px; }
+
 /*
-  Milestone-1 fix "TWO VIEWPORTS, NOT ONE SPLIT TABLE": each seat gets its own quiet playmat art
-  (frontend/src/assets/environments — temporary placeholders, see digital-board-slot.ts's
-  `digitalPlaymatAsset`) so the two boards read as genuinely separate camera views rather than one
-  shared felt cut in half. A dark `::before` layer (not the element's own `background`, which
-  `.table-battlefield-half--active` still uses for its turn-highlight tint) keeps the artwork quiet
-  enough for card contrast; `border-radius: inherit` matches the half's own rounded shape.
+  Milestone-2 fix "PLAYER VIEWPORTS, NOT ROUNDED HALVES": a viewport is a plain rectangle — a
+  neutral 1px border, no capsule/arena `border-radius`, no background glow. Its own playmat art
+  (temporary; see digital-board-slot.ts's `digitalPlaymatAsset`) paints via a `::before` layer so
+  the two boards read as genuinely separate cameras rather than one shared felt cut in half. The
+  whole viewport is itself the click-to-focus target (see playtest-view.ts) — hence `cursor:
+  pointer` here rather than on some inner chrome. The active player
+  (`observation.game.activePlayerId`, applied in digital-board-slot.ts — never a local guess) gets
+  ONLY a clearer border color; no background glow, per the correction brief.
 */
-.table-battlefield-half::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background-size: cover; background-position: center; opacity: .5; }
+.table-battlefield-half { position: relative; display: grid; grid-template-columns: 180px minmax(0,1fr) 230px; grid-template-rows: minmax(150px, 1fr) 130px; gap: 6px 28px; padding: 14px 32px; border: 1px solid rgba(255,255,255,.09); cursor: pointer; }
+.table-battlefield-half::before { content: ''; position: absolute; inset: 0; z-index: -1; background-size: cover; background-position: center; opacity: .5; }
 .table-battlefield-half[data-playmat="courtyard-slate"]::before { background-image: url('../assets/environments/courtyard-slate.png'); }
 .table-battlefield-half[data-playmat="turquoise-ruins"]::before { background-image: url('../assets/environments/turquoise-ruins.png'); }
 .table-battlefield-half--asphodel { grid-template-rows: 115px minmax(150px,1fr); }
-.table-battlefield-half--active { background: radial-gradient(ellipse at 14% 65%, #c7ae7912, transparent 70%); box-shadow: none; }
+.table-battlefield-half--active { border-color: var(--accent); background: none; box-shadow: none; }
 .table-battlefield-cards { grid-column: 2; grid-row: 1; flex-wrap: nowrap; align-content: center !important; align-items: center; justify-content: safe center; overflow: auto; padding: 16px 24px; }
 .table-battlefield-half--asphodel .table-battlefield-cards { grid-row: 2; }
 .table-battlefield-cards:empty::before { content: 'BATTLEFIELD'; color: #a5b3a126; letter-spacing: .4em; font-size: 11px; }
@@ -136,17 +147,66 @@
 .opening-hand-fan { display:flex; align-items:flex-end; justify-content:center; flex-wrap:nowrap; padding:38px 12px 6px; }
 
 /*
-  Milestone-1 fix "REAL CAMERA, NOT A CSS SCALE": focusing a seat reallocates actual layout space —
-  the focused half keeps its full grid at full size and genuinely gains the freed room (`flex: 1 1
-  auto` against a real 100vh column, not a shrunk-then-scaled copy of itself) — while the other seat
-  recedes to a short, independently scrollable preview strip at its own true card size. Nothing is
-  ever removed from the DOM and no card shrinks below its normal (readable, clickable) size: the
-  receded seat's own zones simply overflow into a scrollbar, exactly like EDHPlay/SpellTable's
-  secondary camera pane. Purely a viewing toggle — it never changes which cards are legal/clickable.
+  Milestone-2 fix "CLICK THE VIEWPORT, REAL RELAYOUT": no more per-viewport Focus button — clicking
+  anywhere non-interactive on a viewport (see playtest-view.ts's click handler, which excludes any
+  actual card/zone/button/decision target first) focuses it directly, same as EDHPlay/SpellTable's
+  camera panes. `.table-battlefield--focused` turns the column stack into a row: the focused
+  viewport keeps its full grid at real size and takes the freed room (`flex: 1 1 auto`, ~80% of the
+  row), while the other viewport genuinely re-lays out as a small, independently-scrollable
+  flex-column preview docked on the right (own real elements at a smaller CSS size — never a
+  `transform: scale()` copy of itself). Nothing is ever removed from the DOM; every card in the
+  preview stays exactly as clickable as before. A future N-player layout only ever adds more such
+  receded previews to this same row — it never changes how one viewport lays itself out.
 */
-.table-focus-toggle { position: absolute; top: 10px; right: 14px; z-index: 5; padding: 4px 10px; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: #cdbf95; background: #171b1bcc; border: 1px solid #80735880; border-radius: 20px; cursor: pointer; }
-.table-focus-toggle:hover, .table-focus-toggle[aria-pressed="true"] { border-color: #e0c68e; color: #f2dda8; }
-.table-overview-button { pointer-events: auto; margin-top: 6px; padding: 4px 14px; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: #cdbf95; background: #171b1bcc; border: 1px solid #80735880; border-radius: 20px; cursor: pointer; }
-.table-overview-button:hover { border-color: #e0c68e; color: #f2dda8; }
-.table-battlefield--focused .table-battlefield-half { flex: 0 0 176px; min-height: 0; overflow-y: auto; filter: brightness(.6) saturate(.75); transition: flex-basis .4s ease, filter .4s ease; cursor: pointer; }
-.table-battlefield--focused .table-battlefield-half--focused { flex: 1 1 auto; overflow: visible; filter: none; cursor: default; }
+.table-battlefield--focused { flex-direction: row; align-items: stretch; }
+
+.table-battlefield--focused .table-battlefield-half {
+  order: 2;
+  flex: 0 0 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  overflow-y: auto;
+}
+.table-battlefield--focused .table-battlefield-half .table-life { width: 110px; padding: 8px; margin-bottom: 0; }
+.table-battlefield--focused .table-battlefield-half .table-life-value { font-size: 26px; }
+.table-battlefield--focused .table-battlefield-half .table-commander-dock .table-card,
+.table-battlefield--focused .table-battlefield-half .table-commander-dock .table-card-slot { width: 56px; }
+.table-battlefield--focused .table-battlefield-half .table-battlefield-cards .table-card,
+.table-battlefield--focused .table-battlefield-half .table-battlefield-cards .table-card-slot { width: min(var(--bf-card-width, 160px), 58px); }
+.table-battlefield--focused .table-battlefield-half .table-land-zone .table-card,
+.table-battlefield--focused .table-battlefield-half .table-land-zone .table-card-slot { width: 38px; }
+.table-battlefield--focused .table-battlefield-half .table-public-zones { gap: 6px; }
+.table-battlefield--focused .table-battlefield-half .table-pile { width: 42px; }
+.table-battlefield--focused .table-battlefield-half .table-pile-face { width: 38px; height: 52px; }
+.table-battlefield--focused .table-battlefield-half .table-pile-label { font-size: 7px; }
+
+/* The focused viewport itself: explicitly restores every property the general receded rule above
+   also sets (same selector specificity — this must win on source order, not by accident). */
+.table-battlefield--focused .table-battlefield-half--focused {
+  order: 1;
+  flex: 1 1 auto;
+  display: grid;
+  align-items: initial;
+  gap: 6px 28px;
+  padding: 14px 32px;
+  overflow-y: visible;
+  cursor: default;
+}
+.table-battlefield--focused .table-battlefield-half--focused .table-life { width: 154px; padding: 13px 8px; margin-bottom: 12px; }
+.table-battlefield--focused .table-battlefield-half--focused .table-life-value { font-size: 42px; }
+.table-battlefield--focused .table-battlefield-half--focused .table-public-zones { gap: 20px 13px; }
+.table-battlefield--focused .table-battlefield-half--focused .table-commander-dock .table-card,
+.table-battlefield--focused .table-battlefield-half--focused .table-commander-dock .table-card-slot { width: 128px; }
+.table-battlefield--focused .table-battlefield-half--focused .table-battlefield-cards .table-card,
+.table-battlefield--focused .table-battlefield-half--focused .table-battlefield-cards .table-card-slot { width: var(--bf-card-width, 160px); }
+.table-battlefield--focused .table-battlefield-half--focused .table-land-zone .table-card,
+.table-battlefield--focused .table-battlefield-half--focused .table-land-zone .table-card-slot { width: 82px; }
+.table-battlefield--focused .table-battlefield-half--focused .table-pile { width: 88px; }
+.table-battlefield--focused .table-battlefield-half--focused .table-pile-face { width: 78px; height: 108px; }
+.table-battlefield--focused .table-battlefield-half--focused .table-pile-label { font-size: 9px; }
+
+.table-focus-return { position: absolute; top: 16px; left: 16px; z-index: 6; pointer-events: auto; padding: 6px 16px; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: #cdbf95; background: #171b1bf0; border: 1px solid #80735880; border-radius: 4px; cursor: pointer; }
+.table-focus-return:hover { border-color: #e0c68e; color: #f2dda8; }

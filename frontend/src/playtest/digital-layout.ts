@@ -1,15 +1,22 @@
 import type { AgentObservation, AgentPlayerObservation } from './types.js';
 
 /**
- * Milestone 1: exactly two board slots ([far/mirrored seat, near seat] — matching the existing
- * "asphodel"/"human" visual positions), populated from whichever players the current observation
- * reports. This is the ONE deliberate 2-seat assumption left in the Digital Scene's rendering path
- * — every renderer downstream (see digital-board-slot.ts) already only cares about "the player for
- * this slot", not about who that player is. Milestone 2 (N players) replaces this function alone,
- * the same way physical-layout.ts's `physicalLayout` already does for the Physical Scene.
+ * Milestone 2 "VIEWPORT LIST, NOT FIXED SLOTS": every player currently known, in a stable reading
+ * order (other players first, the human self last — matching today's top/bottom viewport
+ * convention), never a fixed-length array with holes for a seat that isn't known yet. A future
+ * N-player Digital layout only ever grows what this returns; every renderer downstream (see
+ * digital-board-slot.ts) already only cares about "the player for this viewport", not about who
+ * that player is or how many others exist.
  */
-export function orderDigitalSeats(observation: AgentObservation): (AgentPlayerObservation | undefined)[] {
+export function digitalPlayerOrder(observation: AgentObservation): AgentPlayerObservation[] {
   const self = observation.players.find(player => player.playerId === observation.selfPlayerId);
   const others = observation.players.filter(player => player.playerId !== observation.selfPlayerId);
-  return [others[0], self];
+  return self ? [...others, self] : [...others];
 }
+
+/**
+ * The Digital Scene's own view state — which player (if any) currently fills most of the screen.
+ * Keyed by `playerId`, never a slot index, so it never encodes an assumption of exactly two visual
+ * regions (see playtest-view.ts's `applyDigitalFocus`).
+ */
+export type DigitalView = { mode: 'overview' } | { mode: 'focus'; playerId: string };

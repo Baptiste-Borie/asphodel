@@ -7,7 +7,7 @@ import "../styles/tabletop.css";
 import "../styles/table-scene.css";
 import { createZoneInspector, renderHiddenHand, renderStack } from "./table-scene.js";
 import { createDigitalBoardSlot, digitalSeatLabel, renderDigitalBoardSlot, type DigitalBoardSlot } from "./digital-board-slot.js";
-import { orderDigitalSeats } from "./digital-layout.js";
+import { digitalPlayerOrder, type DigitalView } from "./digital-layout.js";
 import { VisualTransitions } from "./visual-transitions.js";
 import { apiRequest } from "../api/api-client.js";
 import { endPlaytest, getActivePlaytest, getPlaytestReport, getPlaytestState, startPlaytest, submitPlaytestChoice } from "../api/playtest-api.js";
@@ -526,11 +526,11 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     const battlefield = document.createElement("div");
     battlefield.className = "table-battlefield";
 
-    // V-milestone1 "N-PLAYER-READY DIGITAL SCENE": one generic slot per player board (see
-    // digital-board-slot.ts) instead of a hardcoded asphodel/human pair of element variables.
-    // Which observed player fills which slot is decided by digital-layout.ts's `orderDigitalSeats`
-    // — the one seam a future 3-4 player Digital layout (Milestone 2) would actually grow; paintBoard
-    // below only ever renders "the player for slot i", generically.
+    // Milestone 2 "PLAYER VIEWPORTS, NOT humanTop/opponentBottom": one generic viewport per player
+    // (see digital-board-slot.ts) instead of a hardcoded asphodel/human pair of element variables.
+    // Which observed player fills which viewport is decided by digital-layout.ts's
+    // `digitalPlayerOrder` — the one seam a future N-player Digital layout would actually grow;
+    // paintBoard below only ever renders "the player for viewport i", generically.
     digitalBoardSlots = [
       createDigitalBoardSlot("asphodel", emphasisClass(seatPresentations.opponent.emphasis)),
       createDigitalBoardSlot("human", emphasisClass(seatPresentations.human.emphasis)),
@@ -545,41 +545,45 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     hudPhaseEl.className = "table-hud-line table-hud-phase";
     const modeLabel = document.createElement('p'); modeLabel.className = 'table-play-mode';
     modeLabel.textContent = currentPlayMode === 'physical' ? 'Physical Companion' : 'Digital';
-    // Focus (V-milestone1): give one player's board significantly more room, EDHPlay-style — never
-    // merely scaling the whole screen. A purely local viewing state; it never affects which cards
-    // are legal/clickable (see styles/table-scene.css's `--focused` rules).
-    const overviewButton = document.createElement('button');
-    overviewButton.type = 'button';
-    overviewButton.className = 'table-overview-button';
-    overviewButton.textContent = 'Table view';
-    overviewButton.hidden = true;
-    hud.append(modeLabel, hudTurnEl, hudPhaseEl, overviewButton);
+    hud.append(modeLabel, hudTurnEl, hudPhaseEl);
 
-    let focusedDigitalSlot: number | null = null;
+    /*
+     * Milestone 2 "CLICK THE VIEWPORT, REAL RELAYOUT": no more small per-viewport Focus button — the
+     * viewport itself is the click target (see each slot's `onclick` below), and the state is keyed
+     * by `playerId` (`DigitalView`), never a slot index, so it never bakes in "exactly two visual
+     * regions". `applyDigitalFocus` only ever toggles classes/attributes; the actual reflow (focused
+     * viewport takes most of the row, the other genuinely re-lays out as a small preview column — no
+     * `transform: scale()`) lives entirely in styles/table-scene.css's `--focused` rules.
+     */
+    let digitalView: DigitalView = { mode: "overview" };
+    const tableViewButton = document.createElement('button');
+    tableViewButton.type = 'button';
+    tableViewButton.className = 'table-focus-return';
+    tableViewButton.textContent = '← Table view';
+    tableViewButton.hidden = true;
     const applyDigitalFocus = () => {
-      battlefield.classList.toggle("table-battlefield--focused", focusedDigitalSlot !== null);
-      digitalBoardSlots.forEach((slot, index) => {
-        const isFocused = index === focusedDigitalSlot;
-        slot.half.classList.toggle("table-battlefield-half--focused", isFocused);
-        slot.focusToggle.setAttribute("aria-pressed", String(isFocused));
-        slot.focusToggle.textContent = isFocused ? "Focused" : "Focus";
-      });
-      overviewButton.hidden = focusedDigitalSlot === null;
+      const focusedPlayerId = digitalView.mode === "focus" ? digitalView.playerId : null;
+      battlefield.classList.toggle("table-battlefield--focused", focusedPlayerId !== null);
+      for (const slot of digitalBoardSlots) {
+        slot.half.classList.toggle("table-battlefield-half--focused", slot.half.dataset.playerId === focusedPlayerId);
+      }
+      tableViewButton.hidden = focusedPlayerId === null;
     };
-    digitalBoardSlots.forEach((slot, index) => {
-      slot.focusToggle.onclick = () => { focusedDigitalSlot = focusedDigitalSlot === index ? null : index; applyDigitalFocus(); };
-      // A receded (non-focused) preview strip is itself a focus target — clicking anywhere on it
-      // switches the camera there, same as EDHPlay/SpellTable's secondary panes. Never fires on an
-      // actual card/control click (those keep their own behavior), and never fires on the already-
-      // focused board (which has nothing to switch to).
+    for (const slot of digitalBoardSlots) {
+      // The primary Digital focus interaction (replaces the old per-viewport Focus button): click
+      // anywhere non-interactive on a viewport — overview or receded preview alike — to focus that
+      // player. Must never swallow a click meant for an actual card/zone/button/decision control,
+      // so any such target is excluded first, before ever touching `digitalView`.
       slot.half.onclick = (event) => {
-        if (focusedDigitalSlot === null || focusedDigitalSlot === index) return;
-        if ((event.target as HTMLElement).closest('button, a, input, summary, .table-card')) return;
-        focusedDigitalSlot = index;
+        const playerId = slot.half.dataset.playerId;
+        if (!playerId) return; // nothing painted into this viewport yet
+        if ((event.target as HTMLElement).closest('button, a, input, summary, .table-card, [data-zone]')) return;
+        if (digitalView.mode === "focus" && digitalView.playerId === playerId) return; // already focused: no-op
+        digitalView = { mode: "focus", playerId };
         applyDigitalFocus();
       };
-    });
-    overviewButton.onclick = () => { focusedDigitalSlot = null; applyDigitalFocus(); };
+    }
+    tableViewButton.onclick = () => { digitalView = { mode: "overview" }; applyDigitalFocus(); };
 
     const rail = document.createElement("div");
     rail.className = "table-rail-left";
@@ -637,7 +641,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     if (physicalScene) gameSection.append(physicalScene.element, physicalScene.overview);
     if (voicePanel) gameSection.append(voicePanel.element);
     if (!physicalScene) gameSection.append(battlefield, handContainer);
-    gameSection.append(rail, hud, phaseBanner.element, cardReveal.element, menuButton, menuPanel, previewPanel.element, decisionDock, handActionMenu.element, manaOverlay.element, zoneInspector.element);
+    gameSection.append(rail, hud, tableViewButton, phaseBanner.element, cardReveal.element, menuButton, menuPanel, previewPanel.element, decisionDock, handActionMenu.element, manaOverlay.element, zoneInspector.element);
   }
 
   function setDeckInfo(humanDeckName: string, asphodelDeckName: string): void {
@@ -788,12 +792,12 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     stackControl.textContent = `Stack · ${observation.stack.length}`;
     if (physicalScene) { physicalScene.render(observation, boardCallbacksForThisRender, expand, livePlayerTargets, (items, anchor) => handleManaSourceActivate("", items, anchor)); return; }
 
-    // V-milestone1: one loop over generic board slots (see digital-board-slot.ts) instead of a
-    // duplicated opponent/self block — `orderDigitalSeats` (digital-layout.ts) is the only place
-    // deciding which player fills which slot, ready for a future N-player seat assignment.
-    const seats = orderDigitalSeats(observation);
+    // Milestone 2: one loop over generic viewports (see digital-board-slot.ts) instead of a
+    // duplicated opponent/self block — `digitalPlayerOrder` (digital-layout.ts) is the only place
+    // deciding which player fills which viewport, ready for a future N-player viewport list.
+    const players = digitalPlayerOrder(observation);
     digitalBoardSlots.forEach((slot, index) => {
-      const player = seats[index];
+      const player = players[index];
       if (!player) return;
       renderDigitalBoardSlot(slot, player, observation, boardCallbacksForThisRender, expand, (name) => cardStore.get(name), zoneInspector.open);
       renderLifeWithDelta(slot.life, digitalSeatLabel(player, observation), player.life);
