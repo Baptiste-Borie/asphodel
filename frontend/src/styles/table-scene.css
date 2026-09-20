@@ -123,3 +123,20 @@
   stay below it, always visible.
 */
 .opening-hand-fan { display:flex; align-items:flex-end; justify-content:center; flex-wrap:nowrap; padding:38px 12px 6px; }
+
+/*
+  V-milestone1 "FOCUS ONE PLAYER'S BOARD": EDHPlay-style — the focused half keeps growing into the
+  freed space (still the same grid it always was) while the other half recedes to a small mirror,
+  reusing the exact scale-down technique Physical Companion's compact seat already established (see
+  physical-companion.css's `.table-battlefield-half--compact`). Purely a viewing toggle: it never
+  changes which cards are legal/clickable, and every card inside a receded half stays exactly as
+  interactive as before.
+*/
+.table-focus-toggle { position: absolute; top: 10px; right: 14px; z-index: 5; padding: 4px 10px; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: #cdbf95; background: #171b1bcc; border: 1px solid #80735880; border-radius: 20px; cursor: pointer; }
+.table-focus-toggle:hover, .table-focus-toggle[aria-pressed="true"] { border-color: #e0c68e; color: #f2dda8; }
+.table-overview-button { pointer-events: auto; margin-top: 6px; padding: 4px 14px; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: #cdbf95; background: #171b1bcc; border: 1px solid #80735880; border-radius: 20px; cursor: pointer; }
+.table-overview-button:hover { border-color: #e0c68e; color: #f2dda8; }
+.table-battlefield--focused .table-battlefield-half { flex: 0 0 200px; min-height: 0; transform: scale(0.55); filter: brightness(.6) saturate(.75); transition: transform .4s ease, flex-basis .4s ease, filter .4s ease; }
+.table-battlefield--focused .table-battlefield-half--asphodel { transform-origin: top center; }
+.table-battlefield--focused .table-battlefield-half--human { transform-origin: bottom center; }
+.table-battlefield--focused .table-battlefield-half--focused { flex: 1 1 auto; transform: none; filter: none; }

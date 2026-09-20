@@ -5,12 +5,14 @@ import { ApiError } from "../api/api-client.js";
 import "../styles/playtest.css";
 import "../styles/tabletop.css";
 import "../styles/table-scene.css";
-import { createZoneInspector, renderPublicZones, renderHiddenHand, renderStack } from "./table-scene.js";
+import { createZoneInspector, renderHiddenHand, renderStack } from "./table-scene.js";
+import { createDigitalBoardSlot, digitalSeatLabel, renderDigitalBoardSlot, type DigitalBoardSlot } from "./digital-board-slot.js";
+import { orderDigitalSeats } from "./digital-layout.js";
 import { VisualTransitions } from "./visual-transitions.js";
 import { apiRequest } from "../api/api-client.js";
 import { endPlaytest, getActivePlaytest, getPlaytestReport, getPlaytestState, startPlaytest, submitPlaytestChoice } from "../api/playtest-api.js";
 import { element } from "../dom.js";
-import { collectVisibleCardNames, commandZoneCards, formatHudPhase, opponentPlayer, renderBattlefieldHalf, renderCommanderDock, renderCompactHand, renderHand, renderLandZone, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
+import { collectVisibleCardNames, commandZoneCards, formatHudPhase, opponentPlayer, renderCompactHand, renderHand, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
 import { createCardPreviewPanel } from "./card-preview.js";
 import { createHoverPreview } from "./hover-preview.js";
 import { attachStateTooltip } from './state-tooltip.js';
@@ -257,7 +259,6 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   let voicePanel: VoicePanelHandle | null = null;
   let stackControl: HTMLButtonElement;
   let livePlayerTargets: MenuItem[] = [];
-  let opponentPiles: HTMLElement, humanPiles: HTMLElement;
 
   // Public turn-of-Asphodel frames (V2e.3) are queued and replayed in order with a short delay —
   // the human decision is only ever revealed once this queue is genuinely idle (see revealLiveState).
@@ -280,11 +281,10 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   // Persistent game-screen elements, built once per game — never torn down by a poll, so the
   // pinned preview, menu state and any hover survive polling. Each section only re-renders when
   // its own underlying data actually changed (or, for frame playback, once per played frame).
-  let asphodelLifeEl: HTMLElement, humanLifeEl: HTMLElement, actionsEl: HTMLElement;
-  let asphodelHalfEl: HTMLElement, humanHalfEl: HTMLElement;
-  let asphodelCommanderDock: HTMLElement, humanCommanderDock: HTMLElement;
-  let asphodelBattlefieldCards: HTMLElement, humanBattlefieldCards: HTMLElement, handContainer: HTMLElement;
-  let asphodelLandZone: HTMLElement, humanLandZone: HTMLElement;
+  let actionsEl: HTMLElement, handContainer: HTMLElement;
+  // V-milestone1: one generic slot per player board (see digital-board-slot.ts) instead of a
+  // hardcoded asphodel/human pair of element variables — see buildGameScreen/paintBoard.
+  let digitalBoardSlots: DigitalBoardSlot[] = [];
   let hudTurnEl: HTMLElement, hudPhaseEl: HTMLElement;
   let decisionDock: HTMLElement, menuPanel: HTMLElement, menuDeckInfo: HTMLElement;
   document.addEventListener('keydown', event => {
@@ -526,27 +526,16 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     const battlefield = document.createElement("div");
     battlefield.className = "table-battlefield";
 
-    asphodelHalfEl = document.createElement("div");
-    asphodelHalfEl.className = `table-battlefield-half table-battlefield-half--asphodel${emphasisClass(seatPresentations.opponent.emphasis)}`;
-    asphodelCommanderDock = document.createElement("div");
-    asphodelCommanderDock.className = "table-commander-dock";
-    asphodelBattlefieldCards = document.createElement("div");
-    asphodelBattlefieldCards.className = "table-battlefield-cards";
-    asphodelLandZone = document.createElement("div");
-    asphodelLandZone.className = "table-land-zone";
-    asphodelHalfEl.append(asphodelCommanderDock, asphodelBattlefieldCards, asphodelLandZone);
-
-    humanHalfEl = document.createElement("div");
-    humanHalfEl.className = `table-battlefield-half table-battlefield-half--human${emphasisClass(seatPresentations.human.emphasis)}`;
-    humanCommanderDock = document.createElement("div");
-    humanCommanderDock.className = "table-commander-dock";
-    humanBattlefieldCards = document.createElement("div");
-    humanBattlefieldCards.className = "table-battlefield-cards";
-    humanLandZone = document.createElement("div");
-    humanLandZone.className = "table-land-zone";
-    humanHalfEl.append(humanCommanderDock, humanBattlefieldCards, humanLandZone);
-
-    battlefield.append(asphodelHalfEl, humanHalfEl);
+    // V-milestone1 "N-PLAYER-READY DIGITAL SCENE": one generic slot per player board (see
+    // digital-board-slot.ts) instead of a hardcoded asphodel/human pair of element variables.
+    // Which observed player fills which slot is decided by digital-layout.ts's `orderDigitalSeats`
+    // — the one seam a future 3-4 player Digital layout (Milestone 2) would actually grow; paintBoard
+    // below only ever renders "the player for slot i", generically.
+    digitalBoardSlots = [
+      createDigitalBoardSlot("asphodel", emphasisClass(seatPresentations.opponent.emphasis)),
+      createDigitalBoardSlot("human", emphasisClass(seatPresentations.human.emphasis)),
+    ];
+    battlefield.append(...digitalBoardSlots.map((slot) => slot.half));
 
     const hud = document.createElement("div");
     hud.className = "table-hud";
@@ -556,24 +545,39 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     hudPhaseEl.className = "table-hud-line table-hud-phase";
     const modeLabel = document.createElement('p'); modeLabel.className = 'table-play-mode';
     modeLabel.textContent = currentPlayMode === 'physical' ? 'Physical Companion' : 'Digital';
-    hud.append(modeLabel, hudTurnEl, hudPhaseEl);
+    // Focus (V-milestone1): give one player's board significantly more room, EDHPlay-style — never
+    // merely scaling the whole screen. A purely local viewing state; it never affects which cards
+    // are legal/clickable (see styles/table-scene.css's `--focused` rules).
+    const overviewButton = document.createElement('button');
+    overviewButton.type = 'button';
+    overviewButton.className = 'table-overview-button';
+    overviewButton.textContent = 'Table view';
+    overviewButton.hidden = true;
+    hud.append(modeLabel, hudTurnEl, hudPhaseEl, overviewButton);
+
+    let focusedDigitalSlot: number | null = null;
+    const applyDigitalFocus = () => {
+      battlefield.classList.toggle("table-battlefield--focused", focusedDigitalSlot !== null);
+      digitalBoardSlots.forEach((slot, index) => {
+        const isFocused = index === focusedDigitalSlot;
+        slot.half.classList.toggle("table-battlefield-half--focused", isFocused);
+        slot.focusToggle.setAttribute("aria-pressed", String(isFocused));
+        slot.focusToggle.textContent = isFocused ? "Focused" : "Focus";
+      });
+      overviewButton.hidden = focusedDigitalSlot === null;
+    };
+    digitalBoardSlots.forEach((slot, index) => {
+      slot.focusToggle.onclick = () => { focusedDigitalSlot = focusedDigitalSlot === index ? null : index; applyDigitalFocus(); };
+    });
+    overviewButton.onclick = () => { focusedDigitalSlot = null; applyDigitalFocus(); };
 
     const rail = document.createElement("div");
     rail.className = "table-rail-left";
-    asphodelLifeEl = document.createElement("div");
-    asphodelLifeEl.className = "table-life table-life--asphodel";
     actionsEl = document.createElement("div");
     actionsEl.className = "table-actions";
-    humanLifeEl = document.createElement("div");
-    humanLifeEl.className = "table-life table-life--human";
-    asphodelHalfEl.prepend(asphodelLifeEl);
-    humanHalfEl.prepend(humanLifeEl);
     const history = document.createElement('details'); history.className = 'table-history';
     const historyTitle = document.createElement('summary'); historyTitle.textContent = 'Recent actions';
     history.append(historyTitle, actionsEl); rail.append(history);
-    opponentPiles = document.createElement('div'); opponentPiles.className = 'table-public-zones';
-    humanPiles = document.createElement('div'); humanPiles.className = 'table-public-zones';
-    asphodelHalfEl.append(opponentPiles); humanHalfEl.append(humanPiles);
     opponentHand = document.createElement('div'); opponentHand.className = 'table-opponent-hand';
     stackEl = document.createElement('div'); stackEl.className = 'table-stack'; stackEl.hidden = true;
     stackEl.setAttribute('aria-label', 'Spell stack');
@@ -588,8 +592,10 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     closeStack.onclick = () => toggleStack(false);
     stackDrawer.onkeydown = event => { if (event.key === 'Escape') { event.stopPropagation(); toggleStack(false); } };
     stackDrawer.append(closeStack, stackEl); gameSection.append(stackControl, stackDrawer);
-    renderLife(asphodelLifeEl, "ASPHODEL", undefined);
-    renderLife(humanLifeEl, "YOU", undefined);
+    // Pre-observation placeholder labels only — once real data arrives, paintBoard's per-slot
+    // `renderLifeWithDelta` call takes over with `digitalSeatLabel` (see digital-board-slot.ts).
+    renderLife(digitalBoardSlots[0].life, "ASPHODEL", undefined);
+    renderLife(digitalBoardSlots[1].life, "YOU", undefined);
 
     const menuButton = document.createElement("button");
     menuButton.type = "button";
@@ -766,34 +772,24 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     stackControl.textContent = `Stack · ${observation.stack.length}`;
     if (physicalScene) { physicalScene.render(observation, boardCallbacksForThisRender, expand, livePlayerTargets, (items, anchor) => handleManaSourceActivate("", items, anchor)); return; }
 
-    const opponent = opponentPlayer(observation);
-    const self = selfPlayer(observation);
-    asphodelHalfEl.classList.toggle("table-battlefield-half--active", opponent?.playerId === observation.game.activePlayerId);
-    humanHalfEl.classList.toggle("table-battlefield-half--active", self?.playerId === observation.game.activePlayerId);
-    if (opponent) {
-      asphodelHalfEl.dataset.playerId = opponent.playerId;
-      renderPublicZones(opponentPiles, opponent, (name) => cardStore.get(name), zoneInspector.open);
-      renderHiddenHand(opponentHand, opponent.handSize);
-      renderLifeWithDelta(asphodelLifeEl, "ASPHODEL", opponent.life);
-      renderCommanderDock(asphodelCommanderDock, opponent, boardCallbacksForThisRender, expand);
-      renderBattlefieldHalf(asphodelBattlefieldCards, opponent, boardCallbacksForThisRender, expand);
-      renderLandZone(asphodelLandZone, opponent, boardCallbacksForThisRender, expand);
-    }
-    if (self) {
-      humanHalfEl.dataset.playerId = self.playerId;
-      renderPublicZones(humanPiles, self, (name) => cardStore.get(name), zoneInspector.open);
-      renderLifeWithDelta(humanLifeEl, "YOU", self.life);
-      renderCommanderDock(humanCommanderDock, self, boardCallbacksForThisRender, expand);
-      renderBattlefieldHalf(humanBattlefieldCards, self, boardCallbacksForThisRender, expand);
-      renderLandZone(humanLandZone, self, boardCallbacksForThisRender, expand);
+    // V-milestone1: one loop over generic board slots (see digital-board-slot.ts) instead of a
+    // duplicated opponent/self block — `orderDigitalSeats` (digital-layout.ts) is the only place
+    // deciding which player fills which slot, ready for a future N-player seat assignment.
+    const seats = orderDigitalSeats(observation);
+    digitalBoardSlots.forEach((slot, index) => {
+      const player = seats[index];
+      if (!player) return;
+      renderDigitalBoardSlot(slot, player, observation, boardCallbacksForThisRender, expand, (name) => cardStore.get(name), zoneInspector.open);
+      renderLifeWithDelta(slot.life, digitalSeatLabel(player, observation), player.life);
+      if (player.role === "opponent") renderHiddenHand(opponentHand, player.handSize);
       // V2g: the human has real physical cards, so their own hand is never a clickable digital
       // surface in Physical mode — a compact "HAND · N" indicator (+ collapsible verifier) instead.
       // Digital mode's `renderHand` call is untouched.
-      if (self.role === "self") {
-        if (currentPlayMode === "physical") renderCompactHand(handContainer, self.hand);
-        else renderHand(handContainer, self.hand, (name) => cardStore.get(name), handActions);
+      if (player.role === "self") {
+        if (currentPlayMode === "physical") renderCompactHand(handContainer, player.hand);
+        else renderHand(handContainer, player.hand, (name) => cardStore.get(name), handActions);
       }
-    }
+    });
     });
     // Also refresh outside of a fresh click — e.g. the same card stays previewed across a poll
     // while the underlying decision (and so its legal actions) changed, or Asphodel's turn frame
