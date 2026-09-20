@@ -20,6 +20,21 @@ export interface DigitalBoardSlot {
 }
 
 /**
+ * Temporary per-seat playmat art (frontend/src/assets/environments) so the two boards read as
+ * genuinely separate viewports rather than one shared table cut in half — placeholder assignment
+ * only, swapped for real per-deck/player art later; see styles/table-scene.css's `[data-playmat]`.
+ */
+const PLAYMAT_BY_POSITION: Readonly<Record<'asphodel' | 'human', string>> = {
+  asphodel: 'courtyard-slate',
+  human: 'turquoise-ruins',
+};
+
+/** Pure. Which playmat asset a given seat position renders behind its own board — see PLAYMAT_BY_POSITION. */
+export function digitalPlaymatAsset(positionClass: 'asphodel' | 'human'): string {
+  return PLAYMAT_BY_POSITION[positionClass];
+}
+
+/**
  * One player's visual area on the Obsidian Table (playmat + battlefield + commander dock + land
  * zone + public piles) — everything a `table-battlefield-half` owns besides the hand, which stays
  * playtest-view.ts's responsibility since a human's real hand and an opponent's hidden fan are
@@ -30,6 +45,7 @@ export interface DigitalBoardSlot {
 export function createDigitalBoardSlot(positionClass: 'asphodel' | 'human', extraClassName = ''): DigitalBoardSlot {
   const half = document.createElement('div');
   half.className = `table-battlefield-half table-battlefield-half--${positionClass}${extraClassName}`;
+  half.dataset.playmat = digitalPlaymatAsset(positionClass);
   const life = document.createElement('div');
   life.className = `table-life table-life--${positionClass}`;
   const commanderDock = area('table-commander-dock');

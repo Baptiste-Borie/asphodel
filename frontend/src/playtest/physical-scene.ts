@@ -46,7 +46,8 @@ export function createPhysicalScene(inspect: (title: string, cards: AgentCardObs
     focusPlayer(playerId: string) { focused = playerId; layout(); },
     render(observation: AgentObservation, callbacks: BoardCallbacks, expand: boolean, targets: MenuItem[] = [], choose?: (items: MenuItem[], anchor: HTMLElement) => void) {
       current = observation;
-      callbacks = { ...callbacks, battlefieldStyle: "condensed" };
+      // `battlefieldStyle: "condensed"` now comes from playtest-view.ts's shared callbacks (both
+      // scenes render permanents identically) — Physical no longer needs its own override here.
       for (const [id, board] of boards) if (!observation.players.some(p => p.playerId === id)) { board.element.remove(); boards.delete(id); }
       for (const player of observation.players) {
         let board = boards.get(player.playerId);

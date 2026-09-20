@@ -568,6 +568,16 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     };
     digitalBoardSlots.forEach((slot, index) => {
       slot.focusToggle.onclick = () => { focusedDigitalSlot = focusedDigitalSlot === index ? null : index; applyDigitalFocus(); };
+      // A receded (non-focused) preview strip is itself a focus target — clicking anywhere on it
+      // switches the camera there, same as EDHPlay/SpellTable's secondary panes. Never fires on an
+      // actual card/control click (those keep their own behavior), and never fires on the already-
+      // focused board (which has nothing to switch to).
+      slot.half.onclick = (event) => {
+        if (focusedDigitalSlot === null || focusedDigitalSlot === index) return;
+        if ((event.target as HTMLElement).closest('button, a, input, summary, .table-card')) return;
+        focusedDigitalSlot = index;
+        applyDigitalFocus();
+      };
     });
     overviewButton.onclick = () => { focusedDigitalSlot = null; applyDigitalFocus(); };
 
@@ -751,6 +761,12 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     // action itself is triggered only from the preview panel's own explicit control (see
     // `updatePreviewActionable`) — never from the inspecting click itself.
     const boardCallbacksForThisRender: BoardCallbacks = {
+      // Digital and Physical share the same condensed battlefield/land presentation (cropped
+      // artwork + name + P/T + counters/keywords, full card on hover) — see board-renderer.ts's
+      // `variant` selection. physical-scene.ts's own override of this field is now redundant but
+      // harmless; the source of truth is here so a Digital permanent never renders as a full
+      // printed Magic card.
+      battlefieldStyle: "condensed",
       getPresentation: (name) => cardStore.get(name),
       isSelected: (card) => previewPanel.isSelected(card.cardRef),
       isPlayable: (card) => boardActionMap?.byCardRef.has(card.cardRef) ?? false,
