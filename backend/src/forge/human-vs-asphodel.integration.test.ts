@@ -24,7 +24,7 @@ it("a scripted human and BaselineAsphodelAgentV2b play a real 100-card Commander
     let humanDecisions = 0, agentDecisions = 0;
 
     const run = await runHumanVsAgentMatch(
-      new ForgeExternalMatchClient(bridge), human, agent, commanderFixtures(), HUMAN, ASPHODEL,
+      new ForgeExternalMatchClient(bridge), human, agent, commanderFixtures(), HUMAN,
       {
         seed: 7, maxDecisions: 20_000, timeoutMs: 120_000,
         onDecision: (owner, observation) => {

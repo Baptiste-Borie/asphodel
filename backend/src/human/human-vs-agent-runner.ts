@@ -49,37 +49,47 @@ export interface HumanVsAgentOptions {
 
 /**
  * Routes every pending external decision to whichever seat owns it: the human provider for
- * `humanPlayerId`, `agent.choose` for `agentPlayerId`, and a hard failure for anything else. Both
- * seats are started as `external` (see forge-protocol.ts `ForgeMatchSeatController`), so Forge
- * itself supplies a correctly player-scoped `AgentObservation` for whichever side is currently
- * asked — this function never builds or reshapes an observation itself. Submission reuses
+ * `humanPlayerId`, `agent.choose` for every other seat (one or more — the same `agent` policy
+ * answers each of them in turn, purely from that decision's own `observation.selfPlayerId`, never
+ * from a fixed notion of "the" opponent; see `runAgentMatch`'s identical pattern). Every seat is
+ * started as `external` (see forge-protocol.ts `ForgeMatchSeatController`), so Forge itself
+ * supplies a correctly player-scoped `AgentObservation` for whichever side is currently asked —
+ * this function never builds or reshapes an observation itself. Submission reuses
  * `submitExternalChoice` (V2b's agent runner) so the selector-family switch is not duplicated.
  */
 export async function runHumanVsAgentMatch(
   client: AgentMatchTransport,
   human: HumanDecisionProvider,
   agent: AsphodelAgent,
-  decks: [ForgeDeckSpec, ForgeDeckSpec],
+  decks: ForgeDeckSpec[],
   humanPlayerId: string,
-  agentPlayerId: string,
   options: HumanVsAgentOptions = {},
 ): Promise<HumanVsAgentResult> {
   const timeoutMs = options.timeoutMs ?? 3_600_000;
   const maxDecisions = options.maxDecisions ?? 20_000;
   const maxIdlePolls = options.maxIdlePolls ?? 5_000;
   const pollIntervalMs = options.pollIntervalMs ?? 20;
+  if (decks.length < 2) throw new Error("human_vs_agent_invalid_deck_count");
   if (![timeoutMs, maxDecisions, maxIdlePolls].every(n => Number.isSafeInteger(n) && n > 0)
       || !Number.isSafeInteger(pollIntervalMs) || pollIntervalMs < 0) throw new Error("human_vs_agent_invalid_run_limits");
   options.signal?.throwIfAborted();
+  // One seat id per deck, in order ("player-1", "player-2", ...) — matches the bridge's own
+  // `playerId(index)` convention (ForgeGameRunner.java) exactly, so this never has to be told
+  // separately which ids the match will actually use.
+  const seatIds = decks.map((_, i) => `player-${i + 1}`);
   const { sessionId } = await client.startMatch(decks, {
     ...(options.seed === undefined ? {} : { seed: options.seed }),
-    seats: ["external", "external"],
+    seats: decks.map(() => "external"),
     mulliganPlayerId: humanPlayerId,
     ...(options.physicalCardProvider ? { physicalPlayerId: humanPlayerId } : {}),
   });
   const started = Date.now();
   const trace: AgentTraceEntry[] = [];
   const seen = new Set<string>();
+  // Metrics/telemetry perspective: whichever non-human seat most recently acted — same accepted
+  // convention as `runAgentMatch` when more than one agent seat exists (see its own doc comment).
+  // With exactly one agent seat (today's default) this is always that one seat, unchanged.
+  let lastAgentPlayerId = "";
   // V2e.6.1 §§8-13: infrastructure guard, scoped to this one match, protecting only Asphodel's own
   // priority_action decisions against a failed-cast no-progress loop. Never applied to the human.
   const agentCastLoopGuard = new AgentCastLoopGuard();
@@ -94,7 +104,7 @@ export async function runHumanVsAgentMatch(
       if (latest.sessionId !== sessionId) throw new Error("human_vs_agent_session_mismatch");
       if (latest.status === "completed") {
         if (!latest.result?.gameOver) throw new Error("human_vs_agent_missing_terminal_result");
-        return { sessionId, snapshot: latest, trace, metrics: gameMetrics(latest, trace, agentPlayerId), endedByHuman: false };
+        return { sessionId, snapshot: latest, trace, metrics: gameMetrics(latest, trace, lastAgentPlayerId), endedByHuman: false };
       }
       if (latest.status === "failed" || latest.status === "cancelled") throw new Error(`human_vs_agent_match_${latest.status}: ${latest.error?.message ?? ""}`);
       const d = latest.pendingDecision, observation = latest.observation;
@@ -103,9 +113,10 @@ export async function runHumanVsAgentMatch(
         if (trace.length >= maxDecisions) throw new Error("human_vs_agent_decision_limit");
         if (d.playerId !== observation.selfPlayerId || d.context.turn !== observation.game.turn
           || d.context.phase !== observation.game.phase) throw new Error("human_vs_agent_incoherent_observation");
-        const owner: DecisionOwner = d.playerId === humanPlayerId ? "human" : d.playerId === agentPlayerId ? "agent" : (() => {
+        const owner: DecisionOwner = d.playerId === humanPlayerId ? "human" : seatIds.includes(d.playerId) ? "agent" : (() => {
           throw new Error(`human_vs_agent_unknown_decision_owner: ${d.playerId}`);
         })();
+        if (owner === "agent") lastAgentPlayerId = d.playerId;
         // A sole forced pass (no other legal priority action) never reaches the human at all —
         // Forge's own rendered options decide this, never a guess about strategic usefulness.
         const forcedPass = owner === "human" ? autoPassChoice(d) : null;
@@ -136,7 +147,7 @@ export async function runHumanVsAgentMatch(
       // secondary cancellation problem must not turn an intentional end into an error) and
       // return normally with the last snapshot and every already-recorded decision intact.
       try { await client.cancel(sessionId); } catch { /* best-effort cancel on a deliberate end */ }
-      return { sessionId, snapshot: latest, trace, metrics: gameMetrics(latest, trace, agentPlayerId), endedByHuman: true };
+      return { sessionId, snapshot: latest, trace, metrics: gameMetrics(latest, trace, lastAgentPlayerId), endedByHuman: true };
     }
     let cancellationError: unknown;
     try { await client.cancel(sessionId); } catch (error) { cancellationError = error; }

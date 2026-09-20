@@ -30,9 +30,11 @@ export interface PlaytestReportInput {
   sessionId: string;
   seed: number;
   humanDeckName: string;
-  agentDeckName: string;
+  /** One entry per Asphodel seat, in player order — one element for today's default 2-player match. */
+  agentDeckNames: string[];
   humanPlayerId: string;
-  agentPlayerId: string;
+  /** One entry per Asphodel seat, matching `agentDeckNames` — see its own doc comment. */
+  agentPlayerIds: string[];
   endedByHuman: boolean;
   snapshot: ForgeExternalMatchSnapshot;
   decisions: readonly RecordedDecision[];
@@ -66,9 +68,9 @@ function timestampSlug(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_${pad(date.getHours())}-${pad(date.getMinutes())}`;
 }
 
-/** Sortable chronologically, filesystem-safe, and identifiable by decks — e.g. "2026-09-05_22-30_uurg-vs-krenko". */
-export function reportDirectoryName(startedAt: Date, humanDeckName: string, agentDeckName: string): string {
-  return `${timestampSlug(startedAt)}_${slugify(humanDeckName)}-vs-${slugify(agentDeckName)}`;
+/** Sortable chronologically, filesystem-safe, and identifiable by decks — e.g. "2026-09-05_22-30_uurg-vs-krenko" (or "...-vs-krenko-vs-ghalta" for two Asphodel seats). */
+export function reportDirectoryName(startedAt: Date, humanDeckName: string, agentDeckNames: readonly string[]): string {
+  return `${timestampSlug(startedAt)}_${slugify(humanDeckName)}${agentDeckNames.map(name => `-vs-${slugify(name)}`).join("")}`;
 }
 
 function turnReached(snapshot: ForgeExternalMatchSnapshot): number | null {
@@ -105,22 +107,28 @@ function renderSummaryMarkdown(input: PlaytestReportInput): string {
     `Session: ${input.sessionId}`,
     `Seed: ${input.seed}`, "",
     `Human deck: ${input.humanDeckName}`,
-    `Asphodel deck: ${input.agentDeckName}`, "",
+    // A single Asphodel seat keeps today's exact "Asphodel deck: X" line; 2+ seats number them so
+    // each is unambiguous, without changing the single-seat wording at all.
+    ...input.agentDeckNames.map((name, i) => `Asphodel deck${input.agentDeckNames.length > 1 ? ` ${i + 1}` : ""}: ${name}`), "",
     `Play mode: ${input.playMode ?? "digital"}`,
     `Status: ${status}`,
     `Turn reached: ${turnReached(input.snapshot) ?? "unknown"}`, "",
     `Asphodel decisions: ${input.decisions.length}`, "",
     "## Match summary", "",
     ...telemetryLines("Human", input.snapshot.publicTelemetry?.[input.humanPlayerId]), "",
-    ...telemetryLines("Asphodel", input.snapshot.publicTelemetry?.[input.agentPlayerId]), "",
+    ...input.agentPlayerIds.flatMap((playerId, i) => [
+      ...telemetryLines(input.agentPlayerIds.length > 1 ? `Asphodel ${i + 1}` : "Asphodel", input.snapshot.publicTelemetry?.[playerId]), "",
+    ]),
     "## Result", "",
   ];
   if (!input.endedByHuman && input.snapshot.result) {
     const result = input.snapshot.result;
+    const agentWinnerIndex = input.agentPlayerIds.indexOf(result.winnerId ?? "");
     const winner = result.draw ? "Draw"
       : result.winnerId === input.humanPlayerId ? "Human"
-      : result.winnerId === input.agentPlayerId ? "Asphodel"
-      : (result.winnerId ?? "Unknown");
+      : agentWinnerIndex >= 0
+        ? (input.agentPlayerIds.length > 1 ? `Asphodel ${agentWinnerIndex + 1} (${input.agentDeckNames[agentWinnerIndex]})` : "Asphodel")
+        : (result.winnerId ?? "Unknown");
     lines.push(`Winner: ${winner}`, `Turns: ${result.turns}`, `Terminal reason: ${result.terminalReason}`, "");
   } else {
     lines.push("Result: playtest ended by human", "");
@@ -132,7 +140,11 @@ function renderSummaryMarkdown(input: PlaytestReportInput): string {
   lines.push("", "## Decision timeline", "");
   for (const recorded of input.decisions) {
     const described = describeRecordedDecision(recorded.observation, recorded.decision, recorded.choice);
-    lines.push(`### ${recorded.reportId} — Turn ${recorded.decision.context.turn} / ${formatPhase(recorded.decision.context.phase)}`, "");
+    // Only disambiguated when 2+ Asphodel seats exist — a single-seat report's heading line stays
+    // byte-for-byte what it always was.
+    const seatIndex = input.agentPlayerIds.length > 1 ? input.agentPlayerIds.indexOf(recorded.decision.playerId) : -1;
+    const seatSuffix = seatIndex >= 0 ? ` (Asphodel ${seatIndex + 1})` : "";
+    lines.push(`### ${recorded.reportId} — Turn ${recorded.decision.context.turn} / ${formatPhase(recorded.decision.context.phase)}${seatSuffix}`, "");
     lines.push(`Type: ${recorded.decision.type}`, `Forge decision: ${recorded.decision.decisionId}`, "");
     lines.push("Chosen:", described.chosenLabel, "");
     lines.push("Reason:", recorded.choice.reason, "");
@@ -172,7 +184,7 @@ function renderDecisionsJson(input: PlaytestReportInput) {
       seed: input.seed,
       status: input.endedByHuman ? "ended_by_human" : "completed",
       humanDeck: input.humanDeckName,
-      asphodelDeck: input.agentDeckName,
+      asphodelDecks: input.agentDeckNames,
       playMode: input.playMode ?? "digital",
     },
     decisions: input.decisions.map(({ reportId, timestamp, observation, decision, choice }) => ({ reportId, timestamp, observation, decision, choice })),
@@ -183,7 +195,7 @@ function renderDecisionsJson(input: PlaytestReportInput) {
 
 export async function writePlaytestReport(input: PlaytestReportInput): Promise<PlaytestReportResult> {
   const root = input.reportsRoot ?? DEFAULT_REPORTS_ROOT;
-  const directory = resolve(root, reportDirectoryName(input.startedAt, input.humanDeckName, input.agentDeckName));
+  const directory = resolve(root, reportDirectoryName(input.startedAt, input.humanDeckName, input.agentDeckNames));
   await mkdir(directory, { recursive: true });
   const summaryPath = resolve(directory, "summary.md");
   const decisionsPath = resolve(directory, "decisions.json");

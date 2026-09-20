@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ForgeBridgeClient } from "../forge/forge-bridge-client.js";
 import { ForgeExternalMatchClient } from "../forge/forge-external-match-client.js";
-import { commanderFixtures } from "../forge/testing/commander-fixtures.js";
+import { commanderFixtures, thirdCommanderFixture } from "../forge/testing/commander-fixtures.js";
 import type { AgentChoice, AsphodelAgent } from "../agent/baseline-agent.js";
 import { BaselineAsphodelAgentV2b } from "../agent/improved-agent.js";
 import type { AgentMatchTransport } from "../agent/agent-runner.js";
@@ -36,7 +36,10 @@ export interface PlaytestSessionManagerDeps {
 }
 
 const HUMAN_PLAYER_ID = "player-1";
-const AGENT_PLAYER_ID = "player-2";
+/** Seat ids for however many Asphodel decks a match actually starts with, in player order — "player-2" for the first, "player-3" for an optional second (see StartPlaytestRequest.secondAsphodelDeck). Matches the bridge's own `playerId(index)` convention (ForgeGameRunner.java) exactly. */
+function agentPlayerIdsFor(agentDeckCount: number): string[] {
+  return Array.from({ length: agentDeckCount }, (_, i) => `player-${i + 2}`);
+}
 
 export type WebPlaytestStatus = "starting" | "running" | "waiting_for_human" | "completed" | "ended_by_human" | "failed";
 const TERMINAL_STATUSES: ReadonlySet<WebPlaytestStatus> = new Set(["completed", "ended_by_human", "failed"]);
@@ -61,6 +64,12 @@ export interface StartPlaytestRequest {
   seed?: number;
   /** Defaults to "digital" — omitting it never changes existing behavior. */
   playMode?: PlayMode;
+  /**
+   * A second Asphodel seat, for a 3-player Human + 2 Asphodel match — Digital mode only (the
+   * Physical Companion's card-identity flow is validated for exactly one human + one Asphodel seat
+   * and is rejected here, see `start()`). Omitted keeps today's exact 2-player match.
+   */
+  secondAsphodelDeck?: DeckInput;
 }
 
 export interface WebPendingDecisionDTO {
@@ -91,7 +100,8 @@ export interface WebPlaytestStateDTO {
   status: WebPlaytestStatus;
   playMode: PlayMode;
   humanDeckName: string;
-  asphodelDeckName: string;
+  /** One entry per Asphodel seat, in player order — one element for today's default 2-player match, two for a Human + 2 Asphodel match. */
+  asphodelDeckNames: string[];
   /** The HUMAN's own observation only — never Asphodel's. Null when it is not currently the human's turn. */
   observation: AgentObservation | null;
   pendingDecision: WebPendingDecisionDTO | null;
@@ -121,7 +131,7 @@ export interface WebPlaytestStateDTO {
   error: string | null;
 }
 
-export type PlaytestSessionErrorCode = "PLAYTEST_ALREADY_RUNNING" | "SESSION_NOT_FOUND" | "NOT_WAITING_FOR_HUMAN" | "REPORT_NOT_READY";
+export type PlaytestSessionErrorCode = "PLAYTEST_ALREADY_RUNNING" | "SESSION_NOT_FOUND" | "NOT_WAITING_FOR_HUMAN" | "REPORT_NOT_READY" | "UNSUPPORTED_PLAYTEST_CONFIGURATION";
 
 export class PlaytestSessionError extends Error {
   constructor(
@@ -136,7 +146,10 @@ export class PlaytestSessionError extends Error {
 interface Session {
   id: string;
   humanDeckName: string;
-  agentDeckName: string;
+  /** One entry per Asphodel seat, in player order (see WebPlaytestStateDTO.asphodelDeckNames). */
+  agentDeckNames: string[];
+  /** One entry per Asphodel seat, matching `agentDeckNames` — see `agentPlayerIdsFor`. */
+  agentPlayerIds: string[];
   seed: number;
   playMode: PlayMode;
   startedAt: Date;
@@ -219,19 +232,27 @@ export class PlaytestSessionManager {
       throw new PlaytestSessionError("PLAYTEST_ALREADY_RUNNING", "A playtest is already running. End it before starting another.");
     }
 
+    const playMode: PlayMode = request.playMode ?? "digital";
+    if (request.secondAsphodelDeck && playMode === "physical") {
+      throw new PlaytestSessionError("UNSUPPORTED_PLAYTEST_CONFIGURATION",
+        "A second Asphodel opponent is only supported in Digital mode, not Physical Companion.");
+    }
+
     const [defaultHumanDeck, defaultAgentDeck] = commanderFixtures();
-    const [humanDeck, agentDeck] = await Promise.all([
+    const [humanDeck, agentDeck, secondAgentDeck] = await Promise.all([
       resolveDeckInput(request.humanDeck, defaultHumanDeck),
       resolveDeckInput(request.asphodelDeck, defaultAgentDeck),
+      request.secondAsphodelDeck ? resolveDeckInput(request.secondAsphodelDeck, thirdCommanderFixture()) : Promise.resolve(null),
     ]);
+    const agentDecks = secondAgentDeck ? [agentDeck, secondAgentDeck] : [agentDeck];
 
     const bridge = this.createBridge();
     await bridge.start();
     const client = this.createClient(bridge);
 
-    const playMode: PlayMode = request.playMode ?? "digital";
     const session: Session = {
-      id: randomUUID(), humanDeckName: humanDeck.name, agentDeckName: agentDeck.name,
+      id: randomUUID(), humanDeckName: humanDeck.name, agentDeckNames: agentDecks.map(deck => deck.name),
+      agentPlayerIds: agentPlayerIdsFor(agentDecks.length),
       seed: request.seed ?? 42, playMode, startedAt: new Date(), bridge, client,
       provider: new WebHumanDecisionProvider(),
       // V2g: only the physical seat ever gets a provider/ledger; digital mode leaves both null and
@@ -250,17 +271,17 @@ export class PlaytestSessionManager {
       runPromise: Promise.resolve(),
     };
     this.session = session;
-    session.runPromise = this.runMatch(session, [humanDeck, agentDeck]);
+    session.runPromise = this.runMatch(session, [humanDeck, ...agentDecks]);
     return { sessionId: session.id, status: this.statusOf(session) };
   }
 
-  private async runMatch(session: Session, decks: [ForgeDeckSpec, ForgeDeckSpec]): Promise<void> {
+  private async runMatch(session: Session, decks: ForgeDeckSpec[]): Promise<void> {
     session.phase = "in_progress";
     try {
       const agent = this.createAgent();
       const run = await runHumanVsAgentMatch(
         session.client, session.provider, agent, decks,
-        HUMAN_PLAYER_ID, AGENT_PLAYER_ID,
+        HUMAN_PLAYER_ID,
         {
           seed: session.seed,
           endRequested: session.provider.endRequested,
@@ -340,8 +361,8 @@ export class PlaytestSessionManager {
       // reliable external guarantee that the report already exists — never a race to poll around.
       session.reportResult = await writePlaytestReport({
         startedAt: session.startedAt, sessionId: session.id, seed: session.seed,
-        humanDeckName: session.humanDeckName, agentDeckName: session.agentDeckName,
-        humanPlayerId: HUMAN_PLAYER_ID, agentPlayerId: AGENT_PLAYER_ID,
+        humanDeckName: session.humanDeckName, agentDeckNames: session.agentDeckNames,
+        humanPlayerId: HUMAN_PLAYER_ID, agentPlayerIds: session.agentPlayerIds,
         endedByHuman: run.endedByHuman, snapshot: run.snapshot, decisions: session.recorder.all(),
         playMode: session.playMode, physicalDeclarations: session.physicalDeclarations,
         commanderCastSnapshots: session.commanderCastSnapshots,
@@ -395,7 +416,7 @@ export class PlaytestSessionManager {
       : (session.lastObservation ?? null);
     return {
       sessionId: session.id, status: this.statusOf(session), playMode: session.playMode,
-      humanDeckName: session.humanDeckName, asphodelDeckName: session.agentDeckName,
+      humanDeckName: session.humanDeckName, asphodelDeckNames: session.agentDeckNames,
       observation: physicalPending ? physicalObservation : (pending?.observation ?? null),
       pendingDecision: physicalPending ? {
         decisionId: physicalPending.request.decisionId, type: "physical_identity_declare", context: physicalPending.request.context,

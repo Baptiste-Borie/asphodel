@@ -59,12 +59,12 @@ it("generates summary.md and decisions.json with sequential reportIds, reasons, 
     }
     const result = await writePlaytestReport({
       startedAt: new Date("2026-09-05T22:30:00.000Z"), sessionId: "match-1", seed: 42,
-      humanDeckName: "Uurg, Spawn of Turg", agentDeckName: "Krenko, Tin Street Kingpin",
-      humanPlayerId: "player-1", agentPlayerId: "player-2",
+      humanDeckName: "Uurg, Spawn of Turg", agentDeckNames: ["Krenko, Tin Street Kingpin"],
+      humanPlayerId: "player-1", agentPlayerIds: ["player-2"],
       endedByHuman: true, snapshot: snapshot(), decisions: recorder.all(), reportsRoot,
     });
 
-    assert.equal(result.directory, join(reportsRoot, reportDirectoryName(new Date("2026-09-05T22:30:00.000Z"), "Uurg, Spawn of Turg", "Krenko, Tin Street Kingpin")));
+    assert.equal(result.directory, join(reportsRoot, reportDirectoryName(new Date("2026-09-05T22:30:00.000Z"), "Uurg, Spawn of Turg", ["Krenko, Tin Street Kingpin"])));
     const summary = await readFile(result.summaryPath, "utf8");
     const decisionsJson = JSON.parse(await readFile(result.decisionsPath, "utf8"));
 
@@ -109,8 +109,8 @@ it("reports a natural completion with a winner, turn count and terminal reason",
     };
     const result = await writePlaytestReport({
       startedAt: new Date("2026-09-05T22:30:00.000Z"), sessionId: "match-2", seed: 7,
-      humanDeckName: "Human Deck", agentDeckName: "Asphodel Deck",
-      humanPlayerId: "player-1", agentPlayerId: "player-2",
+      humanDeckName: "Human Deck", agentDeckNames: ["Asphodel Deck"],
+      humanPlayerId: "player-1", agentPlayerIds: ["player-2"],
       endedByHuman: false, snapshot: completed, decisions: recorder.all(), reportsRoot,
     });
     const summary = await readFile(result.summaryPath, "utf8");
@@ -127,8 +127,8 @@ it("V2g: a digital-mode report (playMode omitted) defaults to 'digital' in both 
     const recorder = new DecisionRecorder();
     const result = await writePlaytestReport({
       startedAt: new Date("2026-09-05T22:30:00.000Z"), sessionId: "match-digital", seed: 1,
-      humanDeckName: "Human Deck", agentDeckName: "Asphodel Deck",
-      humanPlayerId: "player-1", agentPlayerId: "player-2",
+      humanDeckName: "Human Deck", agentDeckNames: ["Asphodel Deck"],
+      humanPlayerId: "player-1", agentPlayerIds: ["player-2"],
       endedByHuman: true, snapshot: snapshot(), decisions: recorder.all(), reportsRoot,
     });
     const summary = await readFile(result.summaryPath, "utf8");
@@ -155,8 +155,8 @@ it("V2h.2 'K'RRIK FORENSICS': non-empty commanderCastSnapshots render a '## Comm
     ];
     const result = await writePlaytestReport({
       startedAt: new Date("2026-09-05T22:30:00.000Z"), sessionId: "match-krrik", seed: 3,
-      humanDeckName: "Human Deck", agentDeckName: "Asphodel Deck",
-      humanPlayerId: "player-1", agentPlayerId: "player-2",
+      humanDeckName: "Human Deck", agentDeckNames: ["Asphodel Deck"],
+      humanPlayerId: "player-1", agentPlayerIds: ["player-2"],
       endedByHuman: true, snapshot: snapshot(), decisions: recorder.all(), reportsRoot,
       commanderCastSnapshots,
     });
@@ -178,8 +178,8 @@ it("V2g: playMode 'physical' with non-empty physicalDeclarations renders a 'Play
     ];
     const result = await writePlaytestReport({
       startedAt: new Date("2026-09-05T22:30:00.000Z"), sessionId: "match-physical", seed: 2,
-      humanDeckName: "Human Deck", agentDeckName: "Asphodel Deck",
-      humanPlayerId: "player-1", agentPlayerId: "player-2",
+      humanDeckName: "Human Deck", agentDeckNames: ["Asphodel Deck"],
+      humanPlayerId: "player-1", agentPlayerIds: ["player-2"],
       endedByHuman: true, snapshot: snapshot(), decisions: recorder.all(), reportsRoot,
       playMode: "physical", physicalDeclarations,
     });
@@ -197,7 +197,7 @@ it("V2g: playMode 'physical' with non-empty physicalDeclarations renders a 'Play
 });
 
 it("report directory names are chronologically sortable, filesystem-safe, and identify the decks", () => {
-  const name = reportDirectoryName(new Date("2026-09-05T22:30:00.000Z"), "Uurg, Spawn of Turg", "Krenko, Tin Street Kingpin!");
+  const name = reportDirectoryName(new Date("2026-09-05T22:30:00.000Z"), "Uurg, Spawn of Turg", ["Krenko, Tin Street Kingpin!"]);
   assert.match(name, /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_uurg-spawn-of-turg-vs-krenko-tin-street-kingpin$/);
   assert.ok(!/[^a-z0-9_-]/i.test(name), "must be filesystem-safe");
 });

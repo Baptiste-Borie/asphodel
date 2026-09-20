@@ -390,7 +390,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       if ("sessionId" in result && !TERMINAL_STATUSES.has(result.status)) {
         sessionId = result.sessionId;
         currentPlayMode = result.playMode;
-        buildGameScreen(result.humanDeckName, result.asphodelDeckName);
+        buildGameScreen(result.humanDeckName, result.asphodelDeckNames, result.asphodelDeckNames.length);
         showGameScreen();
         frameQueue = new FramePlaybackQueue();
         frameQueue.acknowledge(result.frames);
@@ -424,11 +424,32 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     columns.className = "playtest-setup-columns";
     const humanPicker = createDeckPicker("YOU");
     const agentPicker = createDeckPicker("ASPHODEL");
-    columns.append(humanPicker.element, agentPicker.element);
+    const secondAgentPicker = createDeckPicker("ASPHODEL 2");
+    secondAgentPicker.element.hidden = true;
+    columns.append(humanPicker.element, agentPicker.element, secondAgentPicker.element);
     setupSection.append(columns);
 
     const playModePicker = createPlayModePicker();
     setupSection.append(playModePicker.element);
+
+    // A second Asphodel opponent is Digital-only: hidden whenever Physical is selected, and its
+    // own toggle is force-cleared then too, so switching to Physical never silently keeps a
+    // 3-player request the backend would reject.
+    const secondAgentRow = document.createElement("label");
+    secondAgentRow.className = "playtest-setup-second-agent";
+    const secondAgentToggle = document.createElement("input");
+    secondAgentToggle.type = "checkbox";
+    secondAgentRow.append(secondAgentToggle, document.createTextNode(" Add a second Asphodel opponent (3-player match)"));
+    setupSection.append(secondAgentRow);
+    const refreshSecondAgentVisibility = () => {
+      const digital = playModePicker.getValue() === "digital";
+      secondAgentRow.hidden = !digital;
+      if (!digital) secondAgentToggle.checked = false;
+      secondAgentPicker.element.hidden = !(digital && secondAgentToggle.checked);
+    };
+    secondAgentToggle.addEventListener("change", refreshSecondAgentVisibility);
+    playModePicker.element.addEventListener("change", refreshSecondAgentVisibility);
+    refreshSecondAgentVisibility();
 
     const seedRow = document.createElement("div");
     seedRow.className = "playtest-setup-seed";
@@ -459,6 +480,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
         asphodelDeck: agentPicker.getValue(),
         playMode: playModePicker.getValue(),
         ...(Number.isSafeInteger(seed) ? { seed } : {}),
+        ...(secondAgentToggle.checked ? { secondAsphodelDeck: secondAgentPicker.getValue() } : {}),
       };
       void startGame(request, startButton, feedback);
     });
@@ -468,6 +490,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       .then((result) => {
         humanPicker.setOptions(result.decks);
         agentPicker.setOptions(result.decks);
+        secondAgentPicker.setOptions(result.decks);
       })
       .catch(() => { /* Deck Library is optional here — fixtures/Archidekt still work without it. */ });
   }
@@ -480,7 +503,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       const started = await startPlaytest(request);
       sessionId = started.sessionId;
       currentPlayMode = request.playMode ?? "digital";
-      buildGameScreen(null, null);
+      buildGameScreen(null, null, request.secondAsphodelDeck ? 2 : 1);
       showGameScreen();
       pollTimer = setInterval(() => void poll(), POLL_INTERVAL_MS);
       await poll();
@@ -494,8 +517,15 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     }
   }
 
-  /** The battlefield fills the screen; header/nav/import chrome is hidden via the "tabletop-active" body class (see styles/tabletop.css). */
-  function buildGameScreen(humanDeckName: string | null, asphodelDeckName: string | null): void {
+  /**
+   * The battlefield fills the screen; header/nav/import chrome is hidden via the "tabletop-active"
+   * body class (see styles/tabletop.css). `asphodelDeckNames` is null before the first poll knows
+   * them (a fresh start — see `startGame`'s call site); `fallbackOpponentCount` is how many
+   * Asphodel viewports to create meanwhile (known from the actual start request, never guessed) —
+   * ignored once `asphodelDeckNames` is known.
+   */
+  function buildGameScreen(humanDeckName: string | null, asphodelDeckNames: string[] | null, fallbackOpponentCount = 1): void {
+    const opponentCount = asphodelDeckNames ? asphodelDeckNames.length : fallbackOpponentCount;
     transitions.reset();
     physicalScene = currentPlayMode === "physical" ? createPhysicalScene(zoneInspector.open) : null;
     // Voice Intent Resolver (V0): Physical Companion only — Digital never mounts this at all (spec
@@ -537,9 +567,13 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     // (see digital-board-slot.ts) instead of a hardcoded asphodel/human pair of element variables.
     // Which observed player fills which viewport is decided by digital-layout.ts's
     // `digitalPlayerOrder` — the one seam a future N-player Digital layout would actually grow;
-    // paintBoard below only ever renders "the player for viewport i", generically.
+    // paintBoard below only ever renders "the player for viewport i", generically. Grown for
+    // Human + 2 Asphodel: one "asphodel"-styled viewport per Asphodel seat (today identical
+    // placeholder art/layout for each — see digital-board-slot.ts's own doc comment on
+    // `PLAYMAT_BY_POSITION`), the human's own viewport always last, matching `digitalPlayerOrder`'s
+    // exact ordering so slot i always paints `digitalPlayerOrder(observation)[i]`.
     digitalBoardSlots = [
-      createDigitalBoardSlot("asphodel", emphasisClass(seatPresentations.opponent.emphasis)),
+      ...Array.from({ length: opponentCount }, () => createDigitalBoardSlot("asphodel", emphasisClass(seatPresentations.opponent.emphasis))),
       createDigitalBoardSlot("human", emphasisClass(seatPresentations.human.emphasis)),
     ];
     battlefield.append(...digitalBoardSlots.map((slot) => slot.half));
@@ -614,8 +648,8 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     stackDrawer.append(closeStack, stackEl); gameSection.append(stackControl, stackDrawer);
     // Pre-observation placeholder labels only — once real data arrives, paintBoard's per-slot
     // `renderLifeWithDelta` call takes over with `digitalSeatLabel` (see digital-board-slot.ts).
-    renderLife(digitalBoardSlots[0].life, "ASPHODEL", undefined);
-    renderLife(digitalBoardSlots[1].life, "YOU", undefined);
+    for (let i = 0; i < opponentCount; i++) renderLife(digitalBoardSlots[i]!.life, opponentCount > 1 ? `ASPHODEL ${i + 1}` : "ASPHODEL", undefined);
+    renderLife(digitalBoardSlots[opponentCount]!.life, "YOU", undefined);
 
     const menuButton = document.createElement("button");
     menuButton.type = "button";
@@ -636,7 +670,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     menuButton.addEventListener("click", (event) => { event.stopPropagation(); menuPanel.hidden = !menuPanel.hidden; });
     document.addEventListener("click", () => { menuPanel.hidden = true; });
     menuPanel.addEventListener("click", (event) => event.stopPropagation());
-    if (humanDeckName && asphodelDeckName) setDeckInfo(humanDeckName, asphodelDeckName);
+    if (humanDeckName && asphodelDeckNames?.length) setDeckInfo(humanDeckName, asphodelDeckNames);
 
     decisionDock = document.createElement("div");
     decisionDock.className = "table-decision-dock";
@@ -647,8 +681,8 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     gameSection.append(rail, hud, tableViewButton, phaseBanner.element, cardReveal.element, menuButton, menuPanel, previewPanel.element, decisionDock, handActionMenu.element, manaOverlay.element, zoneInspector.element);
   }
 
-  function setDeckInfo(humanDeckName: string, asphodelDeckName: string): void {
-    menuDeckInfo.textContent = `${humanDeckName} vs ${asphodelDeckName}`;
+  function setDeckInfo(humanDeckName: string, asphodelDeckNames: string[]): void {
+    menuDeckInfo.textContent = `${humanDeckName} vs ${asphodelDeckNames.join(" & ")}`;
   }
 
   /**
@@ -1023,7 +1057,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       decisionGate.observe(state.pendingDecision?.decisionId ?? null);
       gameSection.dataset.connection = 'connected';
       currentPlayMode = state.playMode; // V2g: static for a session's lifetime, but always kept in sync with the backend's own DTO rather than trusted-once.
-      if (state.humanDeckName && state.asphodelDeckName) setDeckInfo(state.humanDeckName, state.asphodelDeckName);
+      if (state.humanDeckName && state.asphodelDeckNames.length) setDeckInfo(state.humanDeckName, state.asphodelDeckNames);
       frameQueue.enqueue(state.frames);
 
       const observationsInPlay = [state.observation, ...state.frames.map((f) => f.observation)]

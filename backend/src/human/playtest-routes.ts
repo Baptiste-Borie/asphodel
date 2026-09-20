@@ -17,6 +17,8 @@ interface StartPlaytestBody {
   seed?: number;
   /** V2g §1 — omitted defaults to "digital" in the manager. */
   playMode?: "digital" | "physical";
+  /** A second Asphodel seat, for a 3-player Human + 2 Asphodel Digital match — see StartPlaytestRequest. */
+  secondAsphodelDeck?: DeckInputBody;
 }
 interface SessionParams {
   sessionId: string;
@@ -41,6 +43,7 @@ const startPlaytestBodySchema = {
     asphodelDeck: deckInputSchema,
     seed: { type: "integer" },
     playMode: { enum: ["digital", "physical"] },
+    secondAsphodelDeck: deckInputSchema,
   },
 } as const;
 
@@ -71,6 +74,7 @@ const STATUS_BY_CODE: Record<string, number> = {
   INVALID_PAYLOAD: 400, INVALID_DECK_SIZE: 400, INVALID_COMMANDER_COUNT: 400,
   INVALID_FORGE_DECK: 400, UNSUPPORTED_COMMANDER_CONFIGURATION: 400,
   PLAYTEST_ALREADY_RUNNING: 409, SESSION_NOT_FOUND: 404, NOT_WAITING_FOR_HUMAN: 409, REPORT_NOT_READY: 409,
+  UNSUPPORTED_PLAYTEST_CONFIGURATION: 400,
   NO_PENDING_DECISION: 409, STALE_DECISION: 409,
   // V2g Physical Companion: ManualPhysicalCardProviderError codes (physical-card-provider.ts).
   NO_PENDING_REQUEST: 409, STALE_REQUEST: 409, DECLARED_COUNT_MISMATCH: 400, DECLARED_NAME_NOT_FOUND: 400,
@@ -98,6 +102,7 @@ export function registerPlaytestRoutes(app: FastifyInstance, manager: PlaytestSe
           asphodelDeck: toDeckInput(request.body.asphodelDeck),
           ...(request.body.seed === undefined ? {} : { seed: request.body.seed }),
           ...(request.body.playMode === undefined ? {} : { playMode: request.body.playMode }),
+          ...(request.body.secondAsphodelDeck === undefined ? {} : { secondAsphodelDeck: toDeckInput(request.body.secondAsphodelDeck) }),
         });
         return reply.code(201).send(result);
       } catch (error) {

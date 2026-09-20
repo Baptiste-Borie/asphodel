@@ -2,6 +2,7 @@ import type {
   AgentCardObservation,
   AgentObservation,
   AgentOpponentPlayerObservation,
+  AgentPlayerObservation,
   AgentSelfPlayerObservation,
 } from "../forge/forge-protocol.js";
 import type { PublicGameEvent } from "./playtest-session-manager.js";
@@ -30,37 +31,48 @@ export interface PublicGameFrame {
 }
 
 /**
- * Redacts an Asphodel-perspective `AgentObservation` (self = Asphodel, whose OWN hand is fully
- * visible to itself — genuinely secret information) into a human-safe one.
+ * Redacts an Asphodel-perspective `AgentObservation` (self = whichever Asphodel seat is currently
+ * deciding, whose OWN hand is fully visible to itself — genuinely secret information) into a
+ * human-safe one, for ANY number of players — one human seat plus one or more Asphodel seats.
  *
  * This never re-derives anything Forge did not already report: every public zone
- * (battlefield/graveyard/exile/command/commanders/life) is identical from either player's own
+ * (battlefield/graveyard/exile/command/commanders/life) is identical from any player's own
  * perspective — Forge already computed it once — so this function only ever relabels roles and
- * drops the one field that must never reach the browser (Asphodel's `hand`). The human's own hand
- * is not present in an agent-self observation at all (`AgentOpponentPlayerObservation` has no
- * `hand` field, structurally) so it is restored from `lastKnownHumanHand`, a copy that only ever
- * came from a real, already-isolated human-perspective observation (see
- * `PlaytestSessionManager`'s `lastHumanHand` cache) — never fabricated, never Asphodel's.
+ * drops the one field that must never reach the browser (the currently-deciding Asphodel seat's
+ * `hand` — every OTHER Asphodel seat already arrives as `role: "opponent"`, which structurally has
+ * no `hand` field, nothing to drop). The human's own hand is not present in an agent-self
+ * observation at all (`AgentOpponentPlayerObservation` has no `hand` field, structurally) so it is
+ * restored from `lastKnownHumanHand`, a copy that only ever came from a real, already-isolated
+ * human-perspective observation (see `PlaytestSessionManager`'s `lastHumanHand` cache) — never
+ * fabricated, never Asphodel's.
  */
 export function sanitizeAgentObservation(
   agentObservation: AgentObservation,
   humanPlayerId: string,
   lastKnownHumanHand: AgentCardObservation[],
 ): HumanSafePublicBoardObservation {
-  const agentSelf = agentObservation.players.find(p => p.playerId === agentObservation.selfPlayerId);
   const humanPublic = agentObservation.players.find(p => p.playerId === humanPlayerId);
-  if (!agentSelf || agentSelf.role !== "self" || !humanPublic) {
-    throw new Error("sanitize_agent_observation_missing_players");
-  }
-  // Drop Asphodel's own hand (and its "self" role) — every other field is a public zone.
-  const { hand: _agentHand, role: _agentRole, ...agentPublicFields } = agentSelf as AgentSelfPlayerObservation;
-  const sanitizedAgent: AgentOpponentPlayerObservation = { ...agentPublicFields, role: "opponent" };
-  const sanitizedHuman: AgentSelfPlayerObservation = { ...humanPublic, role: "self", hand: lastKnownHumanHand };
+  if (!humanPublic) throw new Error("sanitize_agent_observation_missing_players");
+  const players: AgentPlayerObservation[] = agentObservation.players.map((player): AgentPlayerObservation => {
+    if (player.playerId === humanPlayerId) {
+      const sanitizedHuman: AgentSelfPlayerObservation = { ...humanPublic, role: "self", hand: lastKnownHumanHand };
+      return sanitizedHuman;
+    }
+    if (player.role === "self") {
+      // The currently-deciding Asphodel seat — drop its hand (and "self" role); every other field
+      // is a public zone. Any OTHER Asphodel seat is already `role: "opponent"` and passes through
+      // unchanged below (structurally no hand to drop).
+      const { hand: _agentHand, role: _agentRole, ...agentPublicFields } = player as AgentSelfPlayerObservation;
+      const sanitizedAgent: AgentOpponentPlayerObservation = { ...agentPublicFields, role: "opponent" };
+      return sanitizedAgent;
+    }
+    return player;
+  });
   return {
     gameRef: agentObservation.gameRef,
     game: agentObservation.game,
     stack: agentObservation.stack,
     selfPlayerId: humanPlayerId,
-    players: [sanitizedHuman, sanitizedAgent],
+    players,
   };
 }

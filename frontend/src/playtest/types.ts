@@ -213,7 +213,8 @@ export interface WebPlaytestStateDTO {
   sessionId: string;
   status: WebPlaytestStatus;
   humanDeckName: string;
-  asphodelDeckName: string;
+  /** One entry per Asphodel seat, in player order — one element for today's default 2-player match, two for a Human + 2 Asphodel match. */
+  asphodelDeckNames: string[];
   observation: AgentObservation | null;
   pendingDecision: WebPendingDecisionDTO | null;
   /**
@@ -245,6 +246,8 @@ export interface StartPlaytestRequest {
   seed?: number;
   /** V2g: "digital" (default, today's Obsidian Table) or "physical" (Physical Companion — the human plays a real deck). Omitted is treated as "digital" by the backend. */
   playMode?: "digital" | "physical";
+  /** A second Asphodel seat, for a 3-player Human + 2 Asphodel Digital match. Digital mode only. */
+  secondAsphodelDeck?: DeckInput;
 }
 
 export interface PlaytestReportDTO {

@@ -55,7 +55,6 @@ try {
     agent,
     decks,
     HUMAN_PLAYER_ID,
-    AGENT_PLAYER_ID,
     {
       seed: Number(values.seed),
       signal: abort.signal,
@@ -70,8 +69,8 @@ try {
 
   const report = await writePlaytestReport({
     startedAt, sessionId: run.sessionId, seed: Number(values.seed),
-    humanDeckName: decks[0].name, agentDeckName: decks[1].name,
-    humanPlayerId: HUMAN_PLAYER_ID, agentPlayerId: AGENT_PLAYER_ID,
+    humanDeckName: decks[0].name, agentDeckNames: [decks[1].name],
+    humanPlayerId: HUMAN_PLAYER_ID, agentPlayerIds: [AGENT_PLAYER_ID],
     endedByHuman: run.endedByHuman, snapshot: run.snapshot, decisions: recorder.all(),
   });
 

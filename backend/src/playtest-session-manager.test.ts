@@ -164,6 +164,66 @@ it("starts a playtest, exposes the human observation while waiting, accepts a su
   });
 });
 
+/** A 3-player observation (player-1 human, player-2/player-3 Asphodel) from `selfId`'s own perspective. */
+function threeWayObservation(selfId: "player-1" | "player-2" | "player-3", turn = 1): AgentObservation {
+  const context = { turn, phase: "main1", activePlayerId: selfId, priorityPlayerId: selfId };
+  const bySeat: Record<"player-1" | "player-2" | "player-3", AgentSelfPlayerObservation> = {
+    "player-1": { role: "self", playerId: "player-1", name: "player-1", life: 40, startingLife: 40, handSize: 1, librarySize: 50, graveyardSize: 0, exileSize: 0, commandZoneSize: 0, battlefieldSize: 0, externalController: true, hand: [humanCard()], battlefield: [], graveyard: [], exile: [], command: [], commanders: [] },
+    "player-2": { role: "self", playerId: "player-2", name: "player-2", life: 40, startingLife: 40, handSize: 1, librarySize: 50, graveyardSize: 0, exileSize: 0, commandZoneSize: 0, battlefieldSize: 0, externalController: true, hand: [agentCard()], battlefield: [], graveyard: [], exile: [], command: [], commanders: [] },
+    "player-3": { role: "self", playerId: "player-3", name: "player-3", life: 40, startingLife: 40, handSize: 0, librarySize: 50, graveyardSize: 0, exileSize: 0, commandZoneSize: 0, battlefieldSize: 0, externalController: true, hand: [], battlefield: [], graveyard: [], exile: [], command: [], commanders: [] },
+  };
+  const asPublic = (seat: AgentSelfPlayerObservation) => { const { hand: _hand, ...rest } = seat; return { ...rest, role: "opponent" as const }; };
+  const players = (["player-1", "player-2", "player-3"] as const).map(id => id === selfId ? bySeat[id] : asPublic(bySeat[id]));
+  return { selfPlayerId: selfId, gameRef: "g", game: context, stack: [], players };
+}
+
+it("Human + 2 Asphodel AIs: routes the second Asphodel seat's decisions as 'agent' too, and reports both decks", async () => {
+  await withTempReports(async reportsRoot => {
+    const { client } = scriptedTransport([
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: threeWayObservation("player-1"), pendingDecision: priorityDecision("player-1", "d-1") }),
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: threeWayObservation("player-2"), pendingDecision: priorityDecision("player-2", "d-2") }),
+      () => ({ sessionId: "s", status: "waiting_for_decision", progress, forgeAiStrategicFallbacks: [], observation: threeWayObservation("player-3"), pendingDecision: priorityDecision("player-3", "d-3") }),
+      () => ({
+        sessionId: "s", status: "completed", progress, forgeAiStrategicFallbacks: [],
+        publicTelemetry: {
+          "player-1": { attacks: 0, damageToPlayers: 0, damageToCards: 0, spellsCast: 0 },
+          "player-2": { attacks: 0, damageToPlayers: 0, damageToCards: 0, spellsCast: 1 },
+          "player-3": { attacks: 0, damageToPlayers: 0, damageToCards: 0, spellsCast: 0 },
+        },
+        result: { gameId: "g", format: "commander", seed: 42, players: [], winnerId: "player-2", turns: 3, gameOver: true, draw: false, terminalReason: "AllOpponentsLost", commanderRulesActive: true },
+      }),
+    ]);
+    const manager = new PlaytestSessionManager({ createBridge: fakeBridge, createClient: () => client, createAgent: () => new FakeAgent(), reportsRoot });
+    const started = await manager.start({
+      humanDeck: { type: "fixture" }, asphodelDeck: { type: "fixture" }, secondAsphodelDeck: { type: "fixture" }, seed: 42,
+    });
+
+    let state = manager.getState(started.sessionId);
+    for (let i = 0; i < 50 && state.pendingDecision === null; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      state = manager.getState(started.sessionId);
+    }
+    assert.equal(state.asphodelDeckNames.length, 2, "two Asphodel seats were requested");
+    manager.submitChoice(started.sessionId, { decisionId: "d-1", kind: "action", choice: "pass", reason: "human_choice" });
+
+    for (let i = 0; i < 200 && manager.getState(started.sessionId).status !== "completed"; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    const final = manager.getState(started.sessionId);
+    assert.equal(final.status, "completed", "the third seat's decision must not throw human_vs_agent_unknown_decision_owner");
+    // Both Asphodel seats' decisions (d-2, d-3) were recorded, on top of the human's own d-1.
+    assert.equal(final.asphodelDecisionCount, 2);
+
+    const report = manager.getReport(started.sessionId);
+    const decisionsJson = JSON.parse(await readFile(report.decisionsPath, "utf8"));
+    assert.deepEqual(decisionsJson.match.asphodelDecks, state.asphodelDeckNames);
+    const summary = await readFile(report.summaryPath, "utf8");
+    assert.match(summary, /Asphodel deck 1:/);
+    assert.match(summary, /Asphodel deck 2:/);
+    assert.match(summary, /Winner: Asphodel 1 /);
+  });
+});
+
 it("ends a playtest voluntarily: cancels once, preserves recorded decisions, writes a report, never an error", async () => {
   await withTempReports(async reportsRoot => {
     const { client, cancelCount } = scriptedTransport([
