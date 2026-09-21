@@ -44,7 +44,7 @@ body:has(#deck-lab-view:not([hidden])) .app-header { background: #0f0f11; backdr
 #deck-lab-view .lab-add[aria-pressed=true] { color:#b6b6ba; background:#222227; border-color:#42434b; }
 .lab-end { border-top:1px solid var(--lab-border); margin-top:30px!important; padding:24px 0; text-align:center; color:#a8a8ad; }
 .lab-end span { display:block; margin-top:8px; font-size:11px; color:var(--lab-muted); }
-.lab-full-card { display:grid; grid-template-columns:215px minmax(300px,1fr) 240px; gap:32px; padding:24px 0; border-top:1px solid var(--lab-border); }
+.lab-full-card { display:grid; grid-template-columns:min(42vw,510px) minmax(260px,1fr) 220px; column-gap:36px; padding:48px 0; border-top:1px solid var(--lab-border); min-height:75vh; align-items:start; }
 .lab-full-card:first-child { padding-top:0; border-top:0; }
 .lab-oracle { padding:9px 0; max-width:780px; }
 .lab-card-title { display:flex; justify-content:space-between; gap:15px; align-items:center; }
@@ -124,7 +124,7 @@ body:has(#deck-lab-view:not([hidden])) .app-header { background: #0f0f11; backdr
 .lab-inspect>button { position:absolute; right:16px; top:16px; }
 .lab-toast { position:fixed; z-index:30; bottom:24px; left:50%; transform:translateX(-50%); background:#2f3037; border:1px solid #6c6c73; padding:13px 22px; box-shadow:0 5px 25px #0008; }
 @media(min-width:1700px) { .lab-images { grid-template-columns:repeat(8,1fr); } }
-@media(max-width:1000px) { .lab-full-card { grid-template-columns:170px 1fr; gap:22px; } .lab-full-card aside { grid-column:2; } .lab-deck-heading { align-items:start; gap:20px; } .lab-deck-heading>div:last-child { flex-wrap:wrap; } .lab-workbar>p { display:none; } .lab-filters { grid-template-columns:repeat(3,1fr); } .lab-stats { gap:35px; } }
+@media(max-width:1000px) { .lab-full-card { grid-template-columns:1fr; gap:22px; min-height:0; } .lab-full-card aside { grid-column:1; border-left:0; padding-left:0; border-top:1px solid #27282d; padding-top:16px; } .lab-deck-heading { align-items:start; gap:20px; } .lab-deck-heading>div:last-child { flex-wrap:wrap; } .lab-workbar>p { display:none; } .lab-filters { grid-template-columns:repeat(3,1fr); } .lab-stats { gap:35px; } }
 .lab-workbar { position:sticky; top:72px; z-index:5; background:#0f0f11; padding-top:8px; }
 body:has(#deck-lab-view:not([hidden])) .brand-mark { border-color:#515257; background:#202125; color:#b3b4b9; }
 body:has(#deck-lab-view:not([hidden])) .header-actions .primary-button { background:#2e2e34; border-color:#42434d; color:#c9cacd; }

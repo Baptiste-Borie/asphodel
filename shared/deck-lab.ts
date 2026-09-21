@@ -16,6 +16,7 @@ export interface LabCard {
   image: string;
   related: string[];
   commander_legal?: string;
+  printings?: number;
 }
 export interface LabSearchQuery {
   query?: string;

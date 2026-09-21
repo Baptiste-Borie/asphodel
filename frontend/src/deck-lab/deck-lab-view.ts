@@ -11,10 +11,28 @@ const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt
 const mana = (s: string | null) => (s ?? '').replace(/\{([^}]+)\}/g, (_, x: string) => `<span class="lab-mana" data-color="${esc(x)}">${esc(x)}</span>`);
 const image = (c: Card) => c.image ? `<img src="${esc(c.image)}" alt="${esc(c.name)}" loading="lazy" width="488" height="680" />` : `<div class="lab-no-image">${esc(c.name)}<span>Image unavailable</span></div>`;
 
-/** Complete local catalog search; deck sheets and Selection remain session-only. */
+const SELECTION_STORAGE_KEY = 'asphodel.deck-lab.selection.v1';
+function loadStoredSelection(): { names: string[]; cards: Card[] } {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SELECTION_STORAGE_KEY) ?? '');
+    if (Array.isArray(parsed?.names) && Array.isArray(parsed?.cards)) return parsed;
+  } catch { /* no stored selection yet, or it's unreadable */ }
+  return { names: [], cards: [] };
+}
+
+/** Complete local catalog search; deck sheets remain session-only, Selection persists locally (see selection-storage). */
 export function initDeckLabView(root: HTMLElement) {
   const selection = new Set<string>();
   const knownCards = new Map<string, Card>(sampleCards.map(c => [c.name, c]));
+  const stored = loadStoredSelection();
+  for (const card of stored.cards) knownCards.set(card.name, card);
+  for (const name of stored.names) selection.add(name);
+  function persistSelection() {
+    try {
+      const cards = [...knownCards.values()].filter(c => selection.has(c.name));
+      localStorage.setItem(SELECTION_STORAGE_KEY, JSON.stringify({ names: [...selection], cards }));
+    } catch { /* storage unavailable (private mode, quota…): selection just stays session-only */ }
+  }
   let resultCards: Card[] = [];
   let nextOffset: number | null = null;
   let total = 0;
@@ -41,7 +59,7 @@ export function initDeckLabView(root: HTMLElement) {
     return { name: 'Growing wild · sample', cuts: [], groups: sections.map(([name, start, end]) => ({ name, entries: sampleCards.slice(start, end).map(card => ({ card, quantity: card.name === 'Forest' ? 40 : 1 })) })) };
   };
   root.innerHTML = `
-    <div class="lab-heading"><div><p class="lab-eyebrow">ASPHODEL / DECK LAB</p><h1>A place to think in cards.</h1></div><span class="lab-prototype">Local catalog · sheets kept for this session</span></div>
+    <div class="lab-heading"><div><p class="lab-eyebrow">ASPHODEL / DECK LAB</p><h1>A place to think in cards.</h1></div><span class="lab-prototype">Local catalog · Selection saved on this device · sheets kept for this session</span></div>
     <div class="lab-workbar"><div class="lab-tabs"><button data-view="search" aria-pressed="true">Search</button><button data-view="builder" aria-pressed="false">Builder</button></div><p>Discover. Collect. Make it yours.</p><button class="lab-selection" data-action="selection">Selection <span data-count>0</span> ↗</button></div>
     <section class="lab-search">
       <form class="lab-query"><span aria-hidden="true">⌕</span><input aria-label="Search card name or Oracle text" placeholder="Search card name or Oracle text…" /><button type="submit" class="lab-primary">Search</button><button type="button" data-action="filters" aria-expanded="false">Filters <span>⌄</span></button><button type="button" data-action="advanced" aria-expanded="false">Advanced</button></form>
@@ -117,7 +135,7 @@ export function initDeckLabView(root: HTMLElement) {
   function renderLoaded(appendFrom?: number) {
     const matches = appendFrom === undefined ? resultCards : resultCards.slice(appendFrom);
     get('.lab-results').className = `lab-results lab-${mode}`;
-    const html = matches.map(c => mode === 'images' ? `<article class="lab-tile">${image(c)}${selectedButton(c)}</article>` : `<article class="lab-full-card"><div>${image(c)}</div><div class="lab-oracle"><div class="lab-card-title"><h2>${esc(c.name)}</h2><span>${mana(c.mana_cost)}</span></div><p class="lab-type">${esc(c.type_line)}</p><div class="lab-rules">${esc(c.oracle_text ?? '').split('\n').map(p => `<p>${p}</p>`).join('')}</div>${c.power ? `<strong class="lab-pt">${c.power} / ${c.toughness}</strong>` : c.loyalty ? `<strong>Loyalty ${c.loyalty}</strong>` : ''}</div><aside><p class="lab-eyebrow">PRINTING</p><strong>${esc(c.set_name)}</strong><p>${c.set.toUpperCase()} · #${c.collector_number} · ${c.rarity}</p><p>${esc(c.lang.toUpperCase())}</p><span class="lab-legal">Commander · ${esc((c.commander_legal ?? 'legal').replaceAll('_',' '))}</span><details><summary>Related cards · ${c.related.length}</summary>${c.related.length ? c.related.map(esc).join('<br>') : 'No related cards listed.'}</details><details><summary>Other printings</summary>Choose “All printings” above to browse alternate versions. Use the card-name filter to narrow the results.</details>${selectedButton(c)}</aside></article>`).join('');
+    const html = matches.map(c => mode === 'images' ? `<article class="lab-tile">${image(c)}${selectedButton(c)}</article>` : `<article class="lab-full-card"><div>${image(c)}</div><div class="lab-oracle"><div class="lab-card-title"><h2>${esc(c.name)}</h2><span>${mana(c.mana_cost)}</span></div><p class="lab-type">${esc(c.type_line)}</p><div class="lab-rules">${esc(c.oracle_text ?? '').split('\n').map(p => `<p>${p}</p>`).join('')}</div>${c.power ? `<strong class="lab-pt">${c.power} / ${c.toughness}</strong>` : c.loyalty ? `<strong>Loyalty ${c.loyalty}</strong>` : ''}</div><aside><p class="lab-eyebrow">PRINTING</p><strong>${esc(c.set_name)}</strong><p>${c.set.toUpperCase()} · #${c.collector_number} · ${c.rarity}</p><p>${esc(c.lang.toUpperCase())}</p><span class="lab-legal">Commander · ${esc((c.commander_legal ?? 'legal').replaceAll('_',' '))}</span><details><summary>Related cards · ${c.related.length}</summary>${c.related.length ? c.related.map(esc).join('<br>') : 'No related cards listed.'}</details><details><summary>Other printings${c.printings !== undefined ? ` · ${Math.max(c.printings - 1, 0)}` : ''}</summary>${c.printings !== undefined && c.printings > 1 ? `This card has ${c.printings - 1} other printing${c.printings - 1 > 1 ? 's' : ''} in the local snapshot. Choose “All printings” above and search by name to browse them.` : 'No other printings in the local snapshot.'}</details>${selectedButton(c)}</aside></article>`).join('');
     if (appendFrom === undefined) get('.lab-results').innerHTML = html;
     else get('.lab-results').insertAdjacentHTML('beforeend',html);
     get<HTMLButtonElement>('[data-action=load-more]').hidden = nextOffset === null;
@@ -163,8 +181,9 @@ export function initDeckLabView(root: HTMLElement) {
         if (chosen) knownCards.set(chosen.name, chosen);
       }
       counts();
+      persistSelection();
     }
-    if (b.dataset.remove) { selection.delete(b.dataset.remove); renderPool(); }
+    if (b.dataset.remove) { selection.delete(b.dataset.remove); renderPool(); persistSelection(); }
     if (b.dataset.inspect) { const c = knownCards.get(b.dataset.inspect)!; get('.lab-inspect div').innerHTML = image(c); inspect.showModal(); }
     if (b.dataset.reorder && active) { const i = Number(b.dataset.reorder); [active.groups[i-1],active.groups[i]] = [active.groups[i]!,active.groups[i-1]!]; renderBuilder(); }
     if (b.dataset.restore && active) { const c = active.cuts.splice(Number(b.dataset.restore),1)[0]!; active.groups[0]!.entries.push({card:c,quantity:1}); renderBuilder(); }

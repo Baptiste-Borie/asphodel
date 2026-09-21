@@ -99,8 +99,8 @@ export class DeckLabSearch {
     // because an unrelated printing happened to be the oracle's representative.
     const from = query.unique === 'prints' ? `SELECT id FROM cards WHERE ${filter.sql}` : `SELECT MIN(id) AS id FROM cards WHERE ${filter.sql} GROUP BY oracle_id`;
     const total = (db.prepare(`SELECT COUNT(*) AS count FROM (${from})`).get(...filter.values) as {count:number}).count;
-    const rows = db.prepare(`SELECT payload FROM cards WHERE id IN (${from}) ORDER BY name_search, id LIMIT ? OFFSET ?`).all(...filter.values,limit,offset) as {payload:string}[];
-    return {cards:rows.map(r=>JSON.parse(r.payload) as LabCard),total,nextOffset:offset+rows.length<total ? offset+rows.length : null,catalogPrintings:this.catalog!.printings,snapshotDate:this.catalog!.snapshotDate};
+    const rows = db.prepare(`SELECT payload, (SELECT COUNT(*) FROM cards same WHERE same.oracle_id = cards.oracle_id) AS printings FROM cards WHERE id IN (${from}) ORDER BY name_search, id LIMIT ? OFFSET ?`).all(...filter.values,limit,offset) as {payload:string; printings:number}[];
+    return {cards:rows.map(r=>({...JSON.parse(r.payload) as LabCard, printings:r.printings})),total,nextOffset:offset+rows.length<total ? offset+rows.length : null,catalogPrintings:this.catalog!.printings,snapshotDate:this.catalog!.snapshotDate};
   }
   async close() { try { await this.loading; } finally { this.database?.close(); this.database=undefined; this.loading=undefined; } }
 }
