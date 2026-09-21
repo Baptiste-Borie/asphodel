@@ -1,6 +1,6 @@
 import sampleCards from './cards.json';
 import { apiRequest } from '../api/api-client';
-import type { LabCard, LabCatalog, LabSearchQuery, LabSearchResult } from '../../../shared/deck-lab';
+import type { LabCard, LabCatalog, LabFace, LabSearchQuery, LabSearchResult } from '../../../shared/deck-lab';
 import { initFilterCombobox } from './filter-combobox';
 import './deck-lab.css';
 
@@ -9,7 +9,15 @@ type Group = { name: string; entries: { card: Card; quantity: number }[] };
 type Sheet = { name: string; groups: Group[]; cuts: Card[] };
 const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const mana = (s: string | null) => (s ?? '').replace(/\{([^}]+)\}/g, (_, x: string) => `<span class="lab-mana" data-color="${esc(x)}">${esc(x)}</span>`);
-const image = (c: Card) => c.image ? `<img src="${esc(c.image)}" alt="${esc(c.name)}" loading="lazy" width="488" height="680" />` : `<div class="lab-no-image">${esc(c.name)}<span>Image unavailable</span></div>`;
+const cardImg = (c: {name: string; image: string}, w = 488, h = 680) => c.image ? `<img src="${esc(c.image)}" alt="${esc(c.name)}" loading="lazy" width="${w}" height="${h}" />` : `<div class="lab-no-image">${esc(c.name)}<span>Image unavailable</span></div>`;
+const image = (c: Card) => cardImg(c);
+const printingImage = (p: {image: string; set_name: string}) => cardImg({name: p.set_name, image: p.image}, 244, 340);
+/** Wraps a card's art; when both faces have their own image (transform/MDFC), it becomes a click-to-flip button. */
+function cardStage(c: {name: string; image: string; faces?: LabFace[]}): string {
+  const faces = c.faces && c.faces.length >= 2 ? c.faces : undefined;
+  if (!faces) return `<div class="lab-card-stage">${cardImg(c)}</div>`;
+  return `<button type="button" class="lab-card-stage lab-flip-card" aria-pressed="false" aria-label="Flip ${esc(c.name)} to see the other side"><span class="lab-flip-inner"><span class="lab-flip-face lab-flip-front">${cardImg(faces[0]!)}</span><span class="lab-flip-face lab-flip-back">${cardImg(faces[1]!)}</span></span><span class="lab-flip-hint" aria-hidden="true">⟲</span></button>`;
+}
 
 const SELECTION_STORAGE_KEY = 'asphodel.deck-lab.selection.v1';
 function loadStoredSelection(): { names: string[]; cards: Card[] } {
@@ -76,7 +84,7 @@ export function initDeckLabView(root: HTMLElement) {
         <p>Types: AND · Expansions: OR · Leave empty for all. Color letters: W U B R G; C = colorless. Use &lt;= for a color-identity subset.</p>
       </div>
       <form class="lab-advanced" hidden><label>Advanced query <input aria-label="Advanced query" placeholder='(set:tla OR set:tle) t:creature mv<=4' /></label><div><button type="submit">Apply query</button><span> Local syntax: name, o, t, set, r, lang, mv, c, id, f:commander · AND / OR / NOT and parentheses.</span></div></form>
-      <div class="lab-results-bar"><div><strong data-results></strong><span data-catalog-scope></span></div><div class="lab-result-controls"><select aria-label="Result uniqueness" class="lab-unique"><option value="cards">Unique cards</option><option value="prints">All printings</option></select><div class="lab-modes"><button data-mode="images" aria-pressed="true">▦ Images</button><button data-mode="full" aria-pressed="false">☰ Full</button></div></div></div>
+      <div class="lab-results-bar"><div><strong data-results></strong><span data-catalog-scope></span></div><div class="lab-result-controls"><div class="lab-modes"><button data-mode="images" aria-pressed="true">▦ Images</button><button data-mode="full" aria-pressed="false">☰ Full</button></div></div></div>
       <p class="lab-search-status" role="status" hidden></p>
       <div class="lab-results"></div>
       <div class="lab-end"><button data-action="load-more" hidden>Load 60 more</button><p data-loaded></p><span>Selection stays with you as you explore.</span></div>
@@ -93,7 +101,7 @@ export function initDeckLabView(root: HTMLElement) {
   function searchBody(): LabSearchQuery {
     const fields: Record<string,string> = {};
     root.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-search-field]').forEach(input => fields[input.dataset.searchField!] = input.value.trim());
-    return {...fields,query,types:typeFilters,sets:setFilters,raw:get<HTMLInputElement>('.lab-advanced input').value.trim(),unique:get<HTMLSelectElement>('.lab-unique').value as 'cards' | 'prints'};
+    return {...fields,query,types:typeFilters,sets:setFilters,raw:get<HTMLInputElement>('.lab-advanced input').value.trim()};
   }
   function scheduleSearch() { clearTimeout(debounce); debounce = setTimeout(() => void renderSearch(), 300); }
   async function renderSearch(append = false) {
@@ -118,7 +126,7 @@ export function initDeckLabView(root: HTMLElement) {
       resultCards = append ? [...resultCards,...data.cards] : data.cards;
       for (const card of data.cards) if (!selection.has(card.name)) knownCards.set(card.name,card);
       nextOffset = data.nextOffset; total = data.total;
-      get('[data-results]').textContent = `${total.toLocaleString()} ${currentQuery.unique === 'prints' ? 'printings' : 'unique cards'}`;
+      get('[data-results]').textContent = `${total.toLocaleString()} unique cards`;
       get('[data-catalog-scope]').textContent = `${setFilters.length ? setFilters.map(code=>code.toUpperCase()).join(' OR ') + ' · ' : ''}${data.catalogPrintings.toLocaleString()} local printings · snapshot ${new Date(data.snapshotDate).toLocaleDateString()}`;
       status.hidden = true;
       renderLoaded(append ? previousLength : undefined);
@@ -135,7 +143,7 @@ export function initDeckLabView(root: HTMLElement) {
   function renderLoaded(appendFrom?: number) {
     const matches = appendFrom === undefined ? resultCards : resultCards.slice(appendFrom);
     get('.lab-results').className = `lab-results lab-${mode}`;
-    const html = matches.map(c => mode === 'images' ? `<article class="lab-tile">${image(c)}${selectedButton(c)}</article>` : `<article class="lab-full-card"><div>${image(c)}</div><div class="lab-oracle"><div class="lab-card-title"><h2>${esc(c.name)}</h2><span>${mana(c.mana_cost)}</span></div><p class="lab-type">${esc(c.type_line)}</p><div class="lab-rules">${esc(c.oracle_text ?? '').split('\n').map(p => `<p>${p}</p>`).join('')}</div>${c.power ? `<strong class="lab-pt">${c.power} / ${c.toughness}</strong>` : c.loyalty ? `<strong>Loyalty ${c.loyalty}</strong>` : ''}</div><aside><p class="lab-eyebrow">PRINTING</p><strong>${esc(c.set_name)}</strong><p>${c.set.toUpperCase()} · #${c.collector_number} · ${c.rarity}</p><p>${esc(c.lang.toUpperCase())}</p><span class="lab-legal">Commander · ${esc((c.commander_legal ?? 'legal').replaceAll('_',' '))}</span><details><summary>Related cards · ${c.related.length}</summary>${c.related.length ? c.related.map(esc).join('<br>') : 'No related cards listed.'}</details><details><summary>Other printings${c.printings !== undefined ? ` · ${Math.max(c.printings - 1, 0)}` : ''}</summary>${c.printings !== undefined && c.printings > 1 ? `This card has ${c.printings - 1} other printing${c.printings - 1 > 1 ? 's' : ''} in the local snapshot. Choose “All printings” above and search by name to browse them.` : 'No other printings in the local snapshot.'}</details>${selectedButton(c)}</aside></article>`).join('');
+    const html = matches.map(c => mode === 'images' ? `<article class="lab-tile">${cardStage(c)}${selectedButton(c)}</article>` : `<article class="lab-full-card">${cardStage(c)}<div class="lab-oracle"><div class="lab-card-title"><h2>${esc(c.name)}</h2><span>${mana(c.mana_cost)}</span></div><p class="lab-type">${esc(c.type_line)}</p><div class="lab-rules">${esc(c.oracle_text ?? '').split('\n').map(p => `<p>${p}</p>`).join('')}</div>${c.power ? `<strong class="lab-pt">${c.power} / ${c.toughness}</strong>` : c.loyalty ? `<strong>Loyalty ${c.loyalty}</strong>` : ''}</div><aside><p class="lab-eyebrow">PRINTING</p><strong>${esc(c.set_name)}</strong><p>${c.set.toUpperCase()} · #${c.collector_number} · ${c.rarity}</p><p>${esc(c.lang.toUpperCase())}</p><span class="lab-legal">Commander · ${esc((c.commander_legal ?? 'legal').replaceAll('_',' '))}</span><details><summary>Related cards · ${c.related.length}</summary>${c.related.length ? c.related.map(esc).join('<br>') : 'No related cards listed.'}</details><details><summary>Other printings${c.printings !== undefined ? ` · ${Math.max(c.printings - 1, 0)}` : ''}</summary>${c.otherPrintings?.length ? `<div class="lab-printings">${c.otherPrintings.map(p => `<button type="button" class="lab-printing-chip" data-printing-name="${esc(c.name)}" data-printing-image="${esc(p.image)}"${p.faces ? ` data-printing-faces="${esc(JSON.stringify(p.faces))}"` : ''}>${esc(p.set.toUpperCase())} · ${esc(p.rarity)}${p.lang !== 'en' ? ` · ${esc(p.lang.toUpperCase())}` : ''}<span class="lab-printing-preview">${printingImage(p)}<em>${esc(p.set_name)}</em></span></button>`).join('')}</div>` : 'No other printings in the local snapshot.'}</details>${selectedButton(c)}</aside></article>`).join('');
     if (appendFrom === undefined) get('.lab-results').innerHTML = html;
     else get('.lab-results').insertAdjacentHTML('beforeend',html);
     get<HTMLButtonElement>('[data-action=load-more]').hidden = nextOffset === null;
@@ -184,7 +192,12 @@ export function initDeckLabView(root: HTMLElement) {
       persistSelection();
     }
     if (b.dataset.remove) { selection.delete(b.dataset.remove); renderPool(); persistSelection(); }
-    if (b.dataset.inspect) { const c = knownCards.get(b.dataset.inspect)!; get('.lab-inspect div').innerHTML = image(c); inspect.showModal(); }
+    if (b.dataset.inspect) { const c = knownCards.get(b.dataset.inspect)!; get('.lab-inspect div').innerHTML = cardStage(c); inspect.showModal(); }
+    if (b.classList.contains('lab-flip-card')) { const flipped = b.classList.toggle('is-flipped'); b.setAttribute('aria-pressed', String(flipped)); }
+    if (b.dataset.printingImage) {
+      const stage = b.closest('.lab-full-card')?.querySelector<HTMLElement>('.lab-card-stage');
+      if (stage) stage.outerHTML = cardStage({ name: b.dataset.printingName!, image: b.dataset.printingImage!, faces: b.dataset.printingFaces ? JSON.parse(b.dataset.printingFaces) as LabFace[] : undefined });
+    }
     if (b.dataset.reorder && active) { const i = Number(b.dataset.reorder); [active.groups[i-1],active.groups[i]] = [active.groups[i]!,active.groups[i-1]!]; renderBuilder(); }
     if (b.dataset.restore && active) { const c = active.cuts.splice(Number(b.dataset.restore),1)[0]!; active.groups[0]!.entries.push({card:c,quantity:1}); renderBuilder(); }
     switch (b.dataset.action) {
@@ -208,7 +221,7 @@ export function initDeckLabView(root: HTMLElement) {
   });
   root.addEventListener('change', event => {
     const el = event.target as HTMLInputElement;
-    if (el.matches('select[data-search-field], .lab-unique')) void renderSearch();
+    if (el.matches('select[data-search-field]')) void renderSearch();
     if (el.matches('.lab-sheet-picker')) { active = sheets[Number(el.value)]; renderBuilder(); }
     if (el.dataset.rename && active) { el.value = el.value.trim() || 'Untitled category'; active.groups[Number(el.dataset.rename)]!.name = el.value; renderBuilder(); }
     if (el.dataset.move && el.value && active) { const [g,i] = el.dataset.move.split(':').map(Number); const entry = active.groups[g!]!.entries.splice(i!,1)[0]!; if (el.value === 'cut') { for (let n=0;n<entry.quantity;n++) active.cuts.push(entry.card); } else active.groups[Number(el.value)]!.entries.push(entry); renderBuilder(); }

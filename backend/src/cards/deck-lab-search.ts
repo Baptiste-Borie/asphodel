@@ -20,7 +20,7 @@ interface BulkCard {
 }
 const backendRoot = fileURLToPath(new URL('../../', import.meta.url));
 const normalize = (value: string) => value.normalize('NFKC').toLowerCase();
-const SCHEMA_VERSION = '1';
+const SCHEMA_VERSION = '2';
 
 /** Derived read-only search catalog, separate from the user's deck database. */
 export class DeckLabSearch {
@@ -64,6 +64,9 @@ export class DeckLabSearch {
         const card = JSON.parse(line) as BulkCard;
         const faces = card.card_faces ?? [];
         const oracle = card.oracle_text ?? faces.map(f=>[f.name,f.oracle_text].filter(Boolean).join('\n')).join('\n\n');
+        // Only transform/modal-DFC style cards carry a distinct image per face; split/adventure cards
+        // share a single card-level image, so they stay a plain (non-flippable) card.
+        const flippable = faces.length >= 2 && faces.every(f=>f.image_uris?.normal);
         const payload: LabCard = {
           name:card.name,mana_cost:card.mana_cost ?? (faces.map(f=>f.mana_cost).filter(Boolean).join(' // ') || null),
           cmc:card.cmc ?? 0,type_line:card.type_line ?? '',oracle_text:oracle || null,
@@ -72,6 +75,7 @@ export class DeckLabSearch {
           lang:card.lang,color_identity:card.color_identity ?? [],image:card.image_uris?.normal ?? faces[0]?.image_uris?.normal ?? '',
           related:[...new Set([...(card.all_parts ?? []).map(p=>p.name),...faces.map(f=>f.name ?? '')])].filter(n=>n && n!==card.name),
           commander_legal:card.legalities?.commander ?? 'not_legal',
+          faces:flippable ? faces.map(f=>({name:f.name ?? card.name,image:f.image_uris!.normal!})) : undefined,
         };
         insert.run(card.id,card.oracle_id ?? card.id,normalize(card.name),normalize(oracle),normalize(card.type_line ?? ''),card.set,card.rarity,card.lang,
           (card.colors ?? faces.flatMap(f=>f.colors ?? [])).join('').toLowerCase(),(card.color_identity ?? []).join('').toLowerCase(),card.cmc ?? 0,payload.commander_legal!,JSON.stringify(payload));
@@ -97,10 +101,19 @@ export class DeckLabSearch {
     const offset = query.offset ?? 0; const limit = query.limit ?? 60;
     // Filter printings first, then deduplicate. A chosen set can never disappear
     // because an unrelated printing happened to be the oracle's representative.
-    const from = query.unique === 'prints' ? `SELECT id FROM cards WHERE ${filter.sql}` : `SELECT MIN(id) AS id FROM cards WHERE ${filter.sql} GROUP BY oracle_id`;
+    const from = `SELECT MIN(id) AS id FROM cards WHERE ${filter.sql} GROUP BY oracle_id`;
     const total = (db.prepare(`SELECT COUNT(*) AS count FROM (${from})`).get(...filter.values) as {count:number}).count;
-    const rows = db.prepare(`SELECT payload, (SELECT COUNT(*) FROM cards same WHERE same.oracle_id = cards.oracle_id) AS printings FROM cards WHERE id IN (${from}) ORDER BY name_search, id LIMIT ? OFFSET ?`).all(...filter.values,limit,offset) as {payload:string; printings:number}[];
-    return {cards:rows.map(r=>({...JSON.parse(r.payload) as LabCard, printings:r.printings})),total,nextOffset:offset+rows.length<total ? offset+rows.length : null,catalogPrintings:this.catalog!.printings,snapshotDate:this.catalog!.snapshotDate};
+    const rows = db.prepare(`SELECT id, oracle_id, payload, (SELECT COUNT(*) FROM cards same WHERE same.oracle_id = cards.oracle_id) AS printings FROM cards WHERE id IN (${from}) ORDER BY name_search, id LIMIT ? OFFSET ?`).all(...filter.values,limit,offset) as {id:string; oracle_id:string; payload:string; printings:number}[];
+    const otherPrintingsStmt = db.prepare('SELECT payload FROM cards WHERE oracle_id = ? AND id != ? ORDER BY id LIMIT 24');
+    const cards = rows.map(row => ({
+      ...JSON.parse(row.payload) as LabCard,
+      printings: row.printings,
+      otherPrintings: (otherPrintingsStmt.all(row.oracle_id, row.id) as {payload:string}[]).map(r => {
+        const p = JSON.parse(r.payload) as LabCard;
+        return {set:p.set, set_name:p.set_name, collector_number:p.collector_number, rarity:p.rarity, lang:p.lang, image:p.image, faces:p.faces};
+      }),
+    }));
+    return {cards,total,nextOffset:offset+rows.length<total ? offset+rows.length : null,catalogPrintings:this.catalog!.printings,snapshotDate:this.catalog!.snapshotDate};
   }
   async close() { try { await this.loading; } finally { this.database?.close(); this.database=undefined; this.loading=undefined; } }
 }

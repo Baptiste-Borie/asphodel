@@ -1,3 +1,16 @@
+export interface LabFace {
+  name: string;
+  image: string;
+}
+export interface LabPrinting {
+  set: string;
+  set_name: string;
+  collector_number: string;
+  rarity: string;
+  lang: string;
+  image: string;
+  faces?: LabFace[] | undefined;
+}
 export interface LabCard {
   name: string;
   mana_cost: string | null;
@@ -17,6 +30,8 @@ export interface LabCard {
   related: string[];
   commander_legal?: string;
   printings?: number;
+  otherPrintings?: LabPrinting[];
+  faces?: LabFace[] | undefined;
 }
 export interface LabSearchQuery {
   query?: string;
@@ -30,7 +45,6 @@ export interface LabSearchQuery {
   rarity?: string;
   language?: string;
   raw?: string;
-  unique?: 'cards' | 'prints';
   offset?: number;
   limit?: number;
 }

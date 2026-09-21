@@ -17,6 +17,7 @@ const fixture = [
   card('1','Aang','tla'),card('2','Aang','tle'),card('3','Katara','tla',{colors:['U'],color_identity:['U'],cmc:2}),
   card('4','Toph','tle',{cmc:4}),card('5','Other','neo'),
   card('6','Two faces','tle',{oracle_text:undefined,image_uris:undefined,card_faces:[{name:'Front',oracle_text:'Flying',image_uris:{normal:'https://cards.scryfall.io/front.jpg'}},{name:'Back',oracle_text:'Earthbend 4'}]}),
+  card('7','Double sided','neo',{oracle_text:undefined,image_uris:undefined,card_faces:[{name:'Front',oracle_text:'Flying',image_uris:{normal:'https://cards.scryfall.io/dbl-front.jpg'}},{name:'Back',oracle_text:'Night',image_uris:{normal:'https://cards.scryfall.io/dbl-back.jpg'}}]}),
 ];
 async function setup() {
   const dir = await mkdtemp(join(tmpdir(),'deck-lab-'));
@@ -24,18 +25,22 @@ async function setup() {
   await writeFile(bulkPath,gzipSync(fixture.map(c=>JSON.stringify(c)).join('\n')));
   return {dir,bulkPath,indexPath,service:new DeckLabSearch({bulkPath,indexPath})};
 }
-test('set union, unique cards vs printings, pagination and two-face search', async () => {
+test('set union, always deduplicated by card, pagination, other printings and two-face search', async () => {
   const f = await setup();
   try {
     const [catalog, first] = await Promise.all([f.service.getCatalog(), f.service.search({sets:['tla','tle'],limit:2})]);
-    assert.equal(catalog.printings,6); assert.equal(first.total,4); assert.equal(first.nextOffset,2);
+    assert.equal(catalog.printings,7); assert.equal(first.total,4); assert.equal(first.nextOffset,2);
     const second = await f.service.search({sets:['tla','tle'],offset:2,limit:2});
     assert.equal(second.nextOffset,null); assert.equal(new Set([...first.cards,...second.cards].map(c=>c.name)).size,4);
-    assert.equal((await f.service.search({sets:['tla','tle'],unique:'prints'})).total,5);
+    const aang = (await f.service.search({sets:['tla','tle'],name:'Aang'})).cards[0]!;
+    assert.equal(aang.set,'tla'); assert.equal(aang.printings,2); assert.deepEqual(aang.otherPrintings?.map(p=>p.set),['tle']);
     assert.equal((await f.service.search({sets:['tle'],name:'Aang'})).cards[0]?.set,'tle');
     const faces = await f.service.search({oracle:'earthbend'});
     assert.equal(faces.cards[0]?.image,'https://cards.scryfall.io/front.jpg');
     assert.deepEqual(faces.cards[0]?.related,['Front','Back']);
+    assert.equal(faces.cards[0]?.faces,undefined);
+    const doubleSided = (await f.service.search({name:'Double sided'})).cards[0]!;
+    assert.deepEqual(doubleSided.faces?.map(fc=>fc.image),['https://cards.scryfall.io/dbl-front.jpg','https://cards.scryfall.io/dbl-back.jpg']);
     assert.equal((await f.service.search({query:"' OR 1=1 --"})).total,0);
   } finally { await f.service.close(); await rm(f.dir,{recursive:true,force:true}); }
 });
@@ -56,8 +61,8 @@ test('derived index reopens and rebuilds after snapshot changes', async () => {
   try {
     await f.service.search({}); await f.service.close();
     let service = new DeckLabSearch({bulkPath:f.bulkPath,indexPath:f.indexPath});
-    assert.equal((await service.search({})).total,5); await service.close();
-    await writeFile(f.bulkPath,gzipSync(JSON.stringify(card('7','New arrival','tla'))+'\n'));
+    assert.equal((await service.search({})).total,6); await service.close();
+    await writeFile(f.bulkPath,gzipSync(JSON.stringify(card('8','New arrival','tla'))+'\n'));
     service = new DeckLabSearch({bulkPath:f.bulkPath,indexPath:f.indexPath});
     assert.equal((await service.search({})).total,1); await service.close();
   } finally { await f.service.close(); await rm(f.dir,{recursive:true,force:true}); }
