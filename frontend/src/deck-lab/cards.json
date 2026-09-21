@@ -1,0 +1,2036 @@
+[
+  {
+    "name": "Kodama of the West Tree",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Legendary Creature \u2014 Spirit",
+    "oracle_text": "Reach\nModified creatures you control have trample. (Equipment, Auras you control, and counters are modifications.)\nWhenever a modified creature you control deals combat damage to a player, search your library for a basic land card, put it onto the battlefield tapped, then shuffle.",
+    "power": "3",
+    "toughness": "3",
+    "loyalty": null,
+    "set_name": "Kamigawa: Neon Dynasty",
+    "set": "neo",
+    "collector_number": "199",
+    "rarity": "mythic",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/e/f/ef1e1dff-b559-441d-8df3-b6a418066aca.jpg?1783923845",
+    "related": []
+  },
+  {
+    "name": "Boseiju, Who Endures",
+    "mana_cost": "",
+    "cmc": 0.0,
+    "type_line": "Legendary Land",
+    "oracle_text": "{T}: Add {G}.\nChannel \u2014 {1}{G}, Discard this card: Destroy target artifact, enchantment, or nonbasic land an opponent controls. That player may search their library for a land card with a basic land type, put it onto the battlefield, then shuffle. This ability costs {1} less to activate for each legendary creature you control.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Kamigawa: Neon Dynasty",
+    "set": "neo",
+    "collector_number": "266",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/2/1/2135ac5a-187b-4dc9-8f82-34e8d1603416.jpg?1783923818",
+    "related": []
+  },
+  {
+    "name": "Kami of Whispered Hopes",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Creature \u2014 Spirit",
+    "oracle_text": "If one or more +1/+1 counters would be put on a permanent you control, that many plus one +1/+1 counters are put on that permanent instead.\n{T}: Add X mana of any one color, where X is this creature's power.",
+    "power": "1",
+    "toughness": "1",
+    "loyalty": null,
+    "set_name": "Secrets of Strixhaven Commander",
+    "set": "soc",
+    "collector_number": "273",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/0/b/0be4e5f6-a1fc-4a91-aafe-f963878cd1b3.jpg?1783903765",
+    "related": []
+  },
+  {
+    "name": "Hardened Scales",
+    "mana_cost": "{G}",
+    "cmc": 1.0,
+    "type_line": "Enchantment",
+    "oracle_text": "If one or more +1/+1 counters would be put on a creature you control, that many plus one +1/+1 counters are put on it instead.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Secrets of Strixhaven Commander",
+    "set": "soc",
+    "collector_number": "272",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/9/9/99cfd1a8-49fd-4cc0-96f2-f9f159ce5d55.jpg?1783903765",
+    "related": []
+  },
+  {
+    "name": "Rishkar, Peema Renegade",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Legendary Creature \u2014 Elf Druid",
+    "oracle_text": "When Rishkar enters, put a +1/+1 counter on each of up to two target creatures.\nEach creature you control with a counter on it has \"{T}: Add {G}.\"",
+    "power": "2",
+    "toughness": "2",
+    "loyalty": null,
+    "set_name": "Commander Masters",
+    "set": "cmm",
+    "collector_number": "317",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/8/8/88f4aecc-b728-4960-8131-1e5aa6c3c030.jpg?1783915622",
+    "related": []
+  },
+  {
+    "name": "Walking Ballista",
+    "mana_cost": "{X}{X}",
+    "cmc": 0.0,
+    "type_line": "Artifact Creature \u2014 Construct",
+    "oracle_text": "This creature enters with X +1/+1 counters on it.\n{4}: Put a +1/+1 counter on this creature.\nRemove a +1/+1 counter from this creature: It deals 1 damage to any target.",
+    "power": "0",
+    "toughness": "0",
+    "loyalty": null,
+    "set_name": "Double Masters",
+    "set": "2xm",
+    "collector_number": "306",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [],
+    "image": "https://cards.scryfall.io/normal/front/5/2/5272436e-74f0-44c4-a291-ea8ebc3f1525.jpg?1783930088",
+    "related": []
+  },
+  {
+    "name": "Forgotten Ancient",
+    "mana_cost": "{3}{G}",
+    "cmc": 4.0,
+    "type_line": "Creature \u2014 Elemental",
+    "oracle_text": "Whenever a player casts a spell, you may put a +1/+1 counter on this creature.\nAt the beginning of your upkeep, you may move any number of +1/+1 counters from this creature onto other creatures.",
+    "power": "0",
+    "toughness": "3",
+    "loyalty": null,
+    "set_name": "Secrets of Strixhaven Commander",
+    "set": "soc",
+    "collector_number": "267",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/f/8/f8c9d744-8294-4747-ae7e-99be2b6e7479.jpg?1783903766",
+    "related": []
+  },
+  {
+    "name": "Inspiring Call",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Instant",
+    "oracle_text": "Draw a card for each creature you control with a +1/+1 counter on it. Those creatures gain indestructible until end of turn. (Damage and effects that say \"destroy\" don't destroy them.)",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Avatar: The Last Airbender Eternal",
+    "set": "tle",
+    "collector_number": "168",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/2/5/2555ec7b-5cc2-4ffd-9344-6368019feff9.jpg?1783904804",
+    "related": []
+  },
+  {
+    "name": "Renata, Called to the Hunt",
+    "mana_cost": "{2}{G}{G}",
+    "cmc": 4.0,
+    "type_line": "Legendary Enchantment Creature \u2014 Demigod",
+    "oracle_text": "Renata's power is equal to your devotion to green. (Each {G} in the mana costs of permanents you control counts toward your devotion to green.)\nEach other creature you control enters with an additional +1/+1 counter on it.",
+    "power": "*",
+    "toughness": "3",
+    "loyalty": null,
+    "set_name": "Theros Beyond Death",
+    "set": "thb",
+    "collector_number": "196",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/2/b/2b27e6b2-13ad-42b2-a121-70935913723d.jpg?1783931530",
+    "related": []
+  },
+  {
+    "name": "Evolution Sage",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Creature \u2014 Elf Druid",
+    "oracle_text": "Landfall \u2014 Whenever a land you control enters, proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)",
+    "power": "3",
+    "toughness": "2",
+    "loyalty": null,
+    "set_name": "Lorwyn Eclipsed Commander",
+    "set": "ecc",
+    "collector_number": "105",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/1/d/1d58d08d-cd62-416d-8d8e-7d9c56d5c4da.jpg?1783904546",
+    "related": []
+  },
+  {
+    "name": "Gyre Sage",
+    "mana_cost": "{1}{G}",
+    "cmc": 2.0,
+    "type_line": "Creature \u2014 Elf Druid",
+    "oracle_text": "Evolve (Whenever a creature you control enters, if that creature has greater power or toughness than this creature, put a +1/+1 counter on this creature.)\n{T}: Add {G} for each +1/+1 counter on this creature.",
+    "power": "1",
+    "toughness": "2",
+    "loyalty": null,
+    "set_name": "March of the Machine Commander",
+    "set": "moc",
+    "collector_number": "300",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/b/e/be573ae7-967a-4b98-9058-ec3ff82ff63f.jpg?1783917142",
+    "related": []
+  },
+  {
+    "name": "Incubation Druid",
+    "mana_cost": "{1}{G}",
+    "cmc": 2.0,
+    "type_line": "Creature \u2014 Elf Druid",
+    "oracle_text": "{T}: Add one mana of any type that a land you control could produce. If this creature has a +1/+1 counter on it, add three mana of that type instead.\n{3}{G}{G}: Adapt 3. (If this creature has no +1/+1 counters on it, put three +1/+1 counters on it.)",
+    "power": "0",
+    "toughness": "2",
+    "loyalty": null,
+    "set_name": "March of the Machine Commander",
+    "set": "moc",
+    "collector_number": "302",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/b/3/b3d8c95e-09b9-46d6-80e9-95adb2c2ea9d.jpg?1783917139",
+    "related": []
+  },
+  {
+    "name": "Llanowar Elves",
+    "mana_cost": "",
+    "cmc": 0.0,
+    "type_line": "Token Creature \u2014 Elf Druid",
+    "oracle_text": "{T}: Add {G}.",
+    "power": "1",
+    "toughness": "1",
+    "loyalty": null,
+    "set_name": "Time Spiral Remastered Tokens",
+    "set": "ttsr",
+    "collector_number": "12",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/c/b/cbcb0668-e88c-4462-b079-34f140c0277e.jpg?1783927695",
+    "related": [
+      "Llanowar Mentor"
+    ]
+  },
+  {
+    "name": "Elvish Mystic",
+    "mana_cost": "{G}",
+    "cmc": 1.0,
+    "type_line": "Creature \u2014 Elf Druid",
+    "oracle_text": "{T}: Add {G}.",
+    "power": "1",
+    "toughness": "1",
+    "loyalty": null,
+    "set_name": "The Hobbit Eternal",
+    "set": "hoc",
+    "collector_number": "205",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/0/8/08b9a296-3b76-4f8f-9d71-7c9af92bb3b4.jpg?1785647413",
+    "related": []
+  },
+  {
+    "name": "Cultivate",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Sorcery",
+    "oracle_text": "Search your library for up to two basic land cards, reveal those cards, put one onto the battlefield tapped and the other into your hand, then shuffle.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Marvel Super Heroes Commander",
+    "set": "msc",
+    "collector_number": "172",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/e/6/e60deb92-f7dd-4f4e-9036-e47dd586f985.jpg?1783903229",
+    "related": []
+  },
+  {
+    "name": "Kodama's Reach",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Sorcery \u2014 Arcane",
+    "oracle_text": "Search your library for up to two basic land cards, reveal those cards, put one onto the battlefield tapped and the other into your hand, then shuffle.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Lorwyn Eclipsed Commander",
+    "set": "ecc",
+    "collector_number": "113",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/9/0/90c423cc-1264-4067-9c50-e7c88c68ef2d.jpg?1783904544",
+    "related": []
+  },
+  {
+    "name": "Sol Ring",
+    "mana_cost": "{1}",
+    "cmc": 1.0,
+    "type_line": "Artifact",
+    "oracle_text": "{T}: Add {C}{C}.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Reality Fracture Commander",
+    "set": "frc",
+    "collector_number": "21",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [],
+    "image": "https://cards.scryfall.io/normal/front/8/e/8ee443cc-e17a-493b-9c93-1f9e141a30e4.jpg?1789644446",
+    "related": []
+  },
+  {
+    "name": "Arcane Signet",
+    "mana_cost": "{2}",
+    "cmc": 2.0,
+    "type_line": "Artifact",
+    "oracle_text": "{T}: Add one mana of any color in your commander's color identity.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Reality Fracture Commander",
+    "set": "frc",
+    "collector_number": "20",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [],
+    "image": "https://cards.scryfall.io/normal/front/c/6/c6b6117c-faab-4bbb-b851-07bd8061ef03.jpg?1789644435",
+    "related": []
+  },
+  {
+    "name": "Beast Whisperer",
+    "mana_cost": "{2}{G}{G}",
+    "cmc": 4.0,
+    "type_line": "Creature \u2014 Elf Druid",
+    "oracle_text": "Whenever you cast a creature spell, draw a card.",
+    "power": "2",
+    "toughness": "3",
+    "loyalty": null,
+    "set_name": "Ravnica: Clue Edition",
+    "set": "clu",
+    "collector_number": "158",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/d/a/daf4bcd2-3ae4-4803-9ea1-3bcc3de5ca59.jpg?1783912531",
+    "related": []
+  },
+  {
+    "name": "Guardian Project",
+    "mana_cost": "{3}{G}",
+    "cmc": 4.0,
+    "type_line": "Enchantment",
+    "oracle_text": "Whenever a nontoken creature you control enters, if it doesn't have the same name as another creature you control or a creature card in your graveyard, draw a card.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Ravnica Remastered",
+    "set": "rvr",
+    "collector_number": "146",
+    "rarity": "mythic",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/2/c/2c523ef7-d6c4-4887-9a4e-0c2bc6f63676.jpg?1783913302",
+    "related": []
+  },
+  {
+    "name": "Return of the Wildspeaker",
+    "mana_cost": "{4}{G}",
+    "cmc": 5.0,
+    "type_line": "Instant",
+    "oracle_text": "Choose one \u2014\n\u2022 Draw cards equal to the greatest power among non-Human creatures you control.\n\u2022 Non-Human creatures you control get +3/+3 until end of turn.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Lorwyn Eclipsed Commander",
+    "set": "ecc",
+    "collector_number": "115",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/2/f/2fa1dac5-51ba-403e-b48b-d2c0d23a8146.jpg?1783904544",
+    "related": []
+  },
+  {
+    "name": "Rishkar's Expertise",
+    "mana_cost": "{4}{G}{G}",
+    "cmc": 6.0,
+    "type_line": "Sorcery",
+    "oracle_text": "Draw cards equal to the greatest power among creatures you control.\nYou may cast a spell with mana value 5 or less from your hand without paying its mana cost.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "The Lost Caverns of Ixalan Commander",
+    "set": "lcc",
+    "collector_number": "254",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/e/f/efa9d2dc-b3b8-4475-bbfc-2db457ee4ffd.jpg?1783913855",
+    "related": []
+  },
+  {
+    "name": "The Great Henge",
+    "mana_cost": "{7}{G}{G}",
+    "cmc": 9.0,
+    "type_line": "Legendary Artifact",
+    "oracle_text": "This spell costs {X} less to cast, where X is the greatest power among creatures you control.\n{T}: Add {G}{G}. You gain 2 life.\nWhenever a nontoken creature you control enters, put a +1/+1 counter on it and draw a card.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Commander Masters",
+    "set": "cmm",
+    "collector_number": "294",
+    "rarity": "mythic",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/6/3/6340e0f3-7f9c-4d71-8daf-e1be5505eb5b.jpg?1783915629",
+    "related": []
+  },
+  {
+    "name": "Heroic Intervention",
+    "mana_cost": "{1}{G}",
+    "cmc": 2.0,
+    "type_line": "Instant",
+    "oracle_text": "Permanents you control gain hexproof and indestructible until end of turn.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Commander Masters",
+    "set": "cmm",
+    "collector_number": "295",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/e/3/e32c67d1-187f-40df-b3b3-6036f5c92834.jpg?1783915629",
+    "related": []
+  },
+  {
+    "name": "Tamiyo's Safekeeping",
+    "mana_cost": "{G}",
+    "cmc": 1.0,
+    "type_line": "Instant",
+    "oracle_text": "Target permanent you control gains hexproof and indestructible until end of turn. You gain 2 life. (A permanent with hexproof and indestructible can't be the target of spells or abilities your opponents control. Damage and effects that say \"destroy\" don't destroy it.)",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Kamigawa: Neon Dynasty",
+    "set": "neo",
+    "collector_number": "211",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/f/d/fd4b7ee2-de65-4288-872d-486065a4f226.jpg?1783923839",
+    "related": []
+  },
+  {
+    "name": "Snakeskin Veil",
+    "mana_cost": "{G}",
+    "cmc": 1.0,
+    "type_line": "Instant",
+    "oracle_text": "Put a +1/+1 counter on target creature you control. It gains hexproof until end of turn. (It can't be the target of spells or abilities your opponents control.)",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Tarkir: Dragonstorm",
+    "set": "tdm",
+    "collector_number": "159",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/a/3/a3d2c692-7566-468e-9c86-47a9f768fde2.jpg?1783907335",
+    "related": []
+  },
+  {
+    "name": "Swiftfoot Boots",
+    "mana_cost": "{2}",
+    "cmc": 2.0,
+    "type_line": "Artifact \u2014 Equipment",
+    "oracle_text": "Equipped creature has hexproof and haste. (It can't be the target of spells or abilities your opponents control. It can attack and {T} no matter when it came under your control.)\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Mystery Booster Commander Edition",
+    "set": "mbc",
+    "collector_number": "77",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [],
+    "image": "https://cards.scryfall.io/normal/front/0/3/03f7e9fc-8e59-45c1-90fc-1d04d929b292.jpg?1785759388",
+    "related": []
+  },
+  {
+    "name": "Lightning Greaves",
+    "mana_cost": "{2}",
+    "cmc": 2.0,
+    "type_line": "Artifact \u2014 Equipment",
+    "oracle_text": "Equipped creature has haste and shroud. (It can't be the target of spells or abilities.)\nEquip {0}",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Marvel Super Heroes Commander",
+    "set": "msc",
+    "collector_number": "202",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [],
+    "image": "https://cards.scryfall.io/normal/front/b/6/b61634ae-05be-4b56-8ebb-9d4ade902e42.jpg?1783903217",
+    "related": []
+  },
+  {
+    "name": "Champion of Lambholt",
+    "mana_cost": "{1}{G}{G}",
+    "cmc": 3.0,
+    "type_line": "Creature \u2014 Human Warrior",
+    "oracle_text": "Creatures with power less than this creature's power can't block creatures you control.\nWhenever another creature you control enters, put a +1/+1 counter on this creature.",
+    "power": "1",
+    "toughness": "1",
+    "loyalty": null,
+    "set_name": "March of the Machine Commander",
+    "set": "moc",
+    "collector_number": "293",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/4/6/46eff31d-f460-48f2-aab7-8b9b89cd87fe.jpg?1783917143",
+    "related": []
+  },
+  {
+    "name": "Managorger Hydra",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Creature \u2014 Hydra",
+    "oracle_text": "Trample\nWhenever a player casts a spell, put a +1/+1 counter on this creature.",
+    "power": "1",
+    "toughness": "1",
+    "loyalty": null,
+    "set_name": "March of the Machine Commander",
+    "set": "moc",
+    "collector_number": "307",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/e/9/e9c124d7-b4b1-43cf-9830-1244053cc056.jpg?1783917137",
+    "related": []
+  },
+  {
+    "name": "Vorinclex, Monstrous Raider",
+    "mana_cost": "{4}{G}{G}",
+    "cmc": 6.0,
+    "type_line": "Legendary Creature \u2014 Phyrexian Praetor",
+    "oracle_text": "Trample, haste\nIf you would put one or more counters on a permanent or player, put twice that many of each of those kinds of counters on that permanent or player instead.\nIf an opponent would put one or more counters on a permanent or player, they put half that many of each of those kinds of counters on that permanent or player instead, rounded down.",
+    "power": "6",
+    "toughness": "6",
+    "loyalty": null,
+    "set_name": "Kaldheim",
+    "set": "khm",
+    "collector_number": "199",
+    "rarity": "mythic",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/9/2/92613468-205e-488b-930d-11908477e9f8.jpg?1783928202",
+    "related": []
+  },
+  {
+    "name": "Vorinclex, Voice of Hunger",
+    "mana_cost": "{6}{G}{G}",
+    "cmc": 8.0,
+    "type_line": "Legendary Creature \u2014 Phyrexian Praetor",
+    "oracle_text": "Trample\nWhenever you tap a land for mana, add one mana of any type that land produced.\nWhenever an opponent taps a land for mana, that land doesn't untap during its controller's next untap step.",
+    "power": "7",
+    "toughness": "6",
+    "loyalty": null,
+    "set_name": "Iconic Masters",
+    "set": "ima",
+    "collector_number": "189",
+    "rarity": "mythic",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/9/f/9fe3af8c-109d-486c-aa34-3f023abda5b7.jpg?1783935514",
+    "related": []
+  },
+  {
+    "name": "Kalonian Hydra",
+    "mana_cost": "{3}{G}{G}",
+    "cmc": 5.0,
+    "type_line": "Creature \u2014 Hydra",
+    "oracle_text": "Trample\nThis creature enters with four +1/+1 counters on it.\nWhenever this creature attacks, double the number of +1/+1 counters on each creature you control.",
+    "power": "0",
+    "toughness": "0",
+    "loyalty": null,
+    "set_name": "March of the Machine Commander",
+    "set": "moc",
+    "collector_number": "305",
+    "rarity": "mythic",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/1/d/1d21ae20-2ef5-4dc0-aced-97497e6a8025.jpg?1783917137",
+    "related": []
+  },
+  {
+    "name": "Primordial Hydra",
+    "mana_cost": "{X}{G}{G}",
+    "cmc": 2.0,
+    "type_line": "Creature \u2014 Hydra",
+    "oracle_text": "This creature enters with X +1/+1 counters on it.\nAt the beginning of your upkeep, double the number of +1/+1 counters on this creature.\nThis creature has trample as long as it has ten or more +1/+1 counters on it.",
+    "power": "0",
+    "toughness": "0",
+    "loyalty": null,
+    "set_name": "Secrets of Strixhaven Commander",
+    "set": "soc",
+    "collector_number": "284",
+    "rarity": "mythic",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/2/9/29515c55-3b48-4c1d-a10b-b27fd1eb7a93.jpg?1783903761",
+    "related": []
+  },
+  {
+    "name": "Hydra's Growth",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Enchantment \u2014 Aura",
+    "oracle_text": "Enchant creature\nWhen this Aura enters, put a +1/+1 counter on enchanted creature.\nAt the beginning of your upkeep, double the number of +1/+1 counters on enchanted creature.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Theros Beyond Death",
+    "set": "thb",
+    "collector_number": "172",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/5/1/5112ee2a-a6f3-4280-a915-000a97a9cdef.jpg?1783931539",
+    "related": []
+  },
+  {
+    "name": "Branching Evolution",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Enchantment",
+    "oracle_text": "If one or more +1/+1 counters would be put on a creature you control, twice that many +1/+1 counters are put on that creature instead.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Modern Horizons 3",
+    "set": "mh3",
+    "collector_number": "285",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/c/0/c0f1a736-8b12-4f58-a031-bf1733f65c51.jpg?1783911212",
+    "related": []
+  },
+  {
+    "name": "Ozolith, the Shattered Spire",
+    "mana_cost": "{1}{G}",
+    "cmc": 2.0,
+    "type_line": "Legendary Artifact",
+    "oracle_text": "If one or more +1/+1 counters would be put on an artifact or creature you control, that many plus one +1/+1 counters are put on it instead.\n{1}{G}, {T}: Put a +1/+1 counter on target artifact or creature you control. Activate only as a sorcery.\nCycling {2} ({2}, Discard this card: Draw a card.)",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Secrets of Strixhaven Commander",
+    "set": "soc",
+    "collector_number": "281",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/1/d/1d5bab94-362e-45e6-8988-69e2b2c681b1.jpg?1783903762",
+    "related": []
+  },
+  {
+    "name": "The Ozolith",
+    "mana_cost": "{1}",
+    "cmc": 1.0,
+    "type_line": "Legendary Artifact",
+    "oracle_text": "Whenever a creature you control leaves the battlefield, if it had counters on it, put those counters on The Ozolith.\nAt the beginning of combat on your turn, if The Ozolith has counters on it, you may move all counters from The Ozolith onto target creature.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Ikoria: Lair of Behemoths",
+    "set": "iko",
+    "collector_number": "237",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [],
+    "image": "https://cards.scryfall.io/normal/front/9/3/9341ed06-53db-4604-b60a-3ea9129afbc2.jpg?1783931006",
+    "related": []
+  },
+  {
+    "name": "Tuskguard Captain",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Creature \u2014 Human Warrior",
+    "oracle_text": "Outlast {G} ({G}, {T}: Put a +1/+1 counter on this creature. Outlast only as a sorcery.)\nEach creature you control with a +1/+1 counter on it has trample.",
+    "power": "2",
+    "toughness": "3",
+    "loyalty": null,
+    "set_name": "Commander Masters",
+    "set": "cmm",
+    "collector_number": "328",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/b/e/be1165a2-e697-4ceb-91ba-693a3a006f27.jpg?1783915619",
+    "related": []
+  },
+  {
+    "name": "Armorcraft Judge",
+    "mana_cost": "{3}{G}",
+    "cmc": 4.0,
+    "type_line": "Creature \u2014 Elf Artificer",
+    "oracle_text": "When this creature enters, draw a card for each creature you control with a +1/+1 counter on it.",
+    "power": "3",
+    "toughness": "3",
+    "loyalty": null,
+    "set_name": "Commander Masters",
+    "set": "cmm",
+    "collector_number": "273",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/5/b/5b76074c-65ca-40e9-b125-4668d3431820.jpg?1783915637",
+    "related": []
+  },
+  {
+    "name": "Wildwood Scourge",
+    "mana_cost": "{X}{G}",
+    "cmc": 1.0,
+    "type_line": "Creature \u2014 Hydra",
+    "oracle_text": "This creature enters with X +1/+1 counters on it.\nWhenever one or more +1/+1 counters are put on another non-Hydra creature you control, put a +1/+1 counter on this creature.",
+    "power": "0",
+    "toughness": "0",
+    "loyalty": null,
+    "set_name": "Foundations",
+    "set": "fdn",
+    "collector_number": "236",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/3/6/36359fb6-fb8c-4382-8555-e348422f116c.jpg?1783909054",
+    "related": []
+  },
+  {
+    "name": "Scavenging Ooze",
+    "mana_cost": "{1}{G}",
+    "cmc": 2.0,
+    "type_line": "Creature \u2014 Ooze",
+    "oracle_text": "{G}: Exile target card from a graveyard. If it was a creature card, put a +1/+1 counter on this creature and you gain 1 life.",
+    "power": "2",
+    "toughness": "2",
+    "loyalty": null,
+    "set_name": "Foundations",
+    "set": "fdn",
+    "collector_number": "232",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/8/c/8c504c23-1e9a-411b-9cfe-4180d0c744f6.jpg?1783909056",
+    "related": []
+  },
+  {
+    "name": "Reclamation Sage",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Creature \u2014 Elf Shaman",
+    "oracle_text": "When this creature enters, you may destroy target artifact or enchantment.",
+    "power": "2",
+    "toughness": "1",
+    "loyalty": null,
+    "set_name": "Foundations",
+    "set": "fdn",
+    "collector_number": "231",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/1/9/1918ea65-ab7f-4d40-97fd-a656c892a2a1.jpg?1783909055",
+    "related": []
+  },
+  {
+    "name": "Beast Within",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Instant",
+    "oracle_text": "Destroy target permanent. Its controller creates a 3/3 green Beast creature token.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Marvel Super Heroes Commander",
+    "set": "msc",
+    "collector_number": "169",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/4/0/400b43aa-c1d2-4435-b863-061f43889422.jpg?1783903232",
+    "related": [
+      "Beast"
+    ]
+  },
+  {
+    "name": "Ram Through",
+    "mana_cost": "{1}{G}",
+    "cmc": 2.0,
+    "type_line": "Instant",
+    "oracle_text": "Target creature you control deals damage equal to its power to target creature you don't control. If the creature you control has trample, excess damage is dealt to that creature's controller instead.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Commander Masters",
+    "set": "cmm",
+    "collector_number": "314",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/4/4/44063a90-e4cf-4bcd-a128-792de15371a7.jpg?1783915623",
+    "related": []
+  },
+  {
+    "name": "Overwhelming Stampede",
+    "mana_cost": "{3}{G}{G}",
+    "cmc": 5.0,
+    "type_line": "Sorcery",
+    "oracle_text": "Until end of turn, creatures you control gain trample and get +X/+X, where X is the greatest power among creatures you control.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Marvel Super Heroes Commander",
+    "set": "msc",
+    "collector_number": "178",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/6/9/6996b9c4-e78c-4970-91c7-9025a0a4f670.jpg?1783903228",
+    "related": []
+  },
+  {
+    "name": "Craterhoof Behemoth",
+    "mana_cost": "{5}{G}{G}{G}",
+    "cmc": 8.0,
+    "type_line": "Creature \u2014 Beast",
+    "oracle_text": "Haste\nWhen this creature enters, creatures you control gain trample and get +X/+X until end of turn, where X is the number of creatures you control.",
+    "power": "5",
+    "toughness": "5",
+    "loyalty": null,
+    "set_name": "Tarkir: Dragonstorm",
+    "set": "tdm",
+    "collector_number": "138",
+    "rarity": "mythic",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/2/7/276f5cee-a501-4658-bd4d-7a044bf1ccbc.jpg?1783907345",
+    "related": []
+  },
+  {
+    "name": "End-Raze Forerunners",
+    "mana_cost": "{5}{G}{G}{G}",
+    "cmc": 8.0,
+    "type_line": "Creature \u2014 Boar",
+    "oracle_text": "Vigilance, trample, haste\nWhen this creature enters, other creatures you control get +2/+2 and gain vigilance and trample until end of turn.",
+    "power": "7",
+    "toughness": "7",
+    "loyalty": null,
+    "set_name": "Commander Legends: Battle for Baldur's Gate",
+    "set": "clb",
+    "collector_number": "822",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/4/7/47a74813-6d8b-4b11-8a5e-5b83d2d98c34.jpg?1783922408",
+    "related": []
+  },
+  {
+    "name": "Forest",
+    "mana_cost": "",
+    "cmc": 0.0,
+    "type_line": "Basic Land \u2014 Forest",
+    "oracle_text": "({T}: Add {G}.)",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Star Trek",
+    "set": "trk",
+    "collector_number": "325",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/d/c/dce15387-4114-4b3e-91aa-5b42b45c44ac.jpg?1785981675",
+    "related": [
+      "Gilt-Leaf Alchemist"
+    ]
+  },
+  {
+    "name": "Mosswort Bridge",
+    "mana_cost": "",
+    "cmc": 0.0,
+    "type_line": "Land",
+    "oracle_text": "Hideaway 4 (When this land enters, look at the top four cards of your library, exile one face down, then put the rest on the bottom in a random order.)\nThis land enters tapped.\n{T}: Add {G}.\n{G}, {T}: You may play the exiled card without paying its mana cost if creatures you control have total power 10 or greater.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Tarkir: Dragonstorm Commander",
+    "set": "tdc",
+    "collector_number": "379",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/1/4/1490c0dc-06d6-45ee-af3c-2935b0ab1233.jpg?1783906977",
+    "related": []
+  },
+  {
+    "name": "Oran-Rief, the Vastwood",
+    "mana_cost": "",
+    "cmc": 0.0,
+    "type_line": "Land",
+    "oracle_text": "This land enters tapped.\n{T}: Add {G}.\n{T}: Put a +1/+1 counter on each green creature that entered this turn.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Secrets of Strixhaven Commander",
+    "set": "soc",
+    "collector_number": "391",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/d/4/d46d3ef7-b81f-42f4-9c1b-fa53f11eae65.jpg?1783903728",
+    "related": []
+  },
+  {
+    "name": "Llanowar Reborn",
+    "mana_cost": "",
+    "cmc": 0.0,
+    "type_line": "Land",
+    "oracle_text": "This land enters tapped.\n{T}: Add {G}.\nGraft 1 (This land enters with a +1/+1 counter on it. Whenever a creature enters, you may move a +1/+1 counter from this land onto it.)",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "The Lost Caverns of Ixalan Commander",
+    "set": "lcc",
+    "collector_number": "341",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/2/8/284e165e-9ab6-47fc-9685-0fb03de237df.jpg?1783913826",
+    "related": []
+  },
+  {
+    "name": "Myriad Landscape",
+    "mana_cost": "",
+    "cmc": 0.0,
+    "type_line": "Land",
+    "oracle_text": "This land enters tapped.\n{T}: Add {C}.\n{2}, {T}, Sacrifice this land: Search your library for up to two basic land cards that share a land type, put them onto the battlefield tapped, then shuffle.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Edge of Eternities Commander",
+    "set": "eoc",
+    "collector_number": "169",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [],
+    "image": "https://cards.scryfall.io/normal/front/a/0/a0e2098f-1d94-491a-a7e9-a45a9f69e3a8.jpg?1783906009",
+    "related": []
+  },
+  {
+    "name": "Karn's Bastion",
+    "mana_cost": "",
+    "cmc": 0.0,
+    "type_line": "Land",
+    "oracle_text": "{T}: Add {C}.\n{4}, {T}: Proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Edge of Eternities Commander",
+    "set": "eoc",
+    "collector_number": "163",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [],
+    "image": "https://cards.scryfall.io/normal/front/2/2/22017ec2-3552-4865-af76-dba042b141f5.jpg?1783906011",
+    "related": []
+  },
+  {
+    "name": "Rogue's Passage",
+    "mana_cost": "",
+    "cmc": 0.0,
+    "type_line": "Land",
+    "oracle_text": "{T}: Add {C}.\n{4}, {T}: Target creature can't be blocked this turn.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "The Hobbit Eternal",
+    "set": "hoc",
+    "collector_number": "212",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [],
+    "image": "https://cards.scryfall.io/normal/front/4/4/4493b62b-f354-47ff-9dcf-cc6e29de77c6.jpg?1785497634",
+    "related": []
+  },
+  {
+    "name": "Nissa, Worldsoul Speaker",
+    "mana_cost": "{3}{G}",
+    "cmc": 4.0,
+    "type_line": "Legendary Creature \u2014 Elf Druid",
+    "oracle_text": "Landfall \u2014 Whenever a land you control enters, you get {E}{E} (two energy counters).\nYou may pay eight {E} rather than pay the mana cost for permanent spells you cast.",
+    "power": "3",
+    "toughness": "3",
+    "loyalty": null,
+    "set_name": "Aetherdrift Commander",
+    "set": "drc",
+    "collector_number": "13",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/a/4/a471b306-4941-4e46-a0cb-d92895c16f8a.jpg?1783907750",
+    "related": [
+      "Energy Reserve"
+    ]
+  },
+  {
+    "name": "Veil of Summer",
+    "mana_cost": "{G}",
+    "cmc": 1.0,
+    "type_line": "Instant",
+    "oracle_text": "Draw a card if an opponent has cast a blue or black spell this turn. Spells you control can't be countered this turn. You and permanents you control gain hexproof from blue and from black until end of turn. (You and they can't be the targets of blue or black spells or abilities your opponents control.)",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Core Set 2020",
+    "set": "m20",
+    "collector_number": "198",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/a/a/aa686c34-1c11-469f-93c2-f9891aea521f.jpg?1783932955",
+    "related": []
+  },
+  {
+    "name": "Lattice Library",
+    "mana_cost": "{X}{G}{G}",
+    "cmc": 2.0,
+    "type_line": "Enchantment",
+    "oracle_text": "This enchantment enters with X study counters on it.\nWhen this enchantment enters and whenever you cast your first spell with {X} in its mana cost each turn, create a 0/0 green and blue Fractal creature token. Put a number of +1/+1 counters on it equal to the number of study counters on this enchantment.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Secrets of Strixhaven Commander",
+    "set": "soc",
+    "collector_number": "40",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/5/1/51aa3511-e588-4b40-b98c-c5dc3a05bb2d.jpg?1783903852",
+    "related": [
+      "Fractal"
+    ]
+  },
+  {
+    "name": "Seedship Agrarian",
+    "mana_cost": "{3}{G}",
+    "cmc": 4.0,
+    "type_line": "Creature \u2014 Insect Scientist",
+    "oracle_text": "Whenever this creature becomes tapped, create a Lander token. (It's an artifact with \"{2}, {T}, Sacrifice this token: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\")\nLandfall \u2014 Whenever a land you control enters, put a +1/+1 counter on this creature.",
+    "power": "3",
+    "toughness": "3",
+    "loyalty": null,
+    "set_name": "Edge of Eternities",
+    "set": "eoe",
+    "collector_number": "204",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/2/f/2fc7946d-37b0-4dc8-9daa-8d2204d8e4d2.jpg?1783905932",
+    "related": [
+      "Lander"
+    ]
+  },
+  {
+    "name": "One with the Kami",
+    "mana_cost": "{3}{G}",
+    "cmc": 4.0,
+    "type_line": "Enchantment \u2014 Aura",
+    "oracle_text": "Flash\nEnchant creature you control\nWhenever enchanted creature or another modified creature you control dies, create X 1/1 colorless Spirit creature tokens, where X is that creature's power. (Equipment, Auras you control, and counters are modifications.)",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Neon Dynasty Commander",
+    "set": "nec",
+    "collector_number": "27",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/d/7/d753c296-8cef-492d-ab41-e7ddb233d46e.jpg?1783923989",
+    "related": [
+      "Spirit"
+    ]
+  },
+  {
+    "name": "Carnage Wurm",
+    "mana_cost": "{6}{G}",
+    "cmc": 7.0,
+    "type_line": "Creature \u2014 Wurm",
+    "oracle_text": "Bloodthirst 3 (If an opponent was dealt damage this turn, this creature enters with three +1/+1 counters on it.)\nTrample (This creature can deal excess combat damage to the player or planeswalker it's attacking.)",
+    "power": "6",
+    "toughness": "6",
+    "loyalty": null,
+    "set_name": "Magic 2012",
+    "set": "m12",
+    "collector_number": "168",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/c/0/c086eb41-3524-4815-97c9-761ba86a30b2.jpg?1783941062",
+    "related": []
+  },
+  {
+    "name": "Yorvo, Lord of Garenbrig",
+    "mana_cost": "{G}{G}{G}",
+    "cmc": 3.0,
+    "type_line": "Legendary Creature \u2014 Giant Noble",
+    "oracle_text": "Yorvo enters with four +1/+1 counters on it.\nWhenever another green creature you control enters, put a +1/+1 counter on Yorvo. Then if that creature's power is greater than Yorvo's power, put another +1/+1 counter on Yorvo.",
+    "power": "0",
+    "toughness": "0",
+    "loyalty": null,
+    "set_name": "Throne of Eldraine",
+    "set": "eld",
+    "collector_number": "185",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/a/e/ae2998a1-1713-467e-a08e-0efd8720aa5b.jpg?1783932599",
+    "related": []
+  },
+  {
+    "name": "Sagu Pummeler",
+    "mana_cost": "{3}{G}",
+    "cmc": 4.0,
+    "type_line": "Creature \u2014 Beast",
+    "oracle_text": "Reach\nRenew \u2014 {4}{G}, Exile this card from your graveyard: Put two +1/+1 counters and a reach counter on target creature. Activate only as a sorcery.",
+    "power": "4",
+    "toughness": "4",
+    "loyalty": null,
+    "set_name": "Tarkir: Dragonstorm",
+    "set": "tdm",
+    "collector_number": "156",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/d/e/def9cb5b-4062-481e-b682-3a30443c2e56.jpg?1783907333",
+    "related": []
+  },
+  {
+    "name": "Long List of the Ents",
+    "mana_cost": "{G}",
+    "cmc": 1.0,
+    "type_line": "Enchantment \u2014 Saga",
+    "oracle_text": "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after VI.)\nI, II, III, IV, V, VI \u2014 Note a creature type that hasn't been noted for this Saga. When you next cast a creature spell of that type this turn, that creature enters with an additional +1/+1 counter on it.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "The Lord of the Rings: Tales of Middle-earth",
+    "set": "ltr",
+    "collector_number": "174",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/2/7/27347256-2ac4-4b12-b288-0a8d578a1ff2.jpg?1783916270",
+    "related": []
+  },
+  {
+    "name": "Doubling Season",
+    "mana_cost": "{4}{G}",
+    "cmc": 5.0,
+    "type_line": "Enchantment",
+    "oracle_text": "If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead.\nIf an effect would put one or more counters on a permanent you control, it puts twice that many of those counters on that permanent instead.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Foundations",
+    "set": "fdn",
+    "collector_number": "216",
+    "rarity": "mythic",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/f/2/f2c4f80e-84a0-463b-82c3-5c6503809351.jpg?1783909062",
+    "related": []
+  },
+  {
+    "name": "Quilled Greatwurm",
+    "mana_cost": "{4}{G}{G}",
+    "cmc": 6.0,
+    "type_line": "Creature \u2014 Wurm",
+    "oracle_text": "Trample\nWhenever a creature you control deals combat damage during your turn, put that many +1/+1 counters on it. (It must survive to get the counters.)\nYou may cast this card from your graveyard by removing six counters from among creatures you control in addition to paying its other costs.",
+    "power": "7",
+    "toughness": "7",
+    "loyalty": null,
+    "set_name": "Foundations",
+    "set": "fdn",
+    "collector_number": "111",
+    "rarity": "mythic",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/3/1/31b60531-3d33-4e66-923a-29008716b15c.jpg?1783909095",
+    "related": []
+  },
+  {
+    "name": "Foe-liage",
+    "mana_cost": "{3}{G}",
+    "cmc": 4.0,
+    "type_line": "Creature \u2014 Plant Mutant",
+    "oracle_text": "Whenever a land enters during your turn, put a +1/+1 counter on this creature.",
+    "power": "3",
+    "toughness": "3",
+    "loyalty": null,
+    "set_name": "Teenage Mutant Ninja Turtles Eternal",
+    "set": "tmc",
+    "collector_number": "122",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/d/5/d54cd688-8950-4a84-a74f-5f31b344b6c9.jpg?1783904134",
+    "related": []
+  },
+  {
+    "name": "Rhox Maulers",
+    "mana_cost": "{4}{G}",
+    "cmc": 5.0,
+    "type_line": "Creature \u2014 Rhino Soldier",
+    "oracle_text": "Trample (This creature can deal excess combat damage to the player or planeswalker it's attacking.)\nRenown 2 (When this creature deals combat damage to a player, if it isn't renowned, put two +1/+1 counters on it and it becomes renowned.)",
+    "power": "4",
+    "toughness": "4",
+    "loyalty": null,
+    "set_name": "Magic Origins",
+    "set": "ori",
+    "collector_number": "196",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/6/4/64c3c972-82f6-46ea-8f9f-090c65c22e44.jpg?1783938318",
+    "related": []
+  },
+  {
+    "name": "Benevolent Hydra",
+    "mana_cost": "{X}{G}{G}",
+    "cmc": 2.0,
+    "type_line": "Creature \u2014 Hydra",
+    "oracle_text": "This creature enters with X +1/+1 counters on it.\nIf one or more +1/+1 counters would be put on another creature you control, that many plus one +1/+1 counters are put on it instead.\n{T}, Remove a +1/+1 counter from this creature: Put a +1/+1 counter on another target creature you control.",
+    "power": "1",
+    "toughness": "1",
+    "loyalty": null,
+    "set_name": "Secrets of Strixhaven Commander",
+    "set": "soc",
+    "collector_number": "124",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/0/6/064595cb-089e-4cf2-afe3-223235ce3f92.jpg?1783903818",
+    "related": []
+  },
+  {
+    "name": "Gravetiller Wurm",
+    "mana_cost": "{5}{G}",
+    "cmc": 6.0,
+    "type_line": "Creature \u2014 Wurm",
+    "oracle_text": "Trample\nMorbid \u2014 This creature enters with four +1/+1 counters on it if a creature died this turn.",
+    "power": "4",
+    "toughness": "4",
+    "loyalty": null,
+    "set_name": "Dark Ascension",
+    "set": "dka",
+    "collector_number": "116",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/6/6/66d9fe36-2eac-49e3-8f89-810009ba8a4b.jpg?1783940808",
+    "related": []
+  },
+  {
+    "name": "Ravenous Gigantotherium",
+    "mana_cost": "{5}{G}{G}",
+    "cmc": 7.0,
+    "type_line": "Creature \u2014 Beast",
+    "oracle_text": "Devour 3 (As this creature enters, you may sacrifice any number of creatures. It enters with three times that many +1/+1 counters on it.)\nWhen this creature enters, it deals X damage divided as you choose among up to X target creatures, where X is its power. Each of those creatures deals damage equal to its power to this creature.",
+    "power": "3",
+    "toughness": "3",
+    "loyalty": null,
+    "set_name": "Commander 2020",
+    "set": "c20",
+    "collector_number": "63",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/c/a/ca260253-40b8-4846-9e41-4e9cfc56d691.jpg?1783931210",
+    "related": []
+  },
+  {
+    "name": "Flycatcher Giraffid",
+    "mana_cost": "{4}{G}",
+    "cmc": 5.0,
+    "type_line": "Creature \u2014 Antelope Lizard",
+    "oracle_text": "This creature enters with your choice of a reach counter or a vigilance counter on it.",
+    "power": "3",
+    "toughness": "5",
+    "loyalty": null,
+    "set_name": "Ikoria: Lair of Behemoths",
+    "set": "iko",
+    "collector_number": "153",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/1/9/1988e220-d746-46e4-a534-164203e63c14.jpg?1783931036",
+    "related": []
+  },
+  {
+    "name": "Karok Wrangler",
+    "mana_cost": "{4}{G}",
+    "cmc": 5.0,
+    "type_line": "Creature \u2014 Elf Druid",
+    "oracle_text": "Magecraft \u2014 Whenever you cast or copy an instant or sorcery spell, put a +1/+1 counter on target creature you control.",
+    "power": "3",
+    "toughness": "3",
+    "loyalty": null,
+    "set_name": "Strixhaven: School of Mages",
+    "set": "stx",
+    "collector_number": "135",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/7/4/74729320-f6ee-4176-9463-397d6e477d7a.jpg?1783927342",
+    "related": []
+  },
+  {
+    "name": "Close Encounter",
+    "mana_cost": "{1}{G}",
+    "cmc": 2.0,
+    "type_line": "Instant",
+    "oracle_text": "As an additional cost to cast this spell, choose a creature you control or a warped creature card you own in exile.\nClose Encounter deals damage equal to the power of the chosen creature or card to target creature.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Edge of Eternities",
+    "set": "eoe",
+    "collector_number": "176",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/a/8/a8a77351-9115-470f-8141-222c1916b337.jpg?1783905941",
+    "related": []
+  },
+  {
+    "name": "Herd Baloth",
+    "mana_cost": "{3}{G}{G}",
+    "cmc": 5.0,
+    "type_line": "Creature \u2014 Beast",
+    "oracle_text": "Whenever one or more +1/+1 counters are put on this creature, you may create a 4/4 green Beast creature token.",
+    "power": "4",
+    "toughness": "4",
+    "loyalty": null,
+    "set_name": "Modern Horizons 2",
+    "set": "mh2",
+    "collector_number": "165",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/c/1/c1e9cef5-c55f-47d9-9d2f-300dab8fcb0b.jpg?1783926829",
+    "related": [
+      "Beast"
+    ]
+  },
+  {
+    "name": "Strength of Will",
+    "mana_cost": "{1}{G}",
+    "cmc": 2.0,
+    "type_line": "Instant",
+    "oracle_text": "Until end of turn, target creature you control gains indestructible and \"Whenever this creature is dealt damage, put that many +1/+1 counters on it.\"",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Marvel's Spider-Man",
+    "set": "spm",
+    "collector_number": "118",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/6/8/68f985c7-7765-46c3-ad31-edae3abb9fbf.jpg?1783905321",
+    "related": []
+  },
+  {
+    "name": "Guardian Gladewalker",
+    "mana_cost": "{1}{G}",
+    "cmc": 2.0,
+    "type_line": "Creature \u2014 Shapeshifter",
+    "oracle_text": "Changeling (This card is every creature type.)\nWhen this creature enters, put a +1/+1 counter on target creature.",
+    "power": "1",
+    "toughness": "1",
+    "loyalty": null,
+    "set_name": "Kaldheim",
+    "set": "khm",
+    "collector_number": "174",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/5/8/587eed42-5111-4161-9af5-bf76556c542a.jpg?1783928212",
+    "related": []
+  },
+  {
+    "name": "Hulkling, Burgeoning Bruiser",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Legendary Creature \u2014 Kree Skrull Hero",
+    "oracle_text": "Vigilance\nWhenever another creature you control enters, if it has greater power or toughness than Hulkling, put a +1/+1 counter on Hulkling.",
+    "power": "2",
+    "toughness": "3",
+    "loyalty": null,
+    "set_name": "Marvel Super Heroes",
+    "set": "msh",
+    "collector_number": "173",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/9/0/9018477f-a67b-4fa4-8661-11ab91fae863.jpg?1783902917",
+    "related": []
+  },
+  {
+    "name": "Autumn's Veil",
+    "mana_cost": "{G}",
+    "cmc": 1.0,
+    "type_line": "Instant",
+    "oracle_text": "Spells you control can't be countered by blue or black spells this turn, and creatures you control can't be the targets of blue or black spells this turn.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Magic 2012",
+    "set": "m12",
+    "collector_number": "164",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/b/9/b911fee0-c30b-4d68-a9e2-61c40ece68b0.jpg?1783941063",
+    "related": []
+  },
+  {
+    "name": "Meltstrider Eulogist",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Creature \u2014 Insect Soldier",
+    "oracle_text": "Whenever a creature you control with a +1/+1 counter on it dies, draw a card.",
+    "power": "3",
+    "toughness": "3",
+    "loyalty": null,
+    "set_name": "Edge of Eternities",
+    "set": "eoe",
+    "collector_number": "197",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/d/f/df61aa0c-effc-4d57-be19-876a82c41d33.jpg?1783905934",
+    "related": []
+  },
+  {
+    "name": "Jiang Yanggu, Wildcrafter",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Legendary Planeswalker \u2014 Yanggu",
+    "oracle_text": "Each creature you control with a +1/+1 counter on it has \"{T}: Add one mana of any color.\"\n\u22121: Put a +1/+1 counter on target creature.",
+    "power": null,
+    "toughness": null,
+    "loyalty": "3",
+    "set_name": "War of the Spark",
+    "set": "war",
+    "collector_number": "164",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/1/0/10e0d47d-b13c-4d48-881f-8aaa347ef209.jpg?1783933410",
+    "related": []
+  },
+  {
+    "name": "Bejeweled Warg",
+    "mana_cost": "{1}{G}",
+    "cmc": 2.0,
+    "type_line": "Creature \u2014 Wolf",
+    "oracle_text": "Trample\nWhenever this creature deals combat damage to a player, choose one \u2014\n\u2022 Put a +1/+1 counter on target Wolf you control.\n\u2022 Create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")",
+    "power": "3",
+    "toughness": "2",
+    "loyalty": null,
+    "set_name": "The Hobbit",
+    "set": "hob",
+    "collector_number": "117",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/e/9/e95eba5c-e0d6-46b4-a0be-8e373b2185ea.jpg?1785496330",
+    "related": [
+      "Treasure"
+    ]
+  },
+  {
+    "name": "Segmented Krotiq",
+    "mana_cost": "{5}{G}",
+    "cmc": 6.0,
+    "type_line": "Creature \u2014 Insect",
+    "oracle_text": "Megamorph {6}{G} (You may cast this card face down as a 2/2 creature for {3}. Turn it face up any time for its megamorph cost and put a +1/+1 counter on it.)",
+    "power": "6",
+    "toughness": "5",
+    "loyalty": null,
+    "set_name": "Dragons of Tarkir",
+    "set": "dtk",
+    "collector_number": "202",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/d/c/dcdbe824-f9c7-4f4d-af92-438b16057d99.jpg?1783938576",
+    "related": [
+      "Morph"
+    ]
+  },
+  {
+    "name": "Afiya Grove",
+    "mana_cost": "{1}{G}",
+    "cmc": 2.0,
+    "type_line": "Enchantment",
+    "oracle_text": "This enchantment enters with three +1/+1 counters on it.\nAt the beginning of your upkeep, move a +1/+1 counter from this enchantment onto target creature.\nWhen this enchantment has no +1/+1 counters on it, sacrifice it.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Mirage",
+    "set": "mir",
+    "collector_number": "205",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/c/4/c495e1f3-0845-4556-83e6-de8b9d518d1d.jpg?1783947069",
+    "related": []
+  },
+  {
+    "name": "Unnatural Restoration",
+    "mana_cost": "{1}{G}",
+    "cmc": 2.0,
+    "type_line": "Sorcery",
+    "oracle_text": "Return target permanent card from your graveyard to your hand. Proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Phyrexia: All Will Be One",
+    "set": "one",
+    "collector_number": "191",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/4/d/4d4e6a91-59cc-4f7f-af25-16acabdafb1a.jpg?1783918006",
+    "related": []
+  },
+  {
+    "name": "Generous Visitor",
+    "mana_cost": "{G}",
+    "cmc": 1.0,
+    "type_line": "Creature \u2014 Spirit",
+    "oracle_text": "Whenever you cast an enchantment spell, put a +1/+1 counter on target creature.",
+    "power": "1",
+    "toughness": "1",
+    "loyalty": null,
+    "set_name": "Kamigawa: Neon Dynasty",
+    "set": "neo",
+    "collector_number": "185",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/d/1/d1066ccd-a932-4d05-98da-11ae4675364e.jpg?1783923849",
+    "related": []
+  },
+  {
+    "name": "Sharp-Eyed Rookie",
+    "mana_cost": "{1}{G}",
+    "cmc": 2.0,
+    "type_line": "Creature \u2014 Human Detective",
+    "oracle_text": "Vigilance\nWhenever a creature you control enters, if its power is greater than this creature's power or its toughness is greater than this creature's toughness, put a +1/+1 counter on this creature and investigate. (Create a Clue token. It's an artifact with \"{2}, Sacrifice this token: Draw a card.\")",
+    "power": "2",
+    "toughness": "2",
+    "loyalty": null,
+    "set_name": "Murders at Karlov Manor",
+    "set": "mkm",
+    "collector_number": "176",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/3/d/3d5d4788-a970-4e09-89a1-740eca9331d9.jpg?1783912862",
+    "related": [
+      "Clue"
+    ]
+  },
+  {
+    "name": "Copper Longlegs",
+    "mana_cost": "{1}{G}",
+    "cmc": 2.0,
+    "type_line": "Creature \u2014 Phyrexian Spider",
+    "oracle_text": "Reach\n{1}{G}, Sacrifice this creature: Proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)",
+    "power": "1",
+    "toughness": "3",
+    "loyalty": null,
+    "set_name": "Phyrexia: All Will Be One",
+    "set": "one",
+    "collector_number": "165",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/f/8/f8855fbf-4f1e-4c44-9653-bbbfc3f2fafd.jpg?1783918018",
+    "related": []
+  },
+  {
+    "name": "Stocking the Pantry",
+    "mana_cost": "{G}",
+    "cmc": 1.0,
+    "type_line": "Enchantment",
+    "oracle_text": "Whenever you put one or more +1/+1 counters on a creature you control, put a supply counter on this enchantment.\n{2}, Remove a supply counter from this enchantment: Draw a card.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Bloomburrow",
+    "set": "blb",
+    "collector_number": "194",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/5/0/50e95c7b-f0b2-4276-8c5e-4191b7ba35d1.jpg?1783910803",
+    "related": []
+  },
+  {
+    "name": "Summon: Magus Sisters",
+    "mana_cost": "{4}{G}",
+    "cmc": 5.0,
+    "type_line": "Enchantment Creature \u2014 Saga Faerie",
+    "oracle_text": "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI, II, III \u2014 Choose one at random \u2014\n\u2022 Combine Powers! \u2014 Put three +1/+1 counters on target creature.\n\u2022 Defense! \u2014 Put a shield counter on target creature. You gain 3 life.\n\u2022 Fight! \u2014 This creature fights up to one target creature an opponent controls.\nHaste",
+    "power": "5",
+    "toughness": "5",
+    "loyalty": null,
+    "set_name": "Final Fantasy Commander",
+    "set": "fic",
+    "collector_number": "71",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/7/6/76a8cae7-e6ea-45eb-be8d-0e6a29b98aa6.jpg?1783906350",
+    "related": []
+  },
+  {
+    "name": "Sporoloth Ancient",
+    "mana_cost": "{3}{G}{G}",
+    "cmc": 5.0,
+    "type_line": "Creature \u2014 Fungus",
+    "oracle_text": "At the beginning of your upkeep, put a spore counter on this creature.\nCreatures you control have \"Remove two spore counters from this creature: Create a 1/1 green Saproling creature token.\"",
+    "power": "4",
+    "toughness": "4",
+    "loyalty": null,
+    "set_name": "Time Spiral Remastered",
+    "set": "tsr",
+    "collector_number": "232",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/5/7/57a96041-1b20-464e-9119-93c19675ac46.jpg?1783927770",
+    "related": [
+      "Saproling"
+    ]
+  },
+  {
+    "name": "Lifeforce",
+    "mana_cost": "{G}{G}",
+    "cmc": 2.0,
+    "type_line": "Enchantment",
+    "oracle_text": "{G}{G}: Counter target black spell.",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Masters Edition IV",
+    "set": "me4",
+    "collector_number": "160",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/6/5/6520d992-ebb3-4711-ad91-ab1c1e29538a.jpg?1783941425",
+    "related": []
+  },
+  {
+    "name": "Temperamental Oozewagg",
+    "mana_cost": "{3}{G}",
+    "cmc": 4.0,
+    "type_line": "Creature \u2014 Ooze Brushwagg",
+    "oracle_text": "{2}{G}: Adapt 2. (If this creature has no +1/+1 counters on it, put two +1/+1 counters on it.)\nModified creatures you control have trample. (Equipment, Auras you control, and counters are modifications.)",
+    "power": "4",
+    "toughness": "4",
+    "loyalty": null,
+    "set_name": "Modern Horizons 3",
+    "set": "mh3",
+    "collector_number": "172",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/6/6/6625df2e-7046-411a-ae86-c46ac0953a0b.jpg?1783911256",
+    "related": []
+  },
+  {
+    "name": "Tyrranax Atrocity",
+    "mana_cost": "{3}{G}{G}",
+    "cmc": 5.0,
+    "type_line": "Creature \u2014 Phyrexian Dinosaur",
+    "oracle_text": "Haste\nToxic 3 (Players dealt combat damage by this creature also get three poison counters.)",
+    "power": "4",
+    "toughness": "4",
+    "loyalty": null,
+    "set_name": "Phyrexia: All Will Be One",
+    "set": "one",
+    "collector_number": "188",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/1/5/157cf43c-f7f2-4362-bfc8-11682e94b747.jpg?1783918007",
+    "related": [
+      "Poison Counter"
+    ]
+  },
+  {
+    "name": "Primal Adversary",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Creature \u2014 Wolf",
+    "oracle_text": "Trample\nWhen this creature enters, you may pay {1}{G} any number of times. When you pay this cost one or more times, put that many +1/+1 counters on this creature, then up to that many target lands you control become 3/3 Wolf creatures with haste that are still lands.",
+    "power": "4",
+    "toughness": "3",
+    "loyalty": null,
+    "set_name": "Innistrad: Midnight Hunt",
+    "set": "mid",
+    "collector_number": "194",
+    "rarity": "mythic",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/b/f/bf3ce5c5-ea31-4f6d-84dd-430f52c49c4e.jpg?1783925576",
+    "related": []
+  },
+  {
+    "name": "Cloaked Cadet",
+    "mana_cost": "{4}{G}",
+    "cmc": 5.0,
+    "type_line": "Creature \u2014 Human Ranger",
+    "oracle_text": "Training (Whenever this creature attacks with another creature with greater power, put a +1/+1 counter on this creature.)\nWhenever one or more +1/+1 counters are put on one or more Humans you control, draw a card. This ability triggers only once each turn.",
+    "power": "2",
+    "toughness": "4",
+    "loyalty": null,
+    "set_name": "Innistrad: Crimson Vow",
+    "set": "vow",
+    "collector_number": "192",
+    "rarity": "uncommon",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/0/6/06d86c79-d2c7-4900-9474-4d4bc4c74d44.jpg?1783924816",
+    "related": []
+  },
+  {
+    "name": "Bloated Contaminator",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Creature \u2014 Phyrexian Beast",
+    "oracle_text": "Trample\nToxic 1 (Players dealt combat damage by this creature also get a poison counter.)\nWhenever this creature deals combat damage to a player, proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)",
+    "power": "4",
+    "toughness": "4",
+    "loyalty": null,
+    "set_name": "Phyrexia: All Will Be One",
+    "set": "one",
+    "collector_number": "159",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/4/1/411bda96-6c65-475d-9850-0a9b3eefa553.jpg?1783918018",
+    "related": [
+      "Poison Counter"
+    ]
+  },
+  {
+    "name": "Freestrider Commando",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Creature \u2014 Centaur Mercenary",
+    "oracle_text": "This creature enters with two +1/+1 counters on it if it wasn't cast or no mana was spent to cast it.\nPlot {3}{G} (You may pay {3}{G} and exile this card from your hand. Cast it as a sorcery on a later turn without paying its mana cost. Plot only as a sorcery.)",
+    "power": "3",
+    "toughness": "3",
+    "loyalty": null,
+    "set_name": "Outlaws of Thunder Junction",
+    "set": "otj",
+    "collector_number": "162",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/9/2/92762169-095e-46e2-82f6-5b2ff2232240.jpg?1783911808",
+    "related": [
+      "Plot"
+    ]
+  },
+  {
+    "name": "Fractal Harness",
+    "mana_cost": "{X}{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Artifact \u2014 Equipment",
+    "oracle_text": "When this Equipment enters, create a 0/0 green and blue Fractal creature token. Put X +1/+1 counters on it and attach this Equipment to it.\nWhenever equipped creature attacks, double the number of +1/+1 counters on it.\nEquip {2}",
+    "power": null,
+    "toughness": null,
+    "loyalty": null,
+    "set_name": "Secrets of Strixhaven Commander",
+    "set": "soc",
+    "collector_number": "268",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/8/d/8d196dcf-80bc-4a0a-83c9-ae87da5e74bf.jpg?1783903766",
+    "related": [
+      "Fractal"
+    ]
+  },
+  {
+    "name": "Phantom Nantuko",
+    "mana_cost": "{2}{G}",
+    "cmc": 3.0,
+    "type_line": "Creature \u2014 Insect Spirit",
+    "oracle_text": "Trample\nThis creature enters with two +1/+1 counters on it.\nIf damage would be dealt to this creature, prevent that damage. Remove a +1/+1 counter from this creature.\n{T}: Put a +1/+1 counter on this creature.",
+    "power": "0",
+    "toughness": "0",
+    "loyalty": null,
+    "set_name": "Commander Anthology",
+    "set": "cma",
+    "collector_number": "133",
+    "rarity": "rare",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/2/f/2fd65594-cf66-4dd4-8d7b-b565756f2f86.jpg?1783936253",
+    "related": []
+  },
+  {
+    "name": "Kavu Primarch",
+    "mana_cost": "{3}{G}",
+    "cmc": 4.0,
+    "type_line": "Creature \u2014 Kavu",
+    "oracle_text": "Kicker {4} (You may pay an additional {4} as you cast this spell.)\nConvoke (Your creatures can help cast this spell. Each creature you tap while casting this spell pays for {1} or one mana of that creature's color.)\nIf this creature was kicked, it enters with four +1/+1 counters on it.",
+    "power": "3",
+    "toughness": "3",
+    "loyalty": null,
+    "set_name": "Dominaria Remastered",
+    "set": "dmr",
+    "collector_number": "167",
+    "rarity": "common",
+    "lang": "en",
+    "color_identity": [
+      "G"
+    ],
+    "image": "https://cards.scryfall.io/normal/front/f/5/f53cbda8-805f-42a4-aba4-9939b08e37ca.jpg?1783918441",
+    "related": []
+  }
+]

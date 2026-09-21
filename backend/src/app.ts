@@ -1,4 +1,5 @@
 import { ArchidektDeckSource, ArchidektDeckSourceError } from "./decks/archidekt-deck-source.js";
+import { registerDeckLabRoutes } from "./cards/deck-lab-routes.js";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import Fastify from "fastify";
@@ -75,6 +76,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
     origin: /^http:\/\/(?:localhost|127\.0\.0\.1):\d+$/,
   });
   await app.register(multipart);
+  registerDeckLabRoutes(app);
 
   if (ownsDatabase) {
     app.addHook("onClose", async () => {

@@ -1,4 +1,5 @@
 import "./style.css";
+import { initDeckLabView } from "./deck-lab/deck-lab-view.js";
 import { element } from "./dom.js";
 import { initDeckLibraryView } from "./decks/deck-library-view.js";
 import { initPlaytestView } from "./playtest/playtest-view.js";
@@ -12,6 +13,18 @@ const navDecks = element<HTMLButtonElement>("#nav-decks");
 const navPlay = element<HTMLButtonElement>("#nav-play");
 const navVoiceTest = element<HTMLButtonElement>("#nav-voice-test");
 
+const labView = element<HTMLElement>("#deck-lab-view");
+const navLab = element<HTMLButtonElement>("#nav-deck-lab");
+const deckLab = initDeckLabView(labView);
+function hideLab() { labView.hidden = true; navLab.setAttribute("aria-pressed", "false"); }
+navLab.addEventListener("click", () => {
+  deckLab.activate();
+  [decksGroup, playView, voiceTestView].forEach(el => el.hidden = true);
+  [navDecks, navPlay, navVoiceTest].forEach(el => el.setAttribute("aria-pressed", "false"));
+  labView.hidden = false; navLab.setAttribute("aria-pressed", "true");
+});
+if (location.hash === "#deck-lab") navLab.click();
+
 async function checkBackend(): Promise<void> {
   try {
     const response = await fetch("/health");
@@ -24,6 +37,7 @@ async function checkBackend(): Promise<void> {
 }
 
 function showDecksGroup(): void {
+  hideLab();
   decksGroup.hidden = false;
   playView.hidden = true;
   voiceTestView.hidden = true;
@@ -33,6 +47,7 @@ function showDecksGroup(): void {
 }
 
 function showPlayGroup(): void {
+  hideLab();
   decksGroup.hidden = true;
   playView.hidden = false;
   voiceTestView.hidden = true;
@@ -43,6 +58,7 @@ function showPlayGroup(): void {
 
 /** Standalone mic/Web Speech API check — no Forge session, no pending decision, see voice-mic-test-view.ts. */
 function showVoiceTestGroup(): void {
+  hideLab();
   decksGroup.hidden = true;
   playView.hidden = true;
   voiceTestView.hidden = false;
