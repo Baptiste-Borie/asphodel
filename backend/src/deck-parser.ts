@@ -1,4 +1,8 @@
-export const deckSections = ["commander", "mainboard"] as const;
+// "maybeboard" is a valid DeckSection (Deck Lab's Builder triage feature produces it — see
+// deck-service.ts's updateDeckCards / ForgeDeckAdapter, which excludes it from the playable deck)
+// but this plain-text parser never emits it: `sectionByHeading` below only recognizes the two
+// headings a pasted decklist can actually have.
+export const deckSections = ["commander", "mainboard", "maybeboard"] as const;
 
 export type DeckSection = (typeof deckSections)[number];
 

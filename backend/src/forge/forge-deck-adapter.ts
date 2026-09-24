@@ -55,12 +55,9 @@ export class ForgeDeckAdapter {
         commanderQuantities.set(card.name, (commanderQuantities.get(card.name) ?? 0) + card.quantity);
       } else if (card.section === "mainboard") {
         mainboardCards += card.quantity;
-      } else {
-        throw new ForgeDeckAdapterError(
-          "INVALID_FORGE_DECK",
-          `unsupported deck section for ${card.name}.`,
-        );
       }
+      // "maybeboard" cards (Builder triage: interesting, but not actually included) are silently
+      // skipped — never part of the game, and their presence must never block a deck from playing.
     }
 
     if ([...commanderQuantities.values()].some((quantity) => quantity !== 1)) {
@@ -91,11 +88,13 @@ export class ForgeDeckAdapter {
     return {
       sourceDeckId: deck.id,
       name: deck.name,
-      cards: deck.cards.map(({ name, quantity, section }) => ({
-        name,
-        quantity,
-        section,
-      })),
+      cards: deck.cards
+        .filter((card): card is typeof card & { section: "commander" | "mainboard" } => card.section !== "maybeboard")
+        .map(({ name, quantity, section }) => ({
+          name,
+          quantity,
+          section,
+        })),
     };
   }
 }

@@ -28,6 +28,10 @@ export interface DeckCardView {
   imageUri: string | null;
   quantity: number;
   section: DeckSection;
+  // The Builder's manual category for this row (e.g. "Ramp") — meaningful for mainboard rows only;
+  // a commander-section row's category is never trusted as its group (see schema.ts's comment).
+  category: string;
+  categoryPosition: number;
 }
 
 export interface DeckDetailView {
@@ -39,8 +43,20 @@ export interface DeckDetailView {
   cards: DeckCardView[];
 }
 
+/** What the Builder sends on auto-save: its groups, in order, each with the cards it currently holds. */
+export interface DeckEntryGroupInput {
+  name: string;
+  section: DeckSection;
+  entries: { name: string; quantity: number }[];
+}
+
 interface AggregatedEntry extends ParsedCard {
   normalizedName: string;
+}
+
+interface CategorizedEntry extends AggregatedEntry {
+  category: string;
+  categoryPosition: number;
 }
 
 function normalizeCardName(name: string): string {
@@ -61,6 +77,31 @@ function aggregateEntries(parsedCards: ParsedCard[]): AggregatedEntry[] {
       entries.set(key, { ...card, normalizedName });
     }
   }
+
+  return [...entries.values()];
+}
+
+/** Same idea as `aggregateEntries`, but keyed on category too — the Builder is free to (rarely, but
+ *  legitimately) hold the same card in two different categories, and each must survive as its own row. */
+function aggregateCategorizedEntries(groups: DeckEntryGroupInput[]): CategorizedEntry[] {
+  const entries = new Map<string, CategorizedEntry>();
+
+  groups.forEach((group, categoryPosition) => {
+    const section = group.section;
+    for (const entry of group.entries) {
+      const name = entry.name.trim();
+      if (!name || !Number.isSafeInteger(entry.quantity) || entry.quantity < 1) continue;
+      const normalizedName = normalizeCardName(name);
+      const key = `${section}\u0000${group.name}\u0000${normalizedName}`;
+      const existing = entries.get(key);
+
+      if (existing) {
+        existing.quantity += entry.quantity;
+      } else {
+        entries.set(key, { name, quantity: entry.quantity, section, category: group.name, categoryPosition, normalizedName });
+      }
+    }
+  });
 
   return [...entries.values()];
 }
@@ -123,7 +164,8 @@ export class DeckService {
         result.set(row.id, deck);
       }
 
-      deck.totalCards += row.quantity ?? 0;
+      // Maybeboard cards are deliberately "not really in the deck" (Builder triage) — never counted.
+      if (row.section !== "maybeboard") deck.totalCards += row.quantity ?? 0;
       if (row.section === "commander" && row.cardName) {
         deck.commanders.push({ name: row.cardName, imageUri: row.imageUri });
       }
@@ -156,18 +198,21 @@ export class DeckService {
         imageUri: cards.imageUri,
         quantity: deckEntries.quantity,
         section: deckEntries.section,
+        category: deckEntries.category,
+        categoryPosition: deckEntries.categoryPosition,
       })
       .from(deckEntries)
       .innerJoin(cards, eq(cards.id, deckEntries.cardId))
       .where(eq(deckEntries.deckId, id))
-      .orderBy(asc(deckEntries.section), asc(cards.name));
+      .orderBy(asc(deckEntries.section), asc(deckEntries.categoryPosition), asc(cards.name));
 
     return {
       id: deck.id,
       name: deck.name,
       createdAt: serializeDate(deck.createdAt),
       updatedAt: serializeDate(deck.updatedAt),
-      totalCards: entries.reduce((sum, entry) => sum + entry.quantity, 0),
+      // Maybeboard cards are deliberately "not really in the deck" (Builder triage) — never counted.
+      totalCards: entries.filter((entry) => entry.section !== "maybeboard").reduce((sum, entry) => sum + entry.quantity, 0),
       cards: entries,
     };
   }
@@ -184,8 +229,10 @@ export class DeckService {
     return this.createDeckFromEntries(spec.name, spec.cards.map(card => ({ ...card, section: card.section as DeckSection })));
   }
 
-  private async createDeckFromEntries(name: string, cardsToStore: ParsedCard[]): Promise<DeckDetailView> {
-    const entries = aggregateEntries(cardsToStore);
+  /** Resolves every requested card (cache hit, or a fresh Scryfall lookup) and makes sure each one
+   *  has a row in `cards`, without touching `decks`/`deckEntries` — shared by deck creation and by
+   *  `updateDeckCards`, which only ever replaces entries for a deck that already exists. */
+  private async resolveEntries(entries: AggregatedEntry[]): Promise<Map<string, number>> {
     const requestedNames = new Map<string, string>();
     const requestedPrintings = new Map<string, { setCode: string; collectorNumber: string }>();
     for (const entry of entries) {
@@ -240,47 +287,62 @@ export class DeckService {
 
     if (notFound.length > 0) throw new CardsNotFoundError(notFound);
 
-    const deckId = await this.db.transaction(async (transaction) => {
-      const newCards = [...resolutionByRequestedName.values()]
-        .map((resolution) => resolution.card)
-        .filter((card): card is ResolvedCard => Boolean(card));
+    const newCards = [...resolutionByRequestedName.values()]
+      .map((resolution) => resolution.card)
+      .filter((card): card is ResolvedCard => Boolean(card));
 
-      if (newCards.length > 0) {
-        await transaction
-          .insert(cards)
-          .values(
-            newCards.map((card) => ({
-              scryfallId: card.scryfallId,
-              oracleId: card.oracleId,
-              name: card.name,
-              normalizedName: normalizeCardName(card.name),
-              manaCost: card.manaCost,
-              manaValue: card.manaValue,
-              typeLine: card.typeLine,
-              oracleText: card.oracleText,
-              colors: card.colors,
-              colorIdentity: card.colorIdentity,
-              imageUri: card.imageUri,
-            })),
-          )
-          .onConflictDoNothing();
-      }
+    if (newCards.length > 0) {
+      await this.db
+        .insert(cards)
+        .values(
+          newCards.map((card) => ({
+            scryfallId: card.scryfallId,
+            oracleId: card.oracleId,
+            name: card.name,
+            normalizedName: normalizeCardName(card.name),
+            manaCost: card.manaCost,
+            manaValue: card.manaValue,
+            typeLine: card.typeLine,
+            oracleText: card.oracleText,
+            colors: card.colors,
+            colorIdentity: card.colorIdentity,
+            imageUri: card.imageUri,
+          })),
+        )
+        .onConflictDoNothing();
+    }
 
-      const scryfallIds = [
-        ...new Set(
-          [...resolutionByRequestedName.values()].map(
-            (resolution) => resolution.scryfallId,
-          ),
+    const scryfallIds = [
+      ...new Set(
+        [...resolutionByRequestedName.values()].map(
+          (resolution) => resolution.scryfallId,
         ),
-      ];
-      const storedCards = await transaction
-        .select({ id: cards.id, scryfallId: cards.scryfallId })
-        .from(cards)
-        .where(inArray(cards.scryfallId, scryfallIds));
-      const cardIdByScryfallId = new Map(
-        storedCards.map((card) => [card.scryfallId, card.id]),
-      );
+      ),
+    ];
+    const storedCards =
+      scryfallIds.length === 0
+        ? []
+        : await this.db
+            .select({ id: cards.id, scryfallId: cards.scryfallId })
+            .from(cards)
+            .where(inArray(cards.scryfallId, scryfallIds));
+    const cardIdByScryfallId = new Map(
+      storedCards.map((card) => [card.scryfallId, card.id]),
+    );
 
+    const cardIdByNormalizedName = new Map<string, number>();
+    for (const [normalizedName, resolution] of resolutionByRequestedName) {
+      const cardId = cardIdByScryfallId.get(resolution.scryfallId);
+      if (cardId) cardIdByNormalizedName.set(normalizedName, cardId);
+    }
+    return cardIdByNormalizedName;
+  }
+
+  private async createDeckFromEntries(name: string, cardsToStore: ParsedCard[]): Promise<DeckDetailView> {
+    const entries = aggregateEntries(cardsToStore);
+    const cardIdByNormalizedName = await this.resolveEntries(entries);
+
+    const deckId = await this.db.transaction(async (transaction) => {
       const [createdDeck] = await transaction
         .insert(decks)
         .values({ name })
@@ -288,28 +350,68 @@ export class DeckService {
 
       if (!createdDeck) throw new Error("La création du deck a échoué.");
 
-      await transaction.insert(deckEntries).values(
-        entries.map((entry) => {
-          const resolution = resolutionByRequestedName.get(entry.normalizedName);
-          const cardId = resolution
-            ? cardIdByScryfallId.get(resolution.scryfallId)
-            : undefined;
+      if (entries.length > 0) {
+        await transaction.insert(deckEntries).values(
+          entries.map((entry) => {
+            const cardId = cardIdByNormalizedName.get(entry.normalizedName);
+            if (!cardId) throw new Error(`Carte non persistée : ${entry.name}`);
 
-          if (!cardId) throw new Error(`Carte non persistée : ${entry.name}`);
-
-          return {
-            deckId: createdDeck.id,
-            cardId,
-            quantity: entry.quantity,
-            section: entry.section,
-          };
-        }),
-      );
+            return {
+              deckId: createdDeck.id,
+              cardId,
+              quantity: entry.quantity,
+              section: entry.section,
+            };
+          }),
+        );
+      }
 
       return createdDeck.id;
     });
 
     return this.getDeck(deckId);
+  }
+
+  /** Replaces a deck's entire card list in place (Deck Lab's Builder auto-save) — same resolution
+   *  path as creation/import, but the deck row and its id survive; only `deckEntries` is swapped.
+   *  Structured groups (not decklist text) so the Builder's manual categories — not just the
+   *  commander/mainboard split — round-trip through a save/reload. */
+  async updateDeckCards(id: number, groups: DeckEntryGroupInput[]): Promise<DeckDetailView> {
+    const entries = aggregateCategorizedEntries(groups);
+    const cardIdByNormalizedName = await this.resolveEntries(entries);
+
+    await this.db.transaction(async (transaction) => {
+      const existing = await transaction
+        .select({ id: decks.id })
+        .from(decks)
+        .where(eq(decks.id, id))
+        .limit(1);
+      if (existing.length === 0) throw new DeckNotFoundError();
+
+      await transaction.delete(deckEntries).where(eq(deckEntries.deckId, id));
+
+      if (entries.length > 0) {
+        await transaction.insert(deckEntries).values(
+          entries.map((entry) => {
+            const cardId = cardIdByNormalizedName.get(entry.normalizedName);
+            if (!cardId) throw new Error(`Carte non persistée : ${entry.name}`);
+
+            return {
+              deckId: id,
+              cardId,
+              quantity: entry.quantity,
+              section: entry.section,
+              category: entry.category,
+              categoryPosition: entry.categoryPosition,
+            };
+          }),
+        );
+      }
+
+      await transaction.update(decks).set({ updatedAt: new Date() }).where(eq(decks.id, id));
+    });
+
+    return this.getDeck(id);
   }
 
   async renameDeck(id: number, name: string): Promise<DeckDetailView> {

@@ -1,7 +1,7 @@
 /**
  * Mirrors the backend's playtest DTOs (forge-protocol.ts / playtest-session-manager.ts) field for
- * field, the same way the existing Deck Library view already duplicates its own backend shapes
- * (see deck-library-view.ts) rather than importing backend TypeScript into the browser bundle.
+ * field, the same way Deck Lab already duplicates its own backend deck shapes (see
+ * deck-lab-view.ts) rather than importing backend TypeScript into the browser bundle.
  */
 
 /** Presentation-only metadata (backend cards/card-presentation-service.ts) — never a rules input. */

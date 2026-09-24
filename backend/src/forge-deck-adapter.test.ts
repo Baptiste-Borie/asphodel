@@ -28,6 +28,8 @@ function deck(overrides: Partial<DeckDetailView> = {}): DeckDetailView {
         imageUri: "https://cards.example/krenko.jpg",
         quantity: 1,
         section: "commander",
+        category: "Commander",
+        categoryPosition: 0,
       },
       {
         id: 2,
@@ -43,6 +45,8 @@ function deck(overrides: Partial<DeckDetailView> = {}): DeckDetailView {
         imageUri: "https://cards.example/mountain.jpg",
         quantity: 15,
         section: "mainboard",
+        category: "Mainboard",
+        categoryPosition: 1,
       },
     ],
     ...overrides,
@@ -100,6 +104,8 @@ describe("ForgeDeckAdapter", () => {
         imageUri: "https://cards.example/sam.jpg",
         quantity: 1,
         section: "commander" as const,
+        category: "Commander",
+        categoryPosition: 0,
       },
     ];
     const spec = new ForgeDeckAdapter().toForgeDeckSpec(deck({ cards }));
@@ -129,10 +135,10 @@ describe("ForgeDeckAdapter", () => {
       ...deck().cards,
       { id: 3, scryfallId: "s3", oracleId: "o3", name: "Second Commander", manaCost: null, manaValue: 0,
         typeLine: "Legendary Creature", oracleText: null, colors: [], colorIdentity: [],
-        imageUri: null, quantity: 1, section: "commander" as const },
+        imageUri: null, quantity: 1, section: "commander" as const, category: "Commander", categoryPosition: 0 },
       { id: 4, scryfallId: "s4", oracleId: "o4", name: "Third Commander", manaCost: null, manaValue: 0,
         typeLine: "Legendary Creature", oracleText: null, colors: [], colorIdentity: [],
-        imageUri: null, quantity: 1, section: "commander" as const },
+        imageUri: null, quantity: 1, section: "commander" as const, category: "Commander", categoryPosition: 0 },
     ];
     assert.throws(
       () => new ForgeDeckAdapter().toForgeDeckSpec(deck({ cards })),
@@ -160,6 +166,23 @@ describe("ForgeDeckAdapter", () => {
         error instanceof ForgeDeckAdapterError &&
         error.code === "INVALID_FORGE_DECK" &&
         /positive integer/.test(error.message),
+    );
+  });
+
+  it("silently drops maybeboard cards — Deck Lab's Builder triage must never block an actual game", () => {
+    const cards = [
+      ...deck().cards,
+      {
+        id: 5, scryfallId: "s5", oracleId: "o5", name: "Interesting Maybe", manaCost: null, manaValue: 0,
+        typeLine: "Sorcery", oracleText: null, colors: [], colorIdentity: [],
+        imageUri: null, quantity: 3, section: "maybeboard" as const, category: "Maybeboard", categoryPosition: 2,
+      },
+    ];
+    const spec = new ForgeDeckAdapter().toForgeDeckSpec(deck({ cards }));
+    assert.deepEqual(
+      spec.cards.map((c) => c.name).sort(),
+      ["Krenko, Tin Street Kingpin", "Mountain"],
+      "the maybeboard entry must not reach Forge at all, whatever its quantity",
     );
   });
 });

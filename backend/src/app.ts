@@ -36,6 +36,14 @@ interface RenameDeckBody {
   name: string;
 }
 
+interface UpdateDeckCardsBody {
+  groups: {
+    name: string;
+    section: "commander" | "mainboard" | "maybeboard";
+    entries: { name: string; quantity: number }[];
+  }[];
+}
+
 interface DeckParams {
   id: number;
 }
@@ -190,6 +198,51 @@ export async function buildApp(options: BuildAppOptions = {}) {
     },
     async (request) =>
       deckService.renameDeck(request.params.id, request.body.name.trim()),
+  );
+
+  // Deck Lab's Builder auto-save: replaces a deck's full card list in one shot — structured groups,
+  // not decklist text, so the Builder's manual categories (not just commander/mainboard) survive.
+  app.put<{ Params: DeckParams; Body: UpdateDeckCardsBody }>(
+    "/decks/:id/cards",
+    {
+      schema: {
+        params: deckIdParamsSchema,
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["groups"],
+          properties: {
+            groups: {
+              type: "array",
+              maxItems: 60,
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["name", "section", "entries"],
+                properties: {
+                  name: { type: "string", minLength: 1, maxLength: 60 },
+                  section: { type: "string", enum: ["commander", "mainboard", "maybeboard"] },
+                  entries: {
+                    type: "array",
+                    maxItems: 300,
+                    items: {
+                      type: "object",
+                      additionalProperties: false,
+                      required: ["name", "quantity"],
+                      properties: {
+                        name: { type: "string", minLength: 1, maxLength: 200 },
+                        quantity: { type: "integer", minimum: 1, maximum: 999 },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request) => deckService.updateDeckCards(request.params.id, request.body.groups),
   );
 
   app.delete<{ Params: DeckParams }>(

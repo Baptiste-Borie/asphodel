@@ -16,8 +16,7 @@
             <span>Asphodel</span>
           </button>
           <nav class="app-nav" aria-label="Navigation principale">
-            <button id="nav-decks" class="nav-button" type="button" aria-pressed="true">Decks</button>
-            <button id="nav-deck-lab" class="nav-button" type="button" aria-pressed="false">Deck Lab</button>
+            <button id="nav-deck-lab" class="nav-button" type="button" aria-pressed="true">Deck Lab</button>
             <button id="nav-play" class="nav-button" type="button" aria-pressed="false">Play</button>
             <button id="nav-voice-test" class="nav-button" type="button" aria-pressed="false">Voice Mic Test</button>
           </nav>
@@ -37,39 +36,9 @@
 
         <main class="app-main">
           <div class="content-area">
-            <div id="decks-group">
-              <section id="library-view" aria-labelledby="library-title">
-                <div class="page-heading">
-                  <div>
-                    <p class="eyebrow">Deck Library</p>
-                    <h1 id="library-title">Mes decks</h1>
-                    <p class="page-description">
-                      Importez et retrouvez vos listes Commander enrichies par Scryfall.
-                    </p>
-                  </div>
-                  <button class="primary-button" type="button" data-open-import>
-                    Nouveau deck
-                  </button>
-                </div>
-
-                <p id="library-feedback" class="page-feedback" hidden></p>
-                <div id="deck-library" class="deck-library" aria-live="polite"></div>
-              </section>
-
-              <section id="detail-view" class="detail-view" aria-live="polite" hidden>
-                <button id="back-to-library" class="back-button" type="button">
-                  <svg aria-hidden="true" viewBox="0 0 24 24">
-                    <path d="M15 18l-6-6 6-6" />
-                  </svg>
-                  Bibliothèque
-                </button>
-                <div id="deck-detail"></div>
-              </section>
-            </div>
-
             <section id="play-view" class="play-view" aria-label="Human vs Asphodel playtest" hidden></section>
 
-            <section id="deck-lab-view" aria-label="Deck Lab visual concept" lang="en" hidden></section>
+            <section id="deck-lab-view" aria-label="Deck Lab" lang="en"></section>
 
             <section id="voice-test-view" aria-label="Voice mic test" hidden></section>
           </div>

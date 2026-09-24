@@ -153,6 +153,72 @@ describe("Deck Library", () => {
     assert.equal(missing.statusCode, 404);
   });
 
+  it("remplace intégralement les cartes d'un deck existant, catégories comprises (auto-save du Builder)", async () => {
+    const provider = new FakeCardProvider();
+    const { app } = await createLibraryApp(provider);
+    const creation = await app.inject({
+      method: "POST",
+      url: "/decks",
+      payload: { name: "Brouillon", decklist: validDecklist },
+    });
+    const deckId = creation.json().id as number;
+    const originalUpdatedAt = creation.json().updatedAt as string;
+
+    const replacement = await app.inject({
+      method: "PUT",
+      url: `/decks/${deckId}/cards`,
+      payload: {
+        groups: [
+          { name: "Commander", section: "commander", entries: [{ name: "Krenko, Tin Street Kingpin", quantity: 1 }] },
+          { name: "Ramp", section: "mainboard", entries: [{ name: "Sol Ring", quantity: 1 }] },
+          { name: "Maybeboard", section: "maybeboard", entries: [{ name: "Mountain", quantity: 1 }] },
+        ],
+      },
+    });
+
+    assert.equal(replacement.statusCode, 200);
+    assert.equal(replacement.json().id, deckId, "the deck id must survive the replacement, only its entries change");
+    assert.equal(replacement.json().name, "Brouillon", "the name is untouched by a card-list replacement");
+    assert.equal(replacement.json().totalCards, 2, "maybeboard cards are never counted toward the deck total");
+    assert.deepEqual(
+      replacement.json().cards.map((c: { name: string }) => c.name).sort(),
+      ["Krenko, Tin Street Kingpin", "Mountain", "Sol Ring"],
+      "the maybeboard card is still saved, just not counted",
+    );
+    const ramp = replacement.json().cards.find((c: { name: string }) => c.name === "Sol Ring");
+    assert.equal(ramp.category, "Ramp", "the Builder's manual category must survive, not just commander/mainboard");
+    assert.equal(ramp.categoryPosition, 1);
+    const commander = replacement.json().cards.find((c: { section: string }) => c.section === "commander");
+    assert.equal(commander.category, "Commander");
+    assert.equal(commander.categoryPosition, 0);
+    const maybe = replacement.json().cards.find((c: { section: string }) => c.section === "maybeboard");
+    assert.equal(maybe.name, "Mountain");
+    assert.equal(maybe.category, "Maybeboard");
+    assert.notEqual(replacement.json().updatedAt, originalUpdatedAt);
+
+    const list = await app.inject({ method: "GET", url: "/decks" });
+    assert.equal(
+      list.json().decks.find((d: { id: number }) => d.id === deckId).totalCards,
+      2,
+      "the library list's totalCards must agree with the deck detail's — maybeboard excluded there too",
+    );
+
+    const emptied = await app.inject({
+      method: "PUT",
+      url: `/decks/${deckId}/cards`,
+      payload: { groups: [] },
+    });
+    assert.equal(emptied.statusCode, 200, "an empty Builder sheet (every card cut) must still be saveable");
+    assert.equal(emptied.json().totalCards, 0);
+
+    const missing = await app.inject({
+      method: "PUT",
+      url: "/decks/999999/cards",
+      payload: { groups: [{ name: "Mainboard", section: "mainboard", entries: [{ name: "Sol Ring", quantity: 1 }] }] },
+    });
+    assert.equal(missing.statusCode, 404);
+  });
+
   it("réutilise le cache de cartes lors d’un second import", async () => {
     const provider = new FakeCardProvider();
     const { app, database } = await createLibraryApp(provider);
