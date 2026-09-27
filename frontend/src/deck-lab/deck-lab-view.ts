@@ -27,6 +27,16 @@ function findEntryAnywhere(sheet: Sheet, cardName: string): { group: Group; entr
   return undefined;
 }
 
+/** The four buckets triage sorts a category into, weakest to strongest — each becomes (or joins) a
+ *  regular mainboard category by that name once the triage is applied (see applyTriage). */
+const TRIAGE_CATEGORIES = [
+  { key: 'notInteresting', label: 'Not interesting' },
+  { key: 'situational', label: 'Situational' },
+  { key: 'interesting', label: 'Interesting' },
+  { key: 'mustHave', label: 'Must have' },
+] as const;
+type TriageCategoryKey = typeof TRIAGE_CATEGORIES[number]['key'];
+
 type DeckSection = 'commander' | 'mainboard' | 'maybeboard';
 interface DeckCardView { name: string; manaCost: string | null; manaValue: number; typeLine: string; oracleText: string | null; colorIdentity: string[]; imageUri: string | null; quantity: number; section: DeckSection; category: string; categoryPosition: number; }
 interface DeckSummary { id: number; name: string; totalCards: number; commanders: { name: string; imageUri: string | null }[]; }
@@ -117,7 +127,7 @@ export function initDeckLabView(root: HTMLElement) {
   let savedDecks: DeckSummary[] = [];
   let autoSaveDebounce: ReturnType<typeof setTimeout> | undefined;
   let autoSaveVersion = 0;
-  let triage: { groupIndex: number; queue: { card: Card; quantity: number }[]; position: number; kept: { card: Card; quantity: number }[]; setAside: { card: Card; quantity: number }[] } | undefined;
+  let triage: { groupIndex: number; queue: { card: Card; quantity: number }[]; position: number; buckets: Record<TriageCategoryKey, { card: Card; quantity: number }[]> } | undefined;
   const filterField = (label: string, kind: string, placeholder: string) => `<div class="lab-filter-combobox" data-filter="${kind}"><label for="lab-filter-${kind}">${label}</label><div class="lab-filter-chips"></div><input id="lab-filter-${kind}" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="lab-options-${kind}" autocomplete="off" placeholder="${placeholder}" /><div class="lab-filter-options" id="lab-options-${kind}" role="listbox" aria-label="${label} suggestions" hidden></div><span class="lab-sr-only" role="status"></span></div>`;
   const scrollPositions: Record<string, number> = { search: 0, builder: 0 };
   let active: Sheet | undefined;
@@ -153,7 +163,7 @@ export function initDeckLabView(root: HTMLElement) {
     <section class="lab-builder" hidden></section>
     <dialog class="lab-drawer" aria-labelledby="lab-selection-title"><div class="lab-drawer-head"><div><p class="lab-eyebrow">YOUR WORKING POOL</p><h2 id="lab-selection-title">Selection <span data-count>0</span></h2></div><button data-action="close" aria-label="Close selection">✕</button></div><p class="lab-muted">Collected ideas, independent of any deck.</p><div class="lab-pool"></div><form class="lab-transfer"><label>New deck name<input name="deckName" placeholder="Untitled exploration" /></label><button class="lab-primary" type="submit">Create a new deck from these cards</button><div class="lab-or">or add to a deck sheet</div><select aria-label="Choose destination deck"><option value="">Choose a deck explicitly…</option></select><button type="button" data-action="transfer">Add Selection to chosen deck</button><small>Cards stay in Selection until you remove them.</small></form></dialog>
     <dialog class="lab-inspect"><button data-action="close-inspect" aria-label="Close card inspection">✕</button><div></div></dialog>
-    <dialog class="lab-triage" aria-labelledby="lab-triage-title"><div class="lab-triage-head"><div><p class="lab-eyebrow" data-triage-category></p><h2 id="lab-triage-title">Keep or set aside?</h2></div><button data-action="triage-cancel" aria-label="Close sorting">✕</button></div><div class="lab-triage-body"></div></dialog>
+    <dialog class="lab-triage" aria-labelledby="lab-triage-title"><div class="lab-triage-head"><div><p class="lab-eyebrow" data-triage-category></p><h2 id="lab-triage-title">How interesting is this card?</h2></div><button data-action="triage-cancel" aria-label="Close sorting">✕</button></div><div class="lab-triage-body"></div></dialog>
     <p class="lab-toast" role="status" hidden></p>`;
   const get = <T extends HTMLElement>(s: string) => root.querySelector<T>(s)!;
   const drawer = get<HTMLDialogElement>('.lab-drawer');
@@ -387,12 +397,42 @@ export function initDeckLabView(root: HTMLElement) {
     el.dataset.status = status;
     el.textContent = status === 'pending' ? 'Saving…' : status === 'saved' ? 'Saved' : 'Save failed';
   }
-  /** Debounced whole-deck auto-save — any Builder edit to a sheet that already has a backendId (created, imported, or opened from the library) gets pushed back with `PUT /decks/:id/cards`. Local-only sheets (no backendId yet) are silently skipped. */
+  /** Debounced whole-deck auto-save — any Builder edit pushes the sheet back with `PUT /decks/:id/cards`.
+   *  A sheet without a backendId yet (a brand-new empty sheet, or the sample workspace) is created on
+   *  the backend first — lazily, on its first card, since the backend refuses an empty deck — so no
+   *  sheet stays local-only (and thus outside the committed deck database) once it holds real cards. */
   function scheduleAutoSave() {
-    if (!active?.backendId) return;
+    if (!active) return;
+    if (!active.backendId) { void createBackendDeck(active); return; }
     setSaveStatus('pending');
     clearTimeout(autoSaveDebounce);
     autoSaveDebounce = setTimeout(() => void runAutoSave(active!), 700);
+  }
+  /** One creation attempt per sheet at a time — several edits made before the first save round-trips
+   *  would otherwise each try to create their own backend deck. */
+  const creatingSheets = new WeakSet<Sheet>();
+  async function createBackendDeck(sheet: Sheet) {
+    if (sheet.backendId || creatingSheets.has(sheet)) return;
+    const bootstrapCard = sheetToGroups(sheet).flatMap(g => g.entries)[0];
+    if (!bootstrapCard) return; // nothing to save yet — an empty sheet has nothing a backend deck could hold
+    creatingSheets.add(sheet);
+    try {
+      const deck = await apiRequest<DeckDetailView>('/decks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // Bootstraps with one real card so the backend accepts the (otherwise-empty) deck; the
+        // immediate runAutoSave below replaces it with the sheet's full, categorized groups.
+        body: JSON.stringify({ name: sheet.name, decklist: `Mainboard\n1x ${bootstrapCard.name}` }),
+      });
+      sheet.backendId = deck.id;
+      if (active === sheet) renderBuilder();
+      void loadSavedDecks();
+      await runAutoSave(sheet);
+    } catch (error) {
+      toast(error instanceof ApiError ? error.message : `Could not save "${sheet.name}" to your Decks library. It stays in Deck Lab for now.`);
+    } finally {
+      creatingSheets.delete(sheet);
+    }
   }
   async function runAutoSave(sheet: Sheet) {
     if (!sheet.backendId) return;
@@ -439,52 +479,78 @@ export function initDeckLabView(root: HTMLElement) {
       })
       .catch(() => { /* best-effort enrichment only — the single-face view already rendered */ });
   }
-  /** One category, one card at a time: swipe left ("Set aside" → Maybeboard) or right ("Keep" → stays put). */
+/** One category, one card at a time: rate it into one of the four TRIAGE_CATEGORIES. */
   function startTriage(gi: number) {
     const group = active?.groups[gi];
     if (!active || !group || group.entries.length === 0) { toast('Nothing to sort in this category.'); return; }
-    triage = { groupIndex: gi, queue: [...group.entries], position: 0, kept: [], setAside: [] };
+    triage = {
+      groupIndex: gi,
+      queue: [...group.entries],
+      position: 0,
+      buckets: { notInteresting: [], situational: [], interesting: [], mustHave: [] },
+    };
     get('[data-triage-category]').textContent = `SORTING · ${group.name.toUpperCase()}`;
     renderTriage();
     triageDialog.showModal();
   }
+  /** One recap column: cards reuse the same stack-card markup (image, hover-to-front, click-to-inspect)
+   *  as a builder category, and the same "•••" move select — here it moves a card to another bucket
+   *  instead of another sheet group, without leaving the recap. */
+  function triageBucketHtml(key: TriageCategoryKey, label: string): string {
+    const items = triage!.buckets[key];
+    const stack = items.map((e, ei) => `<div class="lab-stack-card"><button class="lab-inspect-card" data-inspect="${esc(e.card.name)}" aria-label="Inspect ${esc(e.card.name)}">${image(e.card)}</button><select data-triage-move="${key}:${ei}" aria-label="Move ${esc(e.card.name)} to another category"><option value="">•••</option>${TRIAGE_CATEGORIES.filter(c => c.key !== key).map(c => `<option value="${c.key}">Move to ${esc(c.label)}</option>`).join('')}</select></div>`).join('')
+      || '<p class="lab-category-empty">None</p>';
+    return `<div class="lab-triage-recap-col" data-triage-col="${key}"><p class="lab-eyebrow">${esc(label)} · ${items.length}</p><div class="lab-stack">${stack}</div></div>`;
+  }
   function renderTriage() {
     if (!triage) return;
     const body = get('.lab-triage-body');
+    triageDialog.classList.toggle('lab-triage--recap', triage.position >= triage.queue.length);
     if (triage.position >= triage.queue.length) {
-      const list = (label: string, items: { card: Card; quantity: number }[]) =>
-        `<div><p class="lab-eyebrow">${label} · ${items.length}</p><ul>${items.map(e => `<li>${esc(e.card.name)}</li>`).join('') || '<li class="lab-muted">None</li>'}</ul></div>`;
-      body.innerHTML = `<div class="lab-triage-recap"><h3>Sorted ${triage.queue.length} card${triage.queue.length === 1 ? '' : 's'}</h3><div class="lab-triage-recap-cols">${list('Kept', triage.kept)}${list(MAYBEBOARD_NAME, triage.setAside)}</div><button class="lab-primary" data-action="triage-apply">Done</button></div>`;
+      body.innerHTML = `<div class="lab-triage-recap"><h3>Sorted ${triage.queue.length} card${triage.queue.length === 1 ? '' : 's'}</h3><div class="lab-triage-recap-cols">${TRIAGE_CATEGORIES.map(c => triageBucketHtml(c.key, c.label)).join('')}</div><button class="lab-primary" data-action="triage-apply">Done</button></div>`;
       return;
     }
     const entry = triage.queue[triage.position]!;
-    body.innerHTML = `<p class="lab-triage-progress">${triage.position + 1} / ${triage.queue.length}</p><div class="lab-triage-stage">${cardStage(entry.card)}</div><div class="lab-triage-actions"><button class="lab-triage-aside" data-action="triage-aside">✕ Set aside</button><button class="lab-triage-keep" data-action="triage-keep">Keep ✓</button></div>`;
+    body.innerHTML = `<p class="lab-triage-progress">${triage.position + 1} / ${triage.queue.length}</p><div class="lab-triage-stage">${cardStage(entry.card)}</div><div class="lab-triage-actions">${TRIAGE_CATEGORIES.map(c => `<button class="lab-triage-choice" data-triage-pick="${c.key}">${esc(c.label)}</button>`).join('')}</div>`;
   }
-  function decideTriage(keep: boolean) {
+  function decideTriage(key: TriageCategoryKey) {
     if (!triage || triage.position >= triage.queue.length) return;
     const entry = triage.queue[triage.position]!;
-    (keep ? triage.kept : triage.setAside).push(entry);
+    triage.buckets[key].push(entry);
     triage.position += 1;
     renderTriage();
   }
+  /** Moves a card between two recap buckets before the triage is applied — used by each card's "•••" select. */
+  function moveTriageBucket(fromKey: TriageCategoryKey, index: number, toKey: TriageCategoryKey) {
+    if (!triage) return;
+    const entry = triage.buckets[fromKey].splice(index, 1)[0];
+    if (!entry) return;
+    triage.buckets[toKey].push(entry);
+    renderTriage();
+  }
+  /** Every non-empty bucket becomes (or joins) a regular mainboard category named after it — the
+   *  category being sorted is emptied since every one of its cards was redistributed into a bucket. */
   function applyTriage() {
     if (!triage || !active) return;
-    const group = active.groups[triage.groupIndex];
-    if (group) group.entries = triage.kept;
-    if (triage.setAside.length > 0) {
-      let maybe = active.groups.find(g => g.maybeboard);
-      if (!maybe) { maybe = maybeGroup(); active.groups.push(maybe); }
-      for (const entry of triage.setAside) {
-        const existing = maybe.entries.find(e => e.card.name === entry.card.name);
-        if (existing) existing.quantity += entry.quantity; else maybe.entries.push(entry);
+    const source = active.groups[triage.groupIndex];
+    if (source) source.entries = [];
+    for (const cat of TRIAGE_CATEGORIES) {
+      const bucketEntries = triage.buckets[cat.key];
+      if (bucketEntries.length === 0) continue;
+      let dest = active.groups.find(g => g.name === cat.label && !g.commander && !g.maybeboard);
+      if (!dest) { dest = { name: cat.label, entries: [] }; active.groups.push(dest); }
+      for (const entry of bucketEntries) {
+        const existing = dest.entries.find(e => e.card.name === entry.card.name);
+        if (existing) existing.quantity += entry.quantity; else dest.entries.push(entry);
       }
     }
     triage = undefined;
+    triageDialog.classList.remove('lab-triage--recap');
     triageDialog.close();
     renderBuilder();
     scheduleAutoSave();
   }
-  function cancelTriage() { triage = undefined; triageDialog.close(); }
+  function cancelTriage() { triage = undefined; triageDialog.classList.remove('lab-triage--recap'); triageDialog.close(); }
   root.addEventListener('click', event => {
     if (!(event.target as HTMLElement).closest('.lab-category-add')) {
       root.querySelectorAll<HTMLElement>('.lab-add-results:not([hidden])').forEach(el => { el.hidden = true; });
@@ -510,6 +576,7 @@ export function initDeckLabView(root: HTMLElement) {
       if (stage) stage.outerHTML = cardStage({ name: b.dataset.printingName!, image: b.dataset.printingImage!, faces: b.dataset.printingFaces ? JSON.parse(b.dataset.printingFaces) as LabFace[] : undefined });
     }
     if (b.dataset.triage && active) startTriage(Number(b.dataset.triage));
+    if (b.dataset.triagePick) decideTriage(b.dataset.triagePick as TriageCategoryKey);
     if (b.dataset.reorder && active) { const i = Number(b.dataset.reorder); [active.groups[i-1],active.groups[i]] = [active.groups[i]!,active.groups[i-1]!]; renderBuilder(); }
     if (b.dataset.restore && active) { const c = active.cuts.splice(Number(b.dataset.restore),1)[0]!; defaultGroup(active).entries.push({card:c,quantity:1}); renderBuilder(); scheduleAutoSave(); }
     if (b.dataset.addCardName) addCardToGroup(Number(b.dataset.addCardGroup), b.dataset.addCardName);
@@ -523,12 +590,10 @@ export function initDeckLabView(root: HTMLElement) {
       case 'selection': drawerInvoker = b; renderPool(); drawer.showModal(); break;
       case 'close': drawer.close(); break;
       case 'close-inspect': inspect.close(); break;
-      case 'triage-keep': decideTriage(true); break;
-      case 'triage-aside': decideTriage(false); break;
       case 'triage-apply': applyTriage(); break;
       case 'triage-cancel': cancelTriage(); break;
       case 'filters': case 'advanced': { const panel = get(`.lab-${b.dataset.action}`); panel.hidden = !panel.hidden; b.setAttribute('aria-expanded',String(!panel.hidden)); break; }
-      case 'sample': active = sample(); sheets.push(active); renderBuilder(); break;
+      case 'sample': active = sample(); sheets.push(active); scheduleAutoSave(); renderBuilder(); break;
       case 'new': active = { name: `Untitled exploration ${sheets.length+1}`, groups: [commanderGroup(), {name:'Unsorted', entries:[]}], cuts:[] }; sheets.push(active); switchView('builder'); break;
       case 'close-sheet': active = undefined; renderBuilder(); break;
       case 'import': openImportModal(); break;
@@ -635,6 +700,7 @@ export function initDeckLabView(root: HTMLElement) {
     if (el.matches('.lab-sheet-picker')) { active = sheets[Number(el.value)]; renderBuilder(); }
     if (el.dataset.rename && active) { el.value = el.value.trim() || 'Untitled category'; active.groups[Number(el.dataset.rename)]!.name = el.value; renderBuilder(); }
     if (el.dataset.move && el.value && active) { const [g,i] = el.dataset.move.split(':').map(Number); const entry = active.groups[g!]!.entries.splice(i!,1)[0]!; if (el.value === 'cut') { for (let n=0;n<entry.quantity;n++) active.cuts.push(entry.card); } else active.groups[Number(el.value)]!.entries.push(entry); renderBuilder(); scheduleAutoSave(); }
+    if (el.dataset.triageMove && el.value && triage) { const [fromKey, i] = el.dataset.triageMove.split(':'); moveTriageBucket(fromKey as TriageCategoryKey, Number(i), el.value as TriageCategoryKey); }
   });
   drawer.addEventListener('close', () => drawerInvoker?.focus());
   root.addEventListener('input', event => {
@@ -645,8 +711,8 @@ export function initDeckLabView(root: HTMLElement) {
   root.addEventListener('keydown', event => {
     if (event.key === 'Enter' && (event.target as HTMLElement).matches('input[data-search-field]')) { event.preventDefault(); void renderSearch(); }
     if (triageDialog.open && triage && triage.position < triage.queue.length) {
-      if (event.key === 'ArrowLeft') { event.preventDefault(); decideTriage(false); }
-      if (event.key === 'ArrowRight') { event.preventDefault(); decideTriage(true); }
+      const index = ['1', '2', '3', '4'].indexOf(event.key);
+      if (index !== -1) { event.preventDefault(); decideTriage(TRIAGE_CATEGORIES[index]!.key); }
     }
   });
   async function loadCatalog() {
