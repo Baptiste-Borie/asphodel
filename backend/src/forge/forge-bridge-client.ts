@@ -65,9 +65,9 @@ export class ForgeBridgeClient {
   private stderr: Interface | undefined;
 
   constructor(options: ForgeBridgeClientOptions = {}) {
-    this.javaPath = options.javaPath ?? "java";
-    this.jarPath = options.jarPath ?? DEFAULT_JAR_PATH;
-    this.forgeAssetsPath = options.forgeAssetsPath ?? DEFAULT_FORGE_ASSETS_PATH;
+    this.javaPath = options.javaPath ?? process.env.ASPHODEL_JAVA_PATH ?? "java";
+    this.jarPath = options.jarPath ?? process.env.ASPHODEL_FORGE_JAR ?? DEFAULT_JAR_PATH;
+    this.forgeAssetsPath = options.forgeAssetsPath ?? process.env.ASPHODEL_FORGE_ASSETS ?? DEFAULT_FORGE_ASSETS_PATH;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 35_000;
     this.shutdownTimeoutMs = options.shutdownTimeoutMs ?? 2_000;
     this.onStderr = options.onStderr ?? (() => undefined);
@@ -196,8 +196,10 @@ export class ForgeBridgeClient {
       }
 
       const timer = setTimeout(() => child.kill("SIGTERM"), this.shutdownTimeoutMs);
+      const forceTimer = setTimeout(() => child.kill("SIGKILL"), this.shutdownTimeoutMs + 2_000);
       child.once("exit", () => {
         clearTimeout(timer);
+        clearTimeout(forceTimer);
         resolve();
       });
       child.stdin.end();

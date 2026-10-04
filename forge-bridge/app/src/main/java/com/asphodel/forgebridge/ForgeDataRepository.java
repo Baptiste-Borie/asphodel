@@ -94,7 +94,15 @@ final class ForgeDataRepository {
             staticData.attemptToLoadCard(name);
             card = staticData.getCommonCards().getCard(name);
         }
-        if (card == null && containsNonAscii(name)) {
+        if (card == null && name.contains(" // ")) {
+            String[] faces = name.split(" // ", 2);
+            PaperCard front = findCard(faces[0].trim());
+            if (front != null && front.getRules().getOtherPart() != null
+                    && faces[1].trim().equals(front.getRules().getOtherPart().getName())) {
+                return front;
+            }
+        }
+        if (card == null) {
             card = loadCardWithDiacriticFallback(name);
         }
         return card;
@@ -124,6 +132,8 @@ final class ForgeDataRepository {
      * about the pinned Forge revision changes: this only replicates, in bridge code, a folding
      * rule vendor Forge's own filenames already follow.</p>
      */
+    // Also used for punctuation/compound filename gaps (e.g. V.A.T.S. and Avatar Aang).
+    // The exact Name: header check is the authority; no fuzzy matching is introduced.
     private PaperCard loadCardWithDiacriticFallback(String name) {
         String folded = foldDiacritics(name);
         if (folded.isEmpty() || !Character.isLetterOrDigit(folded.charAt(0))) {
@@ -146,15 +156,6 @@ final class ForgeDataRepository {
             return staticData.getCommonCards().getCard(name);
         }
         return null;
-    }
-
-    private static boolean containsNonAscii(String name) {
-        for (int i = 0; i < name.length(); i++) {
-            if (name.charAt(i) > 127) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /** Strips combining diacritical marks after Unicode NFD decomposition, e.g. "Barad-dûr" -> "Barad-dur". */

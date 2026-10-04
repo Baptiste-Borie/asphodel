@@ -1,0 +1,60 @@
+{
+  "name": "asphodel-desktop",
+  "productName": "Asphodel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/main.mjs",
+  "description": "Asphodel — Magic Commander on your desktop",
+  "author": "Baptiste Borie",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "electron .",
+    "dev": "npm run build && electron .",
+    "test": "node --test src/*.test.mjs",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder --linux AppImage deb",
+    "cache-art": "node scripts/cache-art.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:runtime": "node scripts/runtime-smoke.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3",
+    "playwright": "^1.62.1"
+  },
+  "build": {
+    "appId": "fr.asphodel.desktop",
+    "asar": true,
+    "npmRebuild": false,
+    "files": [
+      "src/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "runtime",
+        "to": "runtime"
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "linux": {
+      "category": "Game",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "executableName": "asphodel",
+      "syncDesktopName": "true",
+      "icon": "src/icon.png",
+      "maintainer": "Asphodel contributors"
+    }
+  },
+  "homepage": "https://github.com/Baptiste-Borie/asphodel",
+  "desktopName": "Asphodel.desktop"
+}

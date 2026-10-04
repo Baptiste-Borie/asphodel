@@ -481,6 +481,17 @@ export class PlaytestSessionManager {
     return this.getState(sessionId);
   }
 
+  /** Called when the application closes, including while waiting for a human choice. */
+  async close(): Promise<void> {
+    const session = this.session;
+    if (!session) return;
+    session.provider.requestEnd();
+    session.physicalProvider?.requestEnd();
+    // Stop the JVM as well: an in-flight AI turn must not keep the app alive.
+    await session.bridge.stop();
+    await session.runPromise;
+  }
+
   getReport(sessionId: string): PlaytestReportResult {
     const session = this.requireSession(sessionId);
     if (!session.reportResult) throw new PlaytestSessionError("REPORT_NOT_READY", "The playtest has not finished yet.");

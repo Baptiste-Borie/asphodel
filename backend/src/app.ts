@@ -53,6 +53,7 @@ export interface BuildAppOptions {
   database?: DatabaseConnection;
   archidektSource?: ArchidektDeckSource;
   voiceTranscriptionService?: VoiceTranscriptionService;
+  playtestSessionManager?: PlaytestSessionManager;
 }
 
 const deckIdParamsSchema = {
@@ -275,7 +276,9 @@ export async function buildApp(options: BuildAppOptions = {}) {
     async (request) => ({ cards: await cardPresentationService.resolveMany(request.body.names) }),
   );
 
-  registerPlaytestRoutes(app, new PlaytestSessionManager());
+  const playtestSessionManager = options.playtestSessionManager ?? new PlaytestSessionManager();
+  app.addHook("onClose", () => playtestSessionManager.close());
+  registerPlaytestRoutes(app, playtestSessionManager);
   registerVoiceRoutes(app, voiceTranscriptionService);
 
   return app;

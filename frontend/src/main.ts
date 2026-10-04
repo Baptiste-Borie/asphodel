@@ -57,10 +57,10 @@ element<HTMLButtonElement>("#home-button").addEventListener("click", showLabGrou
 async function checkBackend(): Promise<void> {
   try {
     const response = await fetch("/health");
-    backendStatus.textContent = response.ok ? "Online" : "Offline";
+    backendStatus.textContent = response.ok ? "Prêt" : "Moteur indisponible";
     backendStatus.dataset.status = response.ok ? "online" : "offline";
   } catch {
-    backendStatus.textContent = "Offline";
+    backendStatus.textContent = "Moteur indisponible";
     backendStatus.dataset.status = "offline";
   }
 }

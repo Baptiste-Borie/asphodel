@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="fr"><meta charset="utf-8"><title>Asphodel</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<style>
+html { height:100%; background:#edf1e9; color:#294c41; font-family:Georgia,serif }
+body { height:100%; margin:0; display:grid; place-items:center; text-align:center }
+h1 { font-size:54px; font-weight:400; margin:20px 0 }
+p { font:15px system-ui,sans-serif; color:#64776d }
+.mark { width:72px; height:72px; border:1px solid #7f9d8d; border-radius:50%; margin:auto; display:grid; place-items:center; font-size:42px }
+.loading { width:140px; height:2px; background:#d6e0d4; margin:30px auto; overflow:hidden }
+.loading::after { content:''; display:block; width:50%; height:100%; background:#6c9985; animation:slide 1.5s ease-in-out infinite alternate }
+@keyframes slide { to { transform:translateX(100%) } }
+@media (prefers-reduced-motion:reduce) { .loading::after { animation:none } }
+</style><body><main><div class="mark" aria-hidden="true">A</div><h1>Asphodel</h1><p role="status">Préparation de ta table…</p><div class="loading" aria-hidden="true"></div></main></body></html>

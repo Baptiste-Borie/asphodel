@@ -36,7 +36,7 @@ export class DeckLabSearch {
   private async load() {
     const bulkPath = this.options.bulkPath ?? resolve(backendRoot,process.env.SCRYFALL_PRINTING_BULK_PATH ?? 'data/scryfall-default-cards.jsonl.gz');
     const source = await stat(bulkPath).catch(() => { throw new AppError('The local Scryfall Default Cards snapshot is unavailable. Restore the bulk file before searching.',503,'CARD_CATALOG_UNAVAILABLE'); });
-    const indexPath = this.options.indexPath ?? resolve(backendRoot,'data/deck-lab-search.sqlite');
+    const indexPath = this.options.indexPath ?? process.env.ASPHODEL_SEARCH_INDEX ?? resolve(backendRoot,'data/deck-lab-search.sqlite');
     if (indexPath !== ':memory:') await mkdir(dirname(indexPath),{recursive:true});
     const db = this.database = new DatabaseSync(indexPath);
     db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=10000; CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)');

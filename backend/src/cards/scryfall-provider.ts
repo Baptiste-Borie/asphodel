@@ -219,7 +219,12 @@ export class ScryfallCardProvider implements CardProvider {
     // Not a real card by that exact name — fall back to the token/emblem/helper index (built from
     // "default_cards", the only local bulk source that reliably carries those objects) before
     // giving up. A real card's name always wins above; this only ever fills a gap.
-    this.tokenIndexPromise ??= this.loadTokenIndex();
+    // A missing optional token catalogue must not trigger a large download just
+    // because one name is absent. Exact-printing lookup still downloads it on demand.
+    this.tokenIndexPromise ??= stat(this.printingBulkPath).then(
+      () => this.loadTokenIndex(),
+      () => new Map<string, ResolvedCard>(),
+    );
     const tokens = await this.tokenIndexPromise;
     // Forge's public generated names append " Token". Strip it only inside the
     // layout-filtered token catalogue: never resolve the alias as a main-deck card.

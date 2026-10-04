@@ -1242,8 +1242,9 @@ Errors are structured and do not normally stop the process. Codes are
 
 - Small fixtures validate conversion and engine execution, not Commander deck
   legality.
-- Full Scryfall double-face names are not normalized to Forge front-face names
-  in V1b and can return `FORGE_CARDS_NOT_FOUND`.
+- The desktop milestone resolves joined Scryfall double-face names through the real Forge
+  front face, validating the back-face name against Forge's rules. Exact script-header lookup
+  also handles punctuation filename gaps such as `V.A.T.S.`; missing cards still fail explicitly.
 - Commander tax, commander damage, and replacement effects are not asserted by
   these bridge tests.
 - Seed reproducibility is verified only for the pinned fixture in one JVM.
