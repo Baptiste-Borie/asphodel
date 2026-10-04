@@ -833,3 +833,7 @@ button:disabled {
   border-color: var(--border);
   background: var(--surface-raised);
 }
+
+/* The full navigation remains inline outside the focused table workspace. */
+.app-menu-content { display: contents; }
+.app-menu-toggle { display: none; }

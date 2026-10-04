@@ -1,0 +1,71 @@
+/* The table owns the viewport. Other application views retain their normal shell. */
+body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) { overflow:hidden; }
+body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .app-main { padding:0; }
+body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .content-area { width:100%;max-width:none; }
+body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .app-header {
+  position:fixed;inset:0 auto auto 0;width:180px;height:48px;min-height:0;padding:0 12px;gap:10px;border:0;z-index:20;backdrop-filter:none;background:#101114;
+}
+body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .brand-button { font-size:13px;gap:7px; }
+body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .brand-mark { width:26px;height:26px;font-size:14px;border-radius:5px; }
+body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .app-menu-toggle { display:block;border:0;background:transparent;color:#b8b6c2;padding:6px;font-size:18px; }
+body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .app-menu-content { display:none; }
+body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .menu-open .app-menu-content {
+  display:flex;position:absolute;left:8px;top:48px;width:248px;flex-direction:column;gap:16px;padding:14px;background:#1a1b20;border:1px solid #393a44;box-shadow:0 12px 36px #0008;
+}
+body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .app-nav { display:flex;flex-direction:column;align-items:stretch;gap:5px; }
+body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .header-actions { display:flex;flex-direction:column;align-items:stretch;gap:12px;border-top:1px solid #34353d;padding-top:12px; }
+#deck-lab-view:has(.lab-table:not([hidden]))>.lab-heading,
+#deck-lab-view:has(.lab-table:not([hidden]))>.lab-workbar { display:none; }
+.lab-table { position:relative;display:grid;grid-template-rows:48px minmax(0,1fr) 22px;height:100dvh;min-height:0; }
+.dt-heading { display:flex;align-items:center;gap:8px;padding:0 12px 0 192px;background:#101114;border-bottom:1px solid var(--lab-border);z-index:8;min-width:0; }
+#deck-lab-view .dt-heading h2 { flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:17px Georgia,serif; }
+.dt-heading [data-dt-count] { color:var(--lab-muted);font-size:11px;margin:0 8px;white-space:nowrap; }
+#deck-lab-view .dt-heading>button,.dt-heading summary { padding:6px 10px;font-size:12px;white-space:nowrap; }
+.dt-heading details { position:relative; }
+.dt-heading summary { cursor:pointer;border:1px solid var(--lab-border);border-radius:3px;list-style:none;color:#d0d0d3;background:#1d1d21; }
+.dt-heading summary::-webkit-details-marker { display:none; }
+.dt-heading summary:focus-visible { outline:2px solid #b7abd9;outline-offset:3px; }
+.dt-zone-form,.dt-menu-content { position:absolute;right:0;top:36px;width:260px;padding:16px;display:grid;gap:10px;background:#1a1b20;border:1px solid #393a44;box-shadow:0 12px 36px #0008; }
+.dt-zone-form small,.dt-menu-content p { color:var(--lab-muted);font-size:11px;line-height:1.8; }
+.dt-menu-content button { text-align:left; }
+.dt-body { position:relative;min-height:0; }
+.dt-canvas { position:absolute;inset:0;overflow:hidden;background-color:#141518;background-image:radial-gradient(#35353b .8px,transparent .8px);touch-action:none;user-select:none;isolation:isolate; }
+.dt-canvas.is-pan { cursor:grab; }
+.dt-world { position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform; }
+.dt-cards,.dt-zones { position:absolute;left:0;top:0; }
+.dt-zones { z-index:0; }.dt-cards { z-index:1; }
+#deck-lab-view .dt-card { position:absolute;width:170px;height:238px;padding:0;border:0;border-radius:8px;background:#25262a;cursor:grab;box-shadow:0 5px 14px #0007;text-align:left;touch-action:none; }
+.dt-card img { width:100%;height:100%;object-fit:contain;border-radius:8px;pointer-events:none; }.dt-card.is-aside { outline:2px dashed #92929a; }
+#deck-lab-view .dt-card.is-selected { outline:4px solid #d4c29c;outline-offset:4px; }
+.dt-badge { position:absolute;bottom:5px;right:5px;padding:3px 6px;background:#111e;color:#eee;font-size:11px;border-radius:2px; }
+.dt-card-label { display:none; }.dt-fallback { display:grid;place-items:center;height:100%;padding:15px; }
+[data-distance=far] .dt-card img { opacity:.3; }[data-distance=far] .dt-card-label { display:block;position:absolute;inset:25px 10px;font-size:30px;color:#fff;overflow:hidden; }
+.dt-zone { position:absolute;border:1px solid #77778166;background:#b7b5a606;pointer-events:none;transition:background-color 100ms,border-color 100ms,box-shadow 100ms; }
+.dt-zone header { position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:8px;padding:8px 10px;pointer-events:auto;cursor:move;height:44px; }
+#deck-lab-view .dt-zone input { background:transparent;border-color:transparent;font:18px Georgia,serif;width:0;flex:1;padding:3px; }
+.dt-zone header span { color:#a6a6af;font-size:12px;white-space:nowrap; }
+#deck-lab-view .dt-zone header button { background:transparent;border:0;padding:2px 5px;color:#999; }
+.dt-zone-empty { display:none;position:absolute;inset:52px 16px 16px;align-items:center;justify-content:center;color:#72727e;font-size:14px;text-align:center; }
+.dt-zone.is-empty .dt-zone-empty { display:flex; }
+.dt-zone.is-drop-target { border-color:#ad9aff;background:#9981ee22;box-shadow:0 0 0 3px #ad9aff66,0 0 28px #9981ee20; }
+.dt-zone.is-drop-target header { background:#9981ee22; }.dt-zone.is-drop-target .dt-zone-empty { color:#d4c9ff; }
+.dt-lasso { position:absolute;pointer-events:none;border:1px solid #d4c29c;background:#d4c29c22;z-index:3; }.dt-empty { position:absolute;left:24px;top:10px;color:var(--lab-muted);pointer-events:none; }
+.dt-panel { position:absolute;z-index:6;right:0;top:0;bottom:0;width:min(370px,90%);overflow:auto;background:#17181bf5;border-left:1px solid #494951;padding:18px;box-shadow:-12px 0 30px #0004; }
+.dt-panel header { display:flex;align-items:center;justify-content:space-between;margin-bottom:20px; }.dt-panel h3 { font:22px Georgia,serif; }.dt-panel h4 { margin:24px 0 10px;color:#bbb; }
+.dt-search-form { display:grid;gap:10px; }.dt-search-form label { color:var(--lab-muted);font-size:12px; }.dt-search-status { padding:12px 0; }.dt-search-results { display:grid;grid-template-columns:1fr 1fr;gap:12px; }
+#deck-lab-view .dt-search-results button { padding:0;border:0;background:none;text-align:left;cursor:grab;font-size:11px; }.dt-search-results img { width:100%;border-radius:6px; }.dt-panel small { display:block;margin-top:15px;color:var(--lab-muted); }
+.dt-stat-list>div { display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #303138; }.dt-analysis-content p { font-size:12px;color:var(--lab-muted);line-height:1.6; }
+.dt-tools,.dt-selection { position:absolute;z-index:5;bottom:38px;display:flex;align-items:center;gap:5px;padding:5px;background:#18191eea;border:1px solid #393a44;box-shadow:0 4px 16px #0004; }
+.dt-tools { left:16px; }.dt-selection { right:16px; }
+#deck-lab-view .dt-tools button,#deck-lab-view .dt-selection button { font-size:11px;padding:6px 9px; }
+.dt-tools [data-dt-zoom] { min-width:35px;text-align:center;font-size:11px; }.dt-selection>span { padding:0 8px;font-size:11px; }
+.dt-footer { display:flex;align-items:center;gap:12px;justify-content:space-between;padding:0 12px;background:#101114;color:var(--lab-muted);font-size:10px;white-space:nowrap; }
+.dt-footer [data-save-status] { margin:0; }
+@media(max-width:900px) { .dt-heading [data-dt-count] { display:none; }.dt-heading { gap:5px; }.dt-footer>span:first-child { display:none; } }
+@media(max-width:600px) {
+  body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .app-header { width:82px;padding:0 8px;gap:5px; }
+  body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .brand-button>span:last-child { display:none; }
+  .dt-heading { padding-left:86px;padding-right:6px; }.dt-heading h2 { font-size:13px!important; }
+  #deck-lab-view .dt-heading>button,.dt-heading summary { font-size:11px;padding:6px; }
+  .dt-selection { bottom:84px;right:8px; }.dt-tools { left:8px; }.dt-create .dt-zone-form { position:fixed;left:12px;right:12px;top:48px;width:auto; }
+}

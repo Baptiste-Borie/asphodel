@@ -4,13 +4,15 @@ import { element } from '../dom';
 import type { LabCard, LabCatalog, LabFace, LabSearchQuery, LabSearchResult } from '../../../shared/deck-lab';
 import { initFilterCombobox } from './filter-combobox';
 import './deck-lab.css';
+import { deckStatistics, type Group, type Sheet } from './deck-model';
+import { mountDeckTable } from './deck-table-view';
 
 type Card = LabCard;
 /** `maybeboard` groups (born from the triage feature, or manually named "Maybeboard") hold cards
  *  that are deliberately excluded from the deck's card count and from what an actual game receives. */
-type Group = { name: string; entries: { card: Card; quantity: number }[]; commander?: boolean; maybeboard?: boolean };
+
 /** `backendId` is set once a sheet corresponds to a persisted deck (created here, imported, or opened from the library) — its presence is what turns on auto-save. */
-type Sheet = { name: string; groups: Group[]; cuts: Card[]; backendId?: number };
+
 /** Every sheet is born with this pinned-first, unrenamable category — it's the one thing that tells the builder (and the backend, via `sheetToGroups`) which card(s) are the commander. */
 const commanderGroup = (): Group => ({ name: 'Commander', entries: [], commander: true });
 const MAYBEBOARD_NAME = 'Maybeboard';
@@ -125,12 +127,15 @@ export function initDeckLabView(root: HTMLElement) {
   let addSearchDebounce: ReturnType<typeof setTimeout> | undefined;
   let addSearchController: AbortController | undefined;
   let savedDecks: DeckSummary[] = [];
-  let autoSaveDebounce: ReturnType<typeof setTimeout> | undefined;
+  const autoSaveTimers = new Map<Sheet, ReturnType<typeof setTimeout>>();
+  const saveQueues = new Map<Sheet, Promise<void>>();
   let autoSaveVersion = 0;
   let triage: { groupIndex: number; queue: { card: Card; quantity: number }[]; position: number; buckets: Record<TriageCategoryKey, { card: Card; quantity: number }[]> } | undefined;
   const filterField = (label: string, kind: string, placeholder: string) => `<div class="lab-filter-combobox" data-filter="${kind}"><label for="lab-filter-${kind}">${label}</label><div class="lab-filter-chips"></div><input id="lab-filter-${kind}" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="lab-options-${kind}" autocomplete="off" placeholder="${placeholder}" /><div class="lab-filter-options" id="lab-options-${kind}" role="listbox" aria-label="${label} suggestions" hidden></div><span class="lab-sr-only" role="status"></span></div>`;
   const scrollPositions: Record<string, number> = { search: 0, builder: 0 };
   let active: Sheet | undefined;
+  let table: ReturnType<typeof mountDeckTable> | undefined;
+  let tableSheet: Sheet | undefined;
   const sheets: Sheet[] = [];
   let drawerInvoker: HTMLElement | null = null;
   const sample = (): Sheet => {
@@ -139,7 +144,7 @@ export function initDeckLabView(root: HTMLElement) {
   };
   root.innerHTML = `
     <div class="lab-heading"><div><p class="lab-eyebrow">ASPHODEL / DECK LAB</p><h1>A place to think in cards.</h1></div><span class="lab-prototype">Local catalog · Selection saved on this device · sheets kept for this session</span></div>
-    <div class="lab-workbar"><div class="lab-tabs"><button data-view="search" aria-pressed="true">Search</button><button data-view="builder" aria-pressed="false">Builder</button></div><p>Discover. Collect. Make it yours.</p><button class="lab-selection" data-action="selection">Selection <span data-count>0</span> ↗</button></div>
+    <div class="lab-workbar"><div class="lab-tabs"><button data-view="search" aria-pressed="true">Search</button><button data-view="builder" aria-pressed="false">Builder</button><button data-view="table" aria-pressed="false">Table V2</button></div><p>Discover. Collect. Make it yours.</p><button class="lab-selection" data-action="selection">Selection <span data-count>0</span> ↗</button></div>
     <section class="lab-search">
       <form class="lab-query"><span aria-hidden="true">⌕</span><input aria-label="Search card name or Oracle text" placeholder="Search card name or Oracle text…" /><button type="submit" class="lab-primary">Search</button><button type="button" data-action="filters" aria-expanded="false">Filters <span>⌄</span></button><button type="button" data-action="advanced" aria-expanded="false">Advanced</button></form>
       <div class="lab-filters" hidden>
@@ -161,6 +166,7 @@ export function initDeckLabView(root: HTMLElement) {
       <div class="lab-end"><button data-action="load-more" hidden>Load 60 more</button><p data-loaded></p><span>Selection stays with you as you explore.</span></div>
     </section>
     <section class="lab-builder" hidden></section>
+    <section class="lab-table" hidden></section>
     <dialog class="lab-drawer" aria-labelledby="lab-selection-title"><div class="lab-drawer-head"><div><p class="lab-eyebrow">YOUR WORKING POOL</p><h2 id="lab-selection-title">Selection <span data-count>0</span></h2></div><button data-action="close" aria-label="Close selection">✕</button></div><p class="lab-muted">Collected ideas, independent of any deck.</p><div class="lab-pool"></div><form class="lab-transfer"><label>New deck name<input name="deckName" placeholder="Untitled exploration" /></label><button class="lab-primary" type="submit">Create a new deck from these cards</button><div class="lab-or">or add to a deck sheet</div><select aria-label="Choose destination deck"><option value="">Choose a deck explicitly…</option></select><button type="button" data-action="transfer">Add Selection to chosen deck</button><small>Cards stay in Selection until you remove them.</small></form></dialog>
     <dialog class="lab-inspect"><button data-action="close-inspect" aria-label="Close card inspection">✕</button><div></div></dialog>
     <dialog class="lab-triage" aria-labelledby="lab-triage-title"><div class="lab-triage-head"><div><p class="lab-eyebrow" data-triage-category></p><h2 id="lab-triage-title">How interesting is this card?</h2></div><button data-action="triage-cancel" aria-label="Close sorting">✕</button></div><div class="lab-triage-body"></div></dialog>
@@ -293,12 +299,15 @@ export function initDeckLabView(root: HTMLElement) {
     }
   }
   function switchView(next: string) {
+    if (next === 'table' && !active) { next = 'builder'; toast('Open a deck, then choose Table V2.'); }
     scrollPositions[view] = window.scrollY;
     const previous = view;
     view = next;
     get('.lab-search').hidden = view !== 'search'; get('.lab-builder').hidden = view !== 'builder';
     root.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
+    get('.lab-table').hidden = view !== 'table';
     if (view === 'builder') renderBuilder();
+    if (view === 'table') renderTable();
     if (previous !== view) window.scrollTo(0, scrollPositions[view] ?? 0);
   }
   /** One category card: the Commander slot gets a fixed label (its meaning depends on staying named "Commander"); every other category keeps the rename input. Search-to-add and drag-and-drop both target `data-drop-group`. */
@@ -323,7 +332,21 @@ export function initDeckLabView(root: HTMLElement) {
       : `<div class="card-image-fallback">${esc((commanderName || name).slice(0, 1).toUpperCase())}</div>`;
     return `<button type="button" class="deck-tile" data-open-deck="${esc(key)}"><div class="deck-tile-visual">${visual}<span class="deck-count">${totalCards} cards</span></div><div class="deck-tile-information"><h2>${esc(name)}</h2><p class="deck-commander-name">${esc(commanderName || 'No commander set')}</p></div></button>`;
   }
+  function renderTable() {
+    if (!active) return;
+    if (table && tableSheet === active) { table.refresh(); return; }
+    table?.dispose();
+    tableSheet = active;
+    const sheet = active;
+    table = mountDeckTable(get('.lab-table'), sheet, {
+      changed: () => scheduleAutoSave(sheet),
+      inspect: card => { knownCards.set(card.name, card); openInspect(card.name); },
+      legacy: () => switchView('builder'),
+      library: () => { active = undefined; switchView('builder'); },
+    });
+  }
   function renderBuilder() {
+    if (view === 'table' && active) { renderTable(); return; }
     if (!active) {
       const localTiles = sheets.map((s, i) => {
         const commanders = s.groups.find(g => g.commander)?.entries ?? [];
@@ -339,11 +362,7 @@ export function initDeckLabView(root: HTMLElement) {
     }
     // Maybeboard is deliberately "not really in the deck" — excluded from the count, the mana
     // curve and every stat below, same as the backend excludes it from totalCards (deck-service.ts).
-    const entries = active.groups.filter(g => !g.maybeboard).flatMap(g => g.entries);
-    const total = entries.reduce((n, e) => n + e.quantity, 0);
-    const nonlands = entries.filter(e => !e.card.type_line.includes('Land'));
-    const spells = nonlands.reduce((n, e) => n + e.quantity, 0);
-    const curve = Array.from({ length: 8 }, (_, i) => nonlands.filter(e => Math.min(7, e.card.cmc) === i).reduce((n, e) => n + e.quantity, 0));
+    const { entries, total, nonlands, spells, curve } = deckStatistics(active.groups);
     const commanderCount = active.groups.find(g => g.commander)!.entries.reduce((n,e) => n+e.quantity, 0);
     const commanderWarning = commanderCount === 0
       ? '<p class="lab-builder-warning" role="status">No commander yet — search or drag a card into the <strong>Commander</strong> category.</p>'
@@ -392,7 +411,7 @@ export function initDeckLabView(root: HTMLElement) {
     toast(`${cardName} added to ${group.name}.`);
   }
   function setSaveStatus(status: 'pending' | 'saved' | 'error') {
-    const el = root.querySelector<HTMLElement>('[data-save-status]');
+    const el = root.querySelector<HTMLElement>(`${view === 'table' ? '.lab-table' : '.lab-builder'} [data-save-status]`);
     if (!el) return;
     el.dataset.status = status;
     el.textContent = status === 'pending' ? 'Saving…' : status === 'saved' ? 'Saved' : 'Save failed';
@@ -401,12 +420,12 @@ export function initDeckLabView(root: HTMLElement) {
    *  A sheet without a backendId yet (a brand-new empty sheet, or the sample workspace) is created on
    *  the backend first — lazily, on its first card, since the backend refuses an empty deck — so no
    *  sheet stays local-only (and thus outside the committed deck database) once it holds real cards. */
-  function scheduleAutoSave() {
-    if (!active) return;
-    if (!active.backendId) { void createBackendDeck(active); return; }
+  function scheduleAutoSave(sheet = active) {
+    if (!sheet) return;
+    if (!sheet.backendId) { void createBackendDeck(sheet); return; }
     setSaveStatus('pending');
-    clearTimeout(autoSaveDebounce);
-    autoSaveDebounce = setTimeout(() => void runAutoSave(active!), 700);
+    clearTimeout(autoSaveTimers.get(sheet));
+    autoSaveTimers.set(sheet, setTimeout(() => { autoSaveTimers.delete(sheet); void runAutoSave(sheet); }, 700));
   }
   /** One creation attempt per sheet at a time — several edits made before the first save round-trips
    *  would otherwise each try to create their own backend deck. */
@@ -434,7 +453,14 @@ export function initDeckLabView(root: HTMLElement) {
       creatingSheets.delete(sheet);
     }
   }
-  async function runAutoSave(sheet: Sheet) {
+  function runAutoSave(sheet: Sheet): Promise<void> {
+    const previous = saveQueues.get(sheet) ?? Promise.resolve();
+    const next = previous.then(() => persistSheet(sheet));
+    saveQueues.set(sheet, next);
+    void next.finally(() => { if (saveQueues.get(sheet) === next) saveQueues.delete(sheet); });
+    return next;
+  }
+  async function persistSheet(sheet: Sheet) {
     if (!sheet.backendId) return;
     const version = ++autoSaveVersion;
     try {

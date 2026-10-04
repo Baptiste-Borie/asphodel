@@ -67,3 +67,27 @@ async function checkBackend(): Promise<void> {
 
 showLabGroup();
 void checkBackend();
+
+
+const appHeader = element<HTMLElement>('.app-header');
+const appMenuToggle = element<HTMLButtonElement>('#app-menu-toggle');
+function closeAppMenu() {
+  appHeader.classList.remove('menu-open');
+  appMenuToggle.setAttribute('aria-expanded', 'false');
+}
+appMenuToggle.addEventListener('click', () => {
+  const open = appHeader.classList.toggle('menu-open');
+  appMenuToggle.setAttribute('aria-expanded', String(open));
+});
+appHeader.addEventListener('click', event => {
+  if ((event.target as HTMLElement).closest('#app-menu-content button')) closeAppMenu();
+});
+document.addEventListener('pointerdown', event => {
+  if (!appHeader.contains(event.target as Node)) closeAppMenu();
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && appHeader.classList.contains('menu-open')) {
+    closeAppMenu();
+    appMenuToggle.focus();
+  }
+});
