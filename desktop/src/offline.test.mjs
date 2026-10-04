@@ -53,3 +53,27 @@ test('desktop routing confines file reads and artwork downloads', () => {
   assert.equal(isApiPath('/cards-other.js'), false);
   for (const url of ['http://cards.scryfall.io/a.jpg', 'https://elsewhere.test/a.jpg', 'https://cards.scryfall.io:8080/a.jpg']) assert.throws(() => artKey(url));
 });
+
+test('artwork responses expose image bytes and reuse disk cache after a failed download', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'asphodel-art-response-'));
+  const url = 'https://cards.scryfall.io/normal/front/a/b/printing.png?123';
+  let attempts = 0;
+  try {
+    const cache = new ArtCache(root, undefined, async () => {
+      attempts++;
+      return attempts === 1 ? new Response('unavailable', { status: 503 })
+        : new Response('PNG bytes', { headers: { 'content-type': 'image/png' } });
+    });
+    await assert.rejects(cache.response(url), /503/);
+    const response = await cache.response(url);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'image/png');
+    assert.equal(response.headers.get('access-control-allow-origin'), '*');
+    assert.equal(await response.text(), 'PNG bytes');
+    const offline = new ArtCache(root, undefined, async () => { throw new Error('offline'); });
+    assert.equal(await (await offline.response(url.replace('?123', '?456'))).text(), 'PNG bytes');
+    assert.equal(await (await offline.response(url, 'HEAD')).text(), '');
+    assert.equal((await offline.response(url, 'POST')).status, 405);
+    assert.equal(attempts, 2);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

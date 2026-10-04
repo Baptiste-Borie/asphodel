@@ -50,16 +50,19 @@ function startBackend(env) {
 }
 
 async function installProtocol() {
-  // Node fetch does not pass through the renderer's artwork redirect interceptor.
-  const art = new ArtCache(join(app.getPath('userData'), 'card-art'), join(runtime, 'card-art'));
+  // A separate Chromium session uses system networking without re-entering the
+  // renderer's HTTPS cache handler. Its HTTP cache is disabled: ArtCache owns
+  // persistent storage, including offline reuse across application restarts.
+  const artDownloads = session.fromPartition('asphodel-art-downloads', { cache: false });
+  const art = new ArtCache(join(app.getPath('userData'), 'card-art'), join(runtime, 'card-art'),
+    (url, options) => artDownloads.fetch(url, options));
   protocol.handle('asphodel', async request => {
     try {
       const url = new URL(request.url);
       if (url.host !== 'app') return new Response('Not found', { status: 404 });
       if (url.pathname === '/__art') {
         const target = url.searchParams.get('url');
-        const data = await art.get(target);
-        return new Response(data, { headers: { 'content-type': new URL(target).pathname.endsWith('.png') ? 'image/png' : 'image/jpeg', 'cache-control': 'public, max-age=31536000' } });
+        return await art.response(target, request.method);
       }
       if (isApiPath(url.pathname)) {
         if (!address) return new Response('Démarrage en cours', { status: 503 });
@@ -82,8 +85,24 @@ async function installProtocol() {
       return new Response('Ressource indisponible', { status: 404 });
     }
   });
-  session.defaultSession.webRequest.onBeforeRequest({ urls: ['https://cards.scryfall.io/*'] }, (details, callback) => {
-    callback({ redirectURL: `${APP_ORIGIN}/__art?url=${encodeURIComponent(details.url)}` });
+  // Serve artwork at its original HTTPS URL. Redirecting an image request into
+  // a custom scheme can fail before reaching the cache's protocol handler.
+  protocol.handle('https', async request => {
+    if (new URL(request.url).hostname !== 'cards.scryfall.io') {
+      return session.defaultSession.fetch(request, { bypassCustomProtocolHandlers: true });
+    }
+    try { return await art.response(request.url, request.method); }
+    catch (error) {
+      const message = `Illustration indisponible: ${request.url} — ${error.message}`;
+      console.error(`[Asphodel] ${message}`);
+      void log(message);
+      return new Response('Illustration indisponible', { status: 502, headers: { 'access-control-allow-origin': '*' } });
+    }
+  });
+  session.defaultSession.webRequest.onErrorOccurred({ urls: ['https://cards.scryfall.io/*'] }, details => {
+    const message = `Erreur réseau illustration: ${details.error} — ${details.url}`;
+    console.error(`[Asphodel] ${message}`);
+    void log(message);
   });
   session.defaultSession.setPermissionRequestHandler((contents, permission, callback) => {
     callback(contents === window?.webContents && contents.getURL().startsWith(`${APP_ORIGIN}/`) && permission === 'media');
