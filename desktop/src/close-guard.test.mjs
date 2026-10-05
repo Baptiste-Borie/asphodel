@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { installCloseGuard } from './close-guard.mjs';
 function fixture(options = {}) {
   const app=new EventEmitter(),ipcMain=new EventEmitter(),window=new EventEmitter();
-  const sent=[];window.webContents={mainFrame:{url:'asphodel://app/'},isDestroyed:()=>false,send:(...args)=>sent.push(args)};
+  const sent=[];window.webContents=Object.assign(new EventEmitter(),{mainFrame:{url:'asphodel://app/'},isDestroyed:()=>false,send:(...args)=>sent.push(args)});
   const trusted={sender:window.webContents,senderFrame:window.webContents.mainFrame};
   let stopped=0,confirmed=0;
   const guard=installCloseGuard({app,ipcMain,window,shutdown:async()=>{stopped++;},confirmFailure:async()=>{confirmed++;return false;},timeoutMs:2000,...options});
@@ -26,6 +26,15 @@ test('save failure cancels closing; a later retry can complete',async()=>{
   const f=fixture();let pending=f.guard.request();f.ipcMain.emit('asphodel:save-result',f.trusted,f.sent[0][1],false);await pending;
   assert.equal(f.stopped,0);assert.equal(f.confirmed,1);
   pending=f.guard.request();f.ipcMain.emit('asphodel:save-result',f.trusted,f.sent[1][1],true);await pending;assert.equal(f.stopped,1);
+});
+test('a native backup/restore operation holds closing before any renderer save request',async()=>{
+  let busy=true;const f=fixture({canClose:()=>!busy});
+  await f.guard.request();assert.equal(f.sent.length,0);assert.equal(f.stopped,0);assert.equal(f.confirmed,0);
+  busy=false;const pending=f.guard.request();f.ipcMain.emit('asphodel:save-result',f.trusted,f.sent[0][1],true);await pending;assert.equal(f.stopped,1);
+});
+test('a reloaded renderer with blocked restoration can quit without waiting for the previous page',async()=>{
+  const f=fixture();f.window.webContents.emit('did-start-navigation',{isMainFrame:true,isSameDocument:false});
+  await f.guard.request();assert.equal(f.sent.length,0);assert.equal(f.stopped,1);assert.equal(f.confirmed,0);
 });
 test('unresponsive renderer times out without stopping backend unless user chooses to quit',async()=>{
   const f=fixture({timeoutMs:10});await f.guard.request();assert.equal(f.stopped,0);assert.equal(f.confirmed,1);

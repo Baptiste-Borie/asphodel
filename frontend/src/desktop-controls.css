@@ -1,5 +1,5 @@
 .desktop-settings {
-  width: min(480px, calc(100vw - 32px));
+  width: min(600px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   overflow: auto;
   padding: 0;
@@ -24,6 +24,15 @@
 .desktop-settings [data-desktop-status][data-error=true] { color: var(--offline); }
 .desktop-settings footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--border); }
 .desktop-settings :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.desktop-backups { border-top: 1px solid var(--border); }
+.desktop-backup-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.desktop-settings [data-backup-preview] { margin-top: 16px; padding: 14px; border: 1px solid var(--border); border-radius: 6px; }
+.desktop-settings [data-backup-decks] { max-height: 130px; overflow: auto; padding-left: 22px; font-size: 13px; line-height: 1.7; }
+.desktop-settings [data-backup-status] { color: var(--online); }
+.desktop-settings [data-backup-status][data-error=true] { color: var(--offline); }
+.desktop-settings button:disabled { opacity: .55; cursor: progress; }
+.restore-startup-error { max-width: 600px; margin: 10vh auto; padding: 24px; background: var(--surface-raised); }
+.restore-startup-error button { margin: 12px 12px 0 0; }
 
 /* Keep the added controls reachable at the desktop's minimum window width. */
 @media (max-width: 1200px) {

@@ -5,6 +5,29 @@ import { initPlaytestView } from "./playtest/playtest-view.js";
 import { initVoiceMicTestView } from "./voice/voice-mic-test-view.js";
 import { initDesktopControls } from "./desktop-controls.js";
 
+import { restoreLibraryStorage } from './library-storage';
+
+// A restore intent is acknowledged only after storage reaches disk. Until then no old
+// builder is mounted, and a failed/quota-limited application can be retried safely.
+async function finishRestoration() {
+  const desktop = window.asphodelDesktop;
+  if (!desktop) return;
+  const storage = await desktop.getRestoredStorage();
+  if (storage !== null) { restoreLibraryStorage(window.localStorage, storage); await desktop.acknowledgeRestore(); }
+}
+try { await finishRestoration(); }
+catch (error) {
+  document.body.replaceChildren();
+  const panel = document.createElement('main'); panel.className = 'restore-startup-error';
+  const title = document.createElement('h1'); title.textContent = 'Restauration à terminer';
+  const message = document.createElement('p'); message.textContent = error instanceof Error ? error.message : 'Le stockage local est indisponible.';
+  const info = document.createElement('p'); info.textContent = 'La sauvegarde et la copie de secours sont conservées. Réessaie ou ferme puis relance Asphodel.';
+  const retry = document.createElement('button'); retry.textContent = 'Réessayer'; retry.onclick = () => window.location.reload();
+  const quit = document.createElement('button'); quit.textContent = 'Quitter'; quit.onclick = () => { void window.asphodelDesktop?.quit(); };
+  panel.append(title, message, info, retry, quit); document.body.append(panel);
+  throw error; // never mount a builder over partially applied renderer storage
+}
+
 const backendStatus = element<HTMLSpanElement>("#backend-status");
 const playView = element<HTMLElement>("#play-view");
 const voiceTestView = element<HTMLElement>("#voice-test-view");
@@ -94,4 +117,4 @@ document.addEventListener('keydown', event => {
   }
 });
 
-initDesktopControls(closeAppMenu);
+initDesktopControls(closeAppMenu, deckLab);

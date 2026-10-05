@@ -231,3 +231,13 @@ body:has(#deck-lab-view:not([hidden])) .header-actions .primary-button { backgro
 .lab-recovery { padding: 14px 18px; margin: 12px 0; border: 1px solid #b49c65; background: #fff7e4; color: #3b3224; }
 .lab-recovery p { margin: 0 0 8px; }
 [data-save-status][data-status="error"] { color: #a23228; }
+.lab-export { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 24px; color: inherit; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px; }
+.lab-export::backdrop { background: #080910b3; }
+.lab-export header, .lab-export footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.lab-export h2 { margin: 0; }
+.lab-export p { font-size: 13px; line-height: 1.6; }
+.lab-export textarea { display: block; width: 100%; box-sizing: border-box; min-height: 240px; margin: 16px 0; padding: 12px; resize: vertical; color: inherit; background: var(--surface); border: 1px solid var(--border); font: 13px/1.6 monospace; }
+.lab-export [data-export-status] { min-height: 1.6em; }
+.lab-export :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+#deck-lab-view .lab-export p { margin: 12px 0; }

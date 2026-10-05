@@ -1,4 +1,4 @@
-# Asphodel Desktop 0.1.2
+# Asphodel Desktop 0.1.3
 
 Desktop wrapper around the existing TypeScript/Vite frontend, Node backend and pinned Forge bridge. No stack migration. Launch Asphodel, choose a saved deck, play locally, close the application. The packaged app includes Chromium/Node, Java and Forge's resources; no terminal, Node installation, Java installation or remote server is needed to run it.
 
@@ -10,17 +10,17 @@ Close Asphodel, then from the repository root:
 npm --prefix desktop run install:local
 ```
 
-This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.2-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
+This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.3-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
 
 Afterwards, open **Asphodel** from Ubuntu's application menu and pin it to your dock if desired. The package installs the app in `/opt/Asphodel`, the desktop entry `Asphodel.desktop`, the existing icon and the `asphodel` command. This launch uses the installed app, independent of the checkout, and needs no local server command. The normal desktop settings, fullscreen preference and Quitter button remain available.
 
-To update after a new patch/pull, close Asphodel and run the same command again. Decks, cached images, drafts and display settings remain in the existing `~/.config/Asphodel` profile; the package contains no home-directory files. Package removal (`sudo apt-get remove asphodel-desktop`) leaves this profile in place. This patch does not add backup/restore or guarantee recovery from a crash.
+To update after a new patch/pull, close Asphodel and run the same command again. Decks, cached images, drafts and display settings remain in the existing `~/.config/Asphodel` profile; the package contains no home-directory files. Package removal (`sudo apt-get remove asphodel-desktop`) leaves this profile in place. Backup/restore is available in settings; abrupt-crash recovery still depends on a persisted draft.
 
-To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.2-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
+To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.3-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
 
 ## Automated Linux packages
 
-The Desktop workflow now runs for relevant changes on `main`, matching pull requests, manual dispatch, and `v*` tags. A release tag must equal the desktop version (for example `v0.1.2`); both package files must agree. A newer run on the same ref cancels an obsolete build.
+The Desktop workflow now runs for relevant changes on `main`, matching pull requests, manual dispatch, and `v*` tags. A release tag must equal the desktop version (for example `v0.1.3`); both package files must agree. A newer run on the same ref cancels an obsolete build.
 
 CI runs the existing desktop/window/artwork/runtime checks, builds versioned AppImage and Debian packages, and checks that the `.deb` contains the launcher, icon, frontend, backend dependencies, seed library, Java and Forge. Successful packages appear in the workflow's **Artifacts**, under `Asphodel-Desktop-Linux-<commit>`. Building does not automatically publish a release or install an updater.
 
@@ -81,7 +81,7 @@ Next work should improve distribution, recovery, the builder and play experience
 
 First launch opens fullscreen, with no native application menu. **Paramètres** in the app navigation switches between fullscreen and a window; **F11** does the same, including while the settings dialog is open. The selected mode is stored atomically in `userData/display-preferences.json` and restored on launch. Escape closes dialogs without changing the display preference. **Quitter** uses the existing backend shutdown/report flow. **Ouvrir mes données** is now in settings. These controls are hidden in the web version.
 
-The sandboxed CommonJS preload exposes only four specific commands and a display-state subscription. The main process accepts them only from the app window's main frame at `asphodel://app`. Node integration stays disabled. Development tools remain accessible with Ctrl+Shift+I in unpackaged builds.
+The sandboxed CommonJS preload exposes only specific app commands and subscriptions. The main process accepts them only from the app window's main frame at `asphodel://app`. Node integration stays disabled. Development tools remain accessible with Ctrl+Shift+I in unpackaged builds.
 
 After applying the patch to an already built checkout, run `npm --prefix desktop run build` to refresh the bundled frontend, then launch as usual. The existing Forge JAR is sufficient; there is no Forge source change in this patch.
 
@@ -93,7 +93,7 @@ Deck contents, empty categories, cuts, selected card metadata, stable entry/grou
 
 Every completed edit writes a local recovery journal before the 700 ms API debounce. Empty sheets are valid saved projects. An outstanding journal appears at startup with **Reprendre les brouillons**; it is never silently applied over the database. Confirmed journals are removed to avoid accumulating full card snapshots in browser storage. Corrupt journals are reported and kept untouched. An API failure offers **Réessayer** in both builders. An acknowledgement for an older edit never marks a newer edit saved.
 
-Quitter and the native close button keep the renderer/backend alive while pending saves drain. A failed or unresponsive save offers staying in the app or explicitly quitting anyway. Abrupt kills/power loss cannot run this handshake; recovery depends on the browser having persisted its local journal. Storage/quota errors are reported, rather than claiming a crash-proof guarantee. Full library backup/restore and text export remain patch 04.
+Quitter and the native close button keep the renderer/backend alive while pending saves drain. A failed or unresponsive save offers staying in the app or explicitly quitting anyway. Abrupt kills/power loss cannot run this handshake; recovery depends on the browser having persisted its local journal. Storage/quota errors are reported, rather than claiming a crash-proof guarantee. Full library backup/restore and text export are described below (patch 04).
 
 Reinstall locally after applying this patch:
 
@@ -102,3 +102,17 @@ npm --prefix desktop run install:local
 ```
 
 This update adds a table; it does not delete existing deck data.
+
+## Portable library and text export (patch 04)
+
+In **Paramètres → Bibliothèque et sauvegardes**, use **Sauvegarder ma bibliothèque** to choose a `.asphodel.json` file. Pending edits in open tables are flushed first. The versioned JSON contains all saved decks (including old imports and empty projects), game quantities/commanders, full builder snapshots, empty categories, candidates, cuts, selected printing/face metadata, table positions/zones/camera, pending recovery journals, legacy table layouts, Selection, approved voice vocabulary and the display mode. Invalid/unreadable draft strings are preserved instead of silently discarded.
+
+The archive is limited to 64 MiB, with 4 MiB of renderer storage. It contains neither image bytes nor the bulk/search catalogue, Java/Forge, models, playtest sessions or reports. A fresh/offline profile can restore the cards and decks without resolving their names on the network; image availability still depends on that profile's existing cache or a later download. The format version is checked separately from the application version.
+
+**Choisir une sauvegarde…** validates the file and shows its date, deck names/count and draft count. **Restaurer cette sauvegarde…** requires a native confirmation and replaces the library rather than merging it. End an active game first. Before replacing anything, Asphodel creates an exact safety copy of the current library/storage/display in `userData/backups/avant-restauration-*.asphodel.json`; opening the data folder gives access to these files. They can be restored through the same chooser. No safety-copy write means no replacement.
+
+Decks/cards/projects are restored in a single SQLite transaction and deck ids/timestamps are retained. A failed transaction leaves the old library intact. An on-disk `pending-library-restore.json` intent makes an interrupted restore retryable before any renderer table is mounted. The renderer applies only known library storage keys, flushes Chromium storage and acknowledges the intent; only then is it removed. A quota/storage error shows a blocking retry/quit screen, so an old table cannot overwrite the restored library. Restoring reloads the app view, not the Electron process.
+
+**Exporter** in Builder V1, or **Table tools → Exporter le deck** in V2, opens a selectable text preview with copy and save-to-`.txt` actions. Default output uses `Commander` and `Mainboard`, aggregates a card appearing in several categories and excludes candidates/cuts. It round-trips through Asphodel's text importer. Optional `Maybeboard` output is intended for destinations that recognize that section; Asphodel's current plain-text importer supports only Commander/Mainboard. Printing metadata is retained by the full archive; text export contains names and quantities.
+
+No new database migration is required. Rebuild/install with `npm --prefix desktop run install:local` after applying the patch.

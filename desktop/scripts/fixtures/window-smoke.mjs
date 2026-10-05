@@ -1,10 +1,10 @@
 // Uses the production window configuration/IPC with a fixture catalogue, so
 // display checks do not require Java, Forge or a user's deck database.
-import { app, BrowserWindow, protocol } from 'electron';
+import { app, BrowserWindow, protocol, ipcMain } from 'electron';
 import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DisplayPreferences } from '../../src/display-preferences.mjs';
+import { isTrustedDesktopFrame, DisplayPreferences } from '../../src/display-preferences.mjs';
 import { desktopWindowOptions, installWindowControls } from '../../src/window-controls.mjs';
 import { assetPath } from '../../src/paths.mjs';
 
@@ -30,6 +30,10 @@ void app.whenReady().then(() => {
   const preferences = new DisplayPreferences(join(app.getPath('userData'), 'display-preferences.json'));
   const window = new BrowserWindow({ width: 1280, height: 800, show: false, ...desktopWindowOptions(preferences) });
   installWindowControls(window, preferences);
+  ipcMain.handle('asphodel:restored-storage', event => {
+    if (!isTrustedDesktopFrame(event, window.webContents)) throw new Error('Desktop command refused');
+    return null; // display-only fixture has no database restoration
+  });
   window.once('ready-to-show', () => window.show());
   void window.loadURL('asphodel://app/');
 });

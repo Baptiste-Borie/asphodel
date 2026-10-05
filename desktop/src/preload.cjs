@@ -2,6 +2,12 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 // Expose only app commands, never ipcRenderer or arbitrary channel/path access.
 contextBridge.exposeInMainWorld('asphodelDesktop', {
+  saveDeckText: (name, text) => ipcRenderer.invoke('asphodel:deck-text-save', name, text),
+  saveBackup: storage => ipcRenderer.invoke('asphodel:backup-save', storage),
+  chooseBackup: () => ipcRenderer.invoke('asphodel:backup-choose'),
+  restoreBackup: storage => ipcRenderer.invoke('asphodel:backup-restore', storage),
+  getRestoredStorage: () => ipcRenderer.invoke('asphodel:restored-storage'),
+  acknowledgeRestore: () => ipcRenderer.invoke('asphodel:restore-ack'),
   getDisplayState: () => ipcRenderer.invoke('asphodel:display-state'),
   setFullscreen: fullscreen => {
     if (typeof fullscreen !== 'boolean') return Promise.reject(new TypeError('Fullscreen must be a boolean'));

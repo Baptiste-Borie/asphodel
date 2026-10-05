@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -92,6 +92,46 @@ try {
   await page.locator('.lab-builder [data-save-status][data-status=saved]').waitFor();
   const recovered = await page.evaluate(async () => (await (await fetch('/decks')).json()).decks.filter(d => d.name === 'Recovered interrupted exploration'));
   assert.equal(recovered.length, 1, 'creation retry must reuse the project id rather than duplicate its deck');
+  // Real settings/IPC/archive round-trip. Only the operating-system dialogs are stubbed;
+  // validation, filesystem writes, SQLite transactions, storage restore and reload are production.
+  const archivePath = join(userData, 'portable-library.asphodel.json');
+  await electron.evaluate(({ dialog }, path) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: path });
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
+    dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
+  }, archivePath);
+  await page.evaluate(() => localStorage.setItem('asphodel.voice.approvedVocabulary.v1', JSON.stringify({ version: 1, vocabulary: ['portable vocabulary'] })));
+  await page.getByRole('button', { name: 'Paramètres', exact: true }).click();
+  await page.getByRole('button', { name: 'Sauvegarder ma bibliothèque', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-backup-status]')?.textContent.startsWith('Bibliothèque sauvegardée'));
+  const portable = JSON.parse(await readFile(archivePath, 'utf8'));
+  assert.equal(portable.format, 'asphodel-library');
+  assert.deepEqual(portable.library.projects.find(p => p.projectId === expectedProject.projectId).state.workspace, expectedProject.workspace);
+  await page.evaluate(async id => {
+    localStorage.setItem('asphodel.voice.approvedVocabulary.v1', 'changed after backup');
+    const result = await fetch(`/decks/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Changed after backup' }) });
+    if (!result.ok) throw new Error('Smoke rename failed');
+  }, id);
+  await page.getByRole('button', { name: 'Choisir une sauvegarde…', exact: true }).click();
+  await page.locator('[data-backup-preview]:not([hidden])').waitFor();
+  await page.getByRole('button', { name: 'Restaurer cette sauvegarde…', exact: true }).click();
+  await page.waitForFunction(async id => {
+    if (document.querySelector('.desktop-settings')?.open) return false;
+    return (await (await fetch(`/decks/${id}`)).json()).name === 'Desktop persistent deck';
+  }, id);
+  assert.equal(await page.evaluate(() => localStorage.getItem('asphodel.voice.approvedVocabulary.v1')), portable.storage['asphodel.voice.approvedVocabulary.v1']);
+  assert.equal(await page.evaluate(() => localStorage.getItem('desktop-smoke')), 'survives restart');
+  const rescueNames = await readdir(join(userData, 'backups'));
+  assert.equal(rescueNames.length, 1);
+  const rescue = JSON.parse(await readFile(join(userData, 'backups', rescueNames[0]), 'utf8'));
+  assert.equal(rescue.library.decks.find(d => d.id === id).name, 'Changed after backup');
+  assert.equal((await readdir(userData)).includes('pending-library-restore.json'), false);
+  await page.getByRole('button', { name: 'Builder', exact: true }).click();
+  await page.locator(`[data-open-deck="saved:${recovered[0].id}"]`).click();
+  await page.getByRole('button', { name: 'Exporter', exact: true }).click();
+  assert.match(await page.getByLabel('Liste du deck à exporter', { exact: true }).inputValue(), /^Commander\n/);
+  assert.equal(await page.locator('[data-export-candidates]').isChecked(), false);
+  await page.getByRole('button', { name: 'Fermer l’export', exact: true }).click();
   // Block renderer internet: fixture gameplay still uses the real local Java engine.
   await page.route(/^https?:\/\//, route => route.abort());
   const started = await page.evaluate(async () => {

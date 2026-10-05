@@ -8,6 +8,9 @@ import { ArtCache, installArtworkHeaderGuard } from './art-cache.mjs';
 import { DisplayPreferences } from './display-preferences.mjs';
 import { desktopWindowOptions, installWindowControls } from './window-controls.mjs';
 import { installCloseGuard } from './close-guard.mjs';
+import { atomicWrite, LibraryBackups } from './library-backups.mjs';
+import { isTrustedDesktopFrame } from './display-preferences.mjs';
+import { pathToFileURL } from 'node:url';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'asphodel', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
 app.setName('Asphodel');
@@ -19,6 +22,7 @@ let backend;
 let address;
 let quitting = false;
 let displayPreferences;
+let libraryBackups;
 const token = randomBytes(32).toString('hex');
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2', '.json': 'application/json' };
 const csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://cards.scryfall.io data: blob:; font-src 'self' data:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'";
@@ -127,7 +131,7 @@ function createWindow() {
     console.error('[Asphodel] Préférence d’affichage:', error);
     void log(error.stack ?? String(error));
   });
-  installCloseGuard({ app, ipcMain, window,
+  installCloseGuard({ app, ipcMain, window, canClose: () => !libraryBackups?.busy,
     onError: error => void log(error.stack ?? String(error)),
     confirmFailure: async () => {
       const { response } = await dialog.showMessageBox(window, {
@@ -161,6 +165,61 @@ function createWindow() {
   return window;
 }
 
+async function installLibraryBackups(currentWindow) {
+  const codec = await import(pathToFileURL(join(runtime, 'shared/library-backup.mjs')).href);
+  const api = async (path, payload) => {
+    const response = await fetch(`${address}${path}`, {
+      method: payload ? 'POST' : 'GET', headers: { 'x-asphodel-desktop-token': token, 'content-type': 'application/json' },
+      ...(payload ? { body: JSON.stringify(payload) } : {}),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw Object.assign(new Error(body.message ?? 'La restauration a échoué. La bibliothèque précédente est conservée.'), { definite: true });
+    }
+    return response.json();
+  };
+  const filters = [{ name: 'Sauvegarde Asphodel', extensions: ['json'] }];
+  libraryBackups = new LibraryBackups({
+    userData: app.getPath('userData'), version: app.getVersion(), codec,
+    api: { snapshot: () => api('/decks/library-backup'), restore: library => api('/decks/library-restore', library) },
+    getDisplay: () => ({ fullscreen: displayPreferences.fullscreen }),
+    setDisplay: state => { displayPreferences.setFullscreen(state.fullscreen); currentWindow.setFullScreen(state.fullscreen); },
+    dialogs: {
+      save: async defaultPath => { const result = await dialog.showSaveDialog(currentWindow, { title: 'Sauvegarder ma bibliothèque', defaultPath, filters }); return result.canceled ? null : result.filePath; },
+      open: async () => { const result = await dialog.showOpenDialog(currentWindow, { title: 'Choisir une sauvegarde Asphodel', filters, properties: ['openFile'] }); return result.canceled ? null : result.filePaths[0]; },
+      confirm: async (archive, count) => {
+        const result = await dialog.showMessageBox(currentWindow, {
+          type: 'warning', title: 'Restaurer la bibliothèque',
+          message: `Remplacer les ${count} decks actuels par les ${archive.library.decks.length} decks de cette sauvegarde ?`,
+          detail: 'Les tables, la sélection et les brouillons seront remplacés. Une sauvegarde de secours sera créée dans le dossier de tes données. La partie en cours doit être terminée.',
+          buttons: ['Annuler', 'Restaurer la sauvegarde'], defaultId: 0, cancelId: 0,
+        });
+        return result.response === 1;
+      },
+    },
+  });
+  const commands = {
+    'asphodel:deck-text-save': async (name, text) => {
+      if (typeof name !== 'string' || !/^[^\x00-\x1f<>:"/\\|?*]{1,104}\.txt$/.test(name) || typeof text !== 'string' || text.length > 1000000) throw new Error('Export texte invalide.');
+      return libraryBackups.exclusive(async () => {
+        const result = await dialog.showSaveDialog(currentWindow, { title: 'Exporter le deck', defaultPath: name, filters: [{ name: 'Liste de cartes', extensions: ['txt'] }] });
+        if (result.canceled) return false;
+        await atomicWrite(result.filePath, text, true); return true;
+      });
+    },
+    'asphodel:backup-save': storage => libraryBackups.save(storage),
+    'asphodel:backup-choose': () => libraryBackups.choose(),
+    'asphodel:backup-restore': storage => libraryBackups.restore(storage),
+    'asphodel:restored-storage': () => libraryBackups.restoredStorage(),
+    'asphodel:restore-ack': () => { session.defaultSession.flushStorageData(); return libraryBackups.acknowledge(); },
+  };
+  for (const [channel, action] of Object.entries(commands)) ipcMain.handle(channel, (event, ...args) => {
+    if (!isTrustedDesktopFrame(event, currentWindow.webContents)) throw new Error('Desktop command refused');
+    return action(...args);
+  });
+  currentWindow.once('closed', () => { for (const channel of Object.keys(commands)) ipcMain.removeHandler(channel); });
+}
+
 console.log('[Asphodel] Initialisation du desktop…');
 if (!app.requestSingleInstanceLock()) {
   console.log('[Asphodel] Une autre instance est déjà ouverte.');
@@ -182,6 +241,8 @@ else {
       await currentWindow.loadFile(join(here, 'splash.html'));
       console.log('[Asphodel] Démarrage du moteur local…');
       await startBackend(env);
+      await installLibraryBackups(currentWindow);
+      await libraryBackups.resume();
       await currentWindow.loadURL(`${APP_ORIGIN}/`);
       console.log('[Asphodel] Application prête.');
     } catch (error) {

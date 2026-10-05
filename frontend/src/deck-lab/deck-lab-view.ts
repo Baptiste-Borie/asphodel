@@ -1,3 +1,4 @@
+import { exportDeckText, deckTextFilename } from './deck-export';
 import sampleCards from './cards.json';
 import { apiRequest, ApiError } from '../api/api-client';
 import { element } from '../dom';
@@ -150,6 +151,47 @@ export function initDeckLabView(root: HTMLElement) {
     <dialog class="lab-inspect"><button data-action="close-inspect" aria-label="Close card inspection">✕</button><div></div></dialog>
     <dialog class="lab-triage" aria-labelledby="lab-triage-title"><div class="lab-triage-head"><div><p class="lab-eyebrow" data-triage-category></p><h2 id="lab-triage-title">How interesting is this card?</h2></div><button data-action="triage-cancel" aria-label="Close sorting">✕</button></div><div class="lab-triage-body"></div></dialog>
     <p class="lab-toast" role="status" hidden></p>`;
+  const exportDialog = document.createElement('dialog');
+  exportDialog.className = 'lab-export';
+  exportDialog.setAttribute('aria-labelledby', 'deck-export-title');
+  exportDialog.innerHTML = `<header><h2 id="deck-export-title">Exporter le deck</h2><button type="button" data-export-close aria-label="Fermer l’export">✕</button></header>
+    <p>Commandants et quantités sont conservés. Les catégories sont réunies dans Mainboard ; les cartes écartées restent hors de l’export.</p>
+    <label><input type="checkbox" data-export-candidates> Ajouter les candidats dans une section Maybeboard</label>
+    <p class="lab-muted">La section Maybeboard dépend du format d’import de l’application destinataire.</p>
+    <textarea aria-label="Liste du deck à exporter" readonly spellcheck="false"></textarea>
+    <footer><button type="button" data-export-copy>Copier le texte</button><button type="button" data-export-download>Télécharger .txt</button></footer>
+    <p data-export-status role="status"></p>`;
+  root.append(exportDialog);
+  let exportedSheet: Sheet | undefined;
+  const exportText = exportDialog.querySelector<HTMLTextAreaElement>('textarea')!;
+  const exportCandidates = exportDialog.querySelector<HTMLInputElement>('[data-export-candidates]')!;
+  const exportFeedback = exportDialog.querySelector<HTMLElement>('[data-export-status]')!;
+  function renderExport() { if (exportedSheet) exportText.value = exportDeckText(exportedSheet, exportCandidates.checked); }
+  function openExport() {
+    if (!active) return;
+    table?.checkpoint(); exportedSheet = active; exportCandidates.checked = false; exportFeedback.textContent = '';
+    renderExport(); exportDialog.showModal();
+  }
+  exportCandidates.addEventListener('change', renderExport);
+  exportDialog.querySelector('[data-export-close]')!.addEventListener('click', () => exportDialog.close());
+  exportDialog.querySelector('[data-export-copy]')!.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(exportText.value); exportFeedback.textContent = 'Texte copié.'; }
+    catch { exportText.focus(); exportText.select(); exportFeedback.textContent = 'Copie automatique indisponible. Le texte est sélectionné : utilise Ctrl+C.'; }
+  });
+  exportDialog.querySelector('[data-export-download]')!.addEventListener('click', async () => {
+    if (!exportedSheet) return;
+    const name = deckTextFilename(exportedSheet.name);
+    try {
+      if (window.asphodelDesktop) {
+        const saved = await window.asphodelDesktop.saveDeckText(name, exportText.value);
+        exportFeedback.textContent = saved ? 'Fichier texte enregistré.' : 'Export annulé.';
+      } else {
+        const url = URL.createObjectURL(new Blob([exportText.value], { type: 'text/plain;charset=utf-8' }));
+        const link = document.createElement('a'); link.href = url; link.download = name; link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000); exportFeedback.textContent = 'Export téléchargé.';
+      }
+    } catch { exportFeedback.textContent = 'Impossible d’enregistrer le fichier. Tu peux copier le texte.'; }
+  });
   const get = <T extends HTMLElement>(s: string) => root.querySelector<T>(s)!;
   const drawer = get<HTMLDialogElement>('.lab-drawer');
   const inspect = get<HTMLDialogElement>('.lab-inspect');
@@ -401,7 +443,7 @@ export function initDeckLabView(root: HTMLElement) {
       : commanderCount > 2 ? `<p class="lab-builder-warning" role="status">The Commander category has <strong>${commanderCount}</strong> cards — most decks run just one (two with Partner).</p>` : '';
     const warning = total !== 100 ? `<p class="lab-builder-warning" role="status">This sheet has <strong>${total}</strong> card${total === 1 ? '' : 's'} — a Commander deck needs exactly 100.</p>` : '';
     const saveStatus = '<span class="lab-save-status" data-save-status role="status"></span><button data-action="retry-save" hidden>Réessayer</button>';
-    const deckActions = '<button data-action="rename-deck">Rename</button><button data-action="delete-deck">Delete</button>';
+    const deckActions = '<button data-action="export-deck">Exporter</button><button data-action="rename-deck">Rename</button><button data-action="delete-deck">Delete</button>';
     get('.lab-builder').innerHTML = `${commanderWarning}${warning}<div class="lab-deck-heading"><div><button class="lab-back" data-action="close-sheet" aria-label="Back to all decks">← All decks</button><p class="lab-eyebrow">COMMANDER / CANDIDATE SHEET</p><h2>${esc(active.name)}${saveStatus}</h2><p><strong>${total}</strong> candidate cards <span> / 100 final deck target</span></p></div><div><select class="lab-sheet-picker" aria-label="Open deck sheet">${sheets.map((s,i) => `<option value="${i}" ${s === active ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><button data-action="new">+ New sheet</button><button data-action="selection">+ From Selection</button>${deckActions}</div></div><div class="lab-builder-tools"><span>Manual categories <span class="lab-muted">· drag a card, use its menu, or search a category to add one</span></span><form class="lab-new-category"><input aria-label="New category name" placeholder="Name your category" required maxlength="60" /><button>+ New category</button></form></div><div class="lab-categories">${active.groups.map(categoryHtml).join('')}</div><details class="lab-cuts"><summary>Cuts · ${active.cuts.length} <span>Keep discarded ideas nearby</span></summary>${active.cuts.map((c,i) => `<button data-restore="${i}">↶ ${esc(c.name)}</button>`).join('') || '<p>No cuts yet. Cut a card using its menu to keep it here.</p>'}</details><section class="lab-stats"><div><p class="lab-eyebrow">DECK STATISTICS</p><h2>The shape of your sheet.</h2><p class="lab-muted">All candidates · cuts excluded<br>Card types may overlap.</p><div class="lab-type-counts">${['Creature','Instant','Sorcery','Artifact','Enchantment','Planeswalker','Land'].map(type => `<div><span>${type}</span><strong>${entries.filter(e => e.card.type_line.includes(type)).reduce((n,e) => n+e.quantity,0)}</strong></div>`).join('')}</div></div><div><div class="lab-curve-heading"><h3>Mana curve</h3><span>${spells} nonland spells</span></div><div class="lab-curve">${curve.map((n,i) => `<div><span>${n}</span><i style="height:${n / Math.max(...curve,1) * 150}px"></i><label>${i === 7 ? '7+' : i}</label></div>`).join('')}</div><p class="lab-average">${spells ? (nonlands.reduce((n,e) => n+e.card.cmc*e.quantity,0)/spells).toFixed(2) : '—'} <span>Average mana value · nonlands</span></p></div></section>`;
     setSaveStatus(persistence.status(active));
   }
@@ -598,6 +640,7 @@ export function initDeckLabView(root: HTMLElement) {
       case 'filters': case 'advanced': { const panel = get(`.lab-${b.dataset.action}`); panel.hidden = !panel.hidden; b.setAttribute('aria-expanded',String(!panel.hidden)); break; }
       case 'sample': active = sample(); sheets.push(active); scheduleAutoSave(); renderBuilder(); break;
       case 'new': active = { name: `Untitled exploration ${sheets.length+1}`, groups: [commanderGroup(), {name:'Unsorted', entries:[]}], cuts:[] }; sheets.push(active); scheduleAutoSave(); switchView('builder'); break;
+      case 'export-deck': openExport(); break;
       case 'retry-save': if (active) void persistence.retry(active); break;
       case 'close-sheet': active = undefined; renderBuilder(); break;
       case 'import': openImportModal(); break;
@@ -803,8 +846,9 @@ export function initDeckLabView(root: HTMLElement) {
   element<HTMLButtonElement>('#cancel-deck-modal').addEventListener('click', closeImportModal);
   deckModal.addEventListener('click', event => { if (event.target === deckModal) closeImportModal(); });
 
-  window.addEventListener('pagehide', () => { table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); });
-  return { async flush() { table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); return persistence.flush(); }, activate() {
+  let retired = false;
+  window.addEventListener('pagehide', () => { if (retired) return; table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); });
+  return { retire() { retired = true; }, async flush() { if (retired) return true; table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); return persistence.flush(); }, activate() {
     void loadCatalog();
     void loadSavedDecks();
     if (!activated) { activated = true; void renderSearch(); }

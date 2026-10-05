@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { isTrustedDesktopFrame } from './display-preferences.mjs';
 
 /** Hold both native Close and Quit while the renderer drains its save queue. */
-export function installCloseGuard({ app, ipcMain, window, shutdown, confirmFailure, onError = console.error, timeoutMs = 15_000 }) {
+export function installCloseGuard({ app, ipcMain, window, shutdown, confirmFailure, onError = console.error, timeoutMs = 15_000, canClose = () => true }) {
   let ready = false, ending = false, attempt;
   let pending;
   const trusted = event => isTrustedDesktopFrame(event, window.webContents);
@@ -12,6 +12,10 @@ export function installCloseGuard({ app, ipcMain, window, shutdown, confirmFailu
   };
   ipcMain.on('asphodel:save-ready', onReady);
   ipcMain.on('asphodel:save-result', onResult);
+  const navigating = event => {
+    if (event.isMainFrame && !event.isSameDocument) { ready = false; pending?.finish(false); }
+  };
+  window.webContents.on('did-start-navigation', navigating);
   function save() {
     if (!ready || window.webContents.isDestroyed()) return Promise.resolve(true);
     return new Promise(resolve => {
@@ -23,6 +27,7 @@ export function installCloseGuard({ app, ipcMain, window, shutdown, confirmFailu
     });
   }
   function request() {
+    if (!canClose()) return Promise.resolve();
     if (attempt || ending) return attempt;
     attempt = (async () => {
       let saved = false;
@@ -41,6 +46,7 @@ export function installCloseGuard({ app, ipcMain, window, shutdown, confirmFailu
     app.removeListener('before-quit', intercept);
     ipcMain.removeListener('asphodel:save-ready', onReady);
     ipcMain.removeListener('asphodel:save-result', onResult);
+    window.webContents.removeListener('did-start-navigation', navigating);
   });
   return { request };
 }
