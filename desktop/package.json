@@ -16,6 +16,8 @@
     "dist": "npm run build && electron-builder --linux AppImage deb",
     "cache-art": "node scripts/cache-art.mjs",
     "smoke": "node scripts/smoke.mjs",
+    "smoke:window": "node scripts/window-smoke.mjs",
+    "smoke:art-headers": "electron scripts/art-header-smoke.mjs",
     "smoke:runtime": "node scripts/runtime-smoke.mjs"
   },
   "engines": {

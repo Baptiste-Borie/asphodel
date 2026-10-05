@@ -3,6 +3,7 @@ import { initDeckLabView } from "./deck-lab/deck-lab-view.js";
 import { element } from "./dom.js";
 import { initPlaytestView } from "./playtest/playtest-view.js";
 import { initVoiceMicTestView } from "./voice/voice-mic-test-view.js";
+import { initDesktopControls } from "./desktop-controls.js";
 
 const backendStatus = element<HTMLSpanElement>("#backend-status");
 const playView = element<HTMLElement>("#play-view");
@@ -91,3 +92,5 @@ document.addEventListener('keydown', event => {
     appMenuToggle.focus();
   }
 });
+
+initDesktopControls(closeAppMenu);

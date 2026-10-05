@@ -1,0 +1,33 @@
+.desktop-settings {
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: inherit;
+  background: var(--surface-raised);
+  box-shadow: 0 24px 80px #0008;
+}
+.desktop-settings::backdrop { background: #080910b3; }
+.desktop-settings header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 24px; border-bottom: 1px solid var(--border); }
+.desktop-settings-eyebrow { margin: 0 0 6px; color: var(--text-muted); font-size: 11px; letter-spacing: .15em; }
+.desktop-settings h2 { margin: 0; font-size: 22px; }
+.desktop-settings header button { padding: 8px; color: var(--text-muted); background: transparent; }
+.desktop-settings section { padding: 22px 24px; }
+.desktop-settings h3 { margin: 0 0 18px; font-size: 15px; }
+.desktop-settings label { display: block; margin-bottom: 8px; font-size: 13px; }
+.desktop-settings select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; color: inherit; background: var(--surface); font: inherit; }
+.desktop-settings section p { color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+.desktop-settings kbd { padding: 2px 5px; border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); font: inherit; font-size: 12px; }
+.desktop-settings [data-desktop-status] { color: var(--online); }
+.desktop-settings [data-desktop-status][data-error=true] { color: var(--offline); }
+.desktop-settings footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--border); }
+.desktop-settings :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* Keep the added controls reachable at the desktop's minimum window width. */
+@media (max-width: 1200px) {
+  .desktop-app .app-header { gap: 16px; }
+  .desktop-app .app-nav { flex-wrap: wrap; }
+  .desktop-app .nav-button { padding: 8px 12px; }
+}

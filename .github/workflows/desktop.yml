@@ -36,6 +36,8 @@ jobs:
       - run: ./scripts/forge-build.sh
       - run: npm --prefix backend test && npm --prefix backend run build && npm --prefix frontend test && npm --prefix desktop test
       - run: npm --prefix desktop run build
+      - run: xvfb-run -a npm --prefix desktop run smoke:art-headers
+      - run: xvfb-run -a npm --prefix desktop run smoke:window
       - run: npm --prefix desktop run smoke:runtime
       - run: xvfb-run -a npm --prefix desktop run smoke
       - working-directory: desktop

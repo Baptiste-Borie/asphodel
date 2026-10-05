@@ -2,6 +2,26 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+export function byteSafeArtworkHeaders(headers = {}) {
+  // Electron 44's session.fetch converts Chromium response headers with
+  // Headers.set outside its promise's error handler. A decoded Unicode
+  // filename (e.g. Island ★.jpg) therefore throws an uncaught ByteString
+  // error. Artwork is keyed by URL, so discard Content-Disposition filenames
+  // altogether (Chromium and Node may decode these differently). Keep safe headers,
+  // including content type, compression, caching and security headers.
+  return Object.fromEntries(Object.entries(headers).filter(([name, values]) =>
+    name.toLowerCase() !== 'content-disposition' && !/[^\u0000-\u00ff]/.test(name) &&
+    [values].flat().every(value => !/[^\u0000-\u00ff]/.test(value))));
+}
+
+export function installArtworkHeaderGuard(downloads) {
+  // Run before session.fetch builds its Response, on the dedicated artwork
+  // session only. A catch around await fetch cannot catch that native event.
+  downloads.webRequest.onHeadersReceived({ urls: ['https://cards.scryfall.io/*'] }, (details, callback) => {
+    callback({ responseHeaders: byteSafeArtworkHeaders(details.responseHeaders) });
+  });
+}
+
 export function artKey(value) {
   const url = new URL(value);
   if (url.protocol !== 'https:' || url.hostname !== 'cards.scryfall.io' || url.port || url.username || url.password || !/\.(jpg|png)$/.test(url.pathname)) {

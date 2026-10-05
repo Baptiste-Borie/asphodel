@@ -4,7 +4,9 @@ import { appendFile, readFile } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { APP_ORIGIN, assetPath, isApiPath, prepareUserData } from './paths.mjs';
-import { ArtCache } from './art-cache.mjs';
+import { ArtCache, installArtworkHeaderGuard } from './art-cache.mjs';
+import { DisplayPreferences } from './display-preferences.mjs';
+import { desktopWindowOptions, installWindowControls } from './window-controls.mjs';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'asphodel', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
 app.setName('Asphodel');
@@ -15,6 +17,7 @@ let window;
 let backend;
 let address;
 let quitting = false;
+let displayPreferences;
 const token = randomBytes(32).toString('hex');
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2', '.json': 'application/json' };
 const csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://cards.scryfall.io data: blob:; font-src 'self' data:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'";
@@ -54,6 +57,7 @@ async function installProtocol() {
   // renderer's HTTPS cache handler. Its HTTP cache is disabled: ArtCache owns
   // persistent storage, including offline reuse across application restarts.
   const artDownloads = session.fromPartition('asphodel-art-downloads', { cache: false });
+  installArtworkHeaderGuard(artDownloads);
   const art = new ArtCache(join(app.getPath('userData'), 'card-art'), join(runtime, 'card-art'),
     (url, options) => artDownloads.fetch(url, options));
   protocol.handle('asphodel', async request => {
@@ -116,7 +120,11 @@ function createWindow() {
   window = new BrowserWindow({
     width: 1440, height: 900, minWidth: 960, minHeight: 640, title: 'Asphodel', icon: join(here, 'icon.png'),
     backgroundColor: '#edf1e9', show: false,
-    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, spellcheck: false },
+    ...desktopWindowOptions(displayPreferences),
+  });
+  installWindowControls(window, displayPreferences, error => {
+    console.error('[Asphodel] Préférence d’affichage:', error);
+    void log(error.stack ?? String(error));
   });
   window.once('ready-to-show', () => window.show());
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -128,18 +136,6 @@ function createWindow() {
   });
   window.on('closed', () => { window = undefined; });
   return window;
-}
-
-function menu() {
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: 'Asphodel', submenu: [
-      { label: 'Mes decks', click: () => void window?.webContents.executeJavaScript("document.querySelector('#home-button')?.click()") },
-      { label: 'Ouvrir mes données', click: () => void shell.openPath(app.getPath('userData')) },
-      { type: 'separator' }, { role: 'quit', label: 'Quitter' },
-    ] },
-    { label: 'Édition', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
-    { label: 'Affichage', submenu: [{ role: 'togglefullscreen', label: 'Plein écran' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, ...(!app.isPackaged ? [{ role: 'toggleDevTools' }] : [])] },
-  ]));
 }
 
 console.log('[Asphodel] Initialisation du desktop…');
@@ -164,7 +160,9 @@ else {
     try {
       console.log('[Asphodel] Electron prêt, préparation des données…');
       const env = await prepareUserData(runtime, app.getPath('userData'));
-      await installProtocol(); menu();
+      displayPreferences = new DisplayPreferences(join(app.getPath('userData'), 'display-preferences.json'), error => void log(error.message));
+      Menu.setApplicationMenu(null);
+      await installProtocol();
       const currentWindow = createWindow();
       await currentWindow.loadFile(join(here, 'splash.html'));
       console.log('[Asphodel] Démarrage du moteur local…');
