@@ -3,7 +3,18 @@ name: Asphodel Desktop
 on:
   workflow_dispatch:
   push:
-    branches: [codex/desktop-v0.1]
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'desktop/**'
+      - 'backend/**'
+      - 'frontend/**'
+      - 'shared/**'
+      - 'forge-bridge/**'
+      - 'vendor/forge'
+      - 'scripts/**'
+      - '.gitmodules'
+      - '.github/workflows/desktop.yml'
   pull_request:
     paths:
       - 'desktop/**'
@@ -11,10 +22,17 @@ on:
       - 'frontend/**'
       - 'shared/**'
       - 'forge-bridge/**'
+      - 'vendor/forge'
+      - 'scripts/**'
+      - '.gitmodules'
       - '.github/workflows/desktop.yml'
 
 permissions:
   contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   linux:
@@ -33,6 +51,7 @@ jobs:
           java-version: '17'
       - run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0 libnss3 libgbm1 libasound2t64
       - run: npm --prefix backend ci && npm --prefix frontend ci && npm --prefix desktop ci
+      - run: npm --prefix desktop run check:package -- --version-only
       - run: ./scripts/forge-build.sh
       - run: npm --prefix backend test && npm --prefix backend run build && npm --prefix frontend test && npm --prefix desktop test
       - run: npm --prefix desktop run build
@@ -41,10 +60,11 @@ jobs:
       - run: npm --prefix desktop run smoke:runtime
       - run: xvfb-run -a npm --prefix desktop run smoke
       - working-directory: desktop
-        run: npm exec -- electron-builder --linux AppImage deb
+        run: npm exec -- electron-builder --linux AppImage deb --publish never
+      - run: npm --prefix desktop run check:package
       - uses: actions/upload-artifact@v4
         with:
-          name: Asphodel-Desktop-Linux
+          name: Asphodel-Desktop-Linux-${{ github.sha }}
           path: |
             desktop/release/*.AppImage
             desktop/release/*.deb

@@ -1,7 +1,7 @@
 {
   "name": "asphodel-desktop",
   "productName": "Asphodel",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "main": "src/main.mjs",
@@ -12,8 +12,11 @@
     "start": "electron .",
     "dev": "npm run build && electron .",
     "test": "node --test src/*.test.mjs",
-    "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder --linux AppImage deb",
+    "pack": "npm run build && electron-builder --dir --publish never",
+    "dist": "npm run build && electron-builder --linux AppImage deb --publish never",
+    "dist:deb": "npm run build && electron-builder --linux deb --publish never",
+    "install:local": "node scripts/install-local.mjs",
+    "check:package": "node scripts/check-package.mjs",
     "cache-art": "node scripts/cache-art.mjs",
     "smoke": "node scripts/smoke.mjs",
     "smoke:window": "node scripts/window-smoke.mjs",
@@ -21,7 +24,7 @@
     "smoke:runtime": "node scripts/runtime-smoke.mjs"
   },
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=22.16.0"
   },
   "devDependencies": {
     "electron": "44.5.1",
@@ -32,6 +35,7 @@
     "appId": "fr.asphodel.desktop",
     "asar": true,
     "npmRebuild": false,
+    "artifactName": "Asphodel-${version}-${arch}.${ext}",
     "files": [
       "src/**",
       "package.json"
@@ -52,7 +56,7 @@
         "deb"
       ],
       "executableName": "asphodel",
-      "syncDesktopName": "true",
+      "syncDesktopName": true,
       "icon": "src/icon.png",
       "maintainer": "Asphodel contributors"
     }

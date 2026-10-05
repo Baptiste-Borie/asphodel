@@ -79,3 +79,10 @@ export const deckEntries = sqliteTable(
     ),
   ],
 );
+
+// Complete builder state; its row and deck entries are written in one transaction.
+export const deckProjects = sqliteTable('deck_projects', {
+  deckId: integer('deck_id').primaryKey().references(() => decks.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().unique(),
+  state: text('state', { mode: 'json' }).$type<import('../../../shared/builder-project.mjs').BuilderProject>().notNull(),
+});

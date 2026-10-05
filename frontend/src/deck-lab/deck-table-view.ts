@@ -1,7 +1,7 @@
 import { apiRequest } from '../api/api-client';
 import type { LabCard, LabSearchResult } from '../../../shared/deck-lab';
 import { deckStatistics, type Sheet } from './deck-model';
-import { assignZone, createZone, fitZones, initializeZones, zoneAt, emptyWorkspace, parseWorkspace, reconcileWorkspace, screenToWorld, setRowMembership, zoomAt, type Point, type Row, type Workspace } from './deck-workspace';
+import { assignZone, createZone, fitZones, initializeZones, zoneAt, emptyWorkspace, reconcileWorkspace, screenToWorld, setRowMembership, zoomAt, type Point, type Row, type Workspace } from './deck-workspace';
 import './deck-table.css';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -9,11 +9,7 @@ type Options = { changed: () => void; inspect: (card: LabCard) => void; legacy: 
 
 /** DOM rendering and pointer gestures stay outside deck business logic. */
 export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options) {
-  let workspace: Workspace;
-  const key = () => `asphodel.deck-table.v1.${sheet.backendId ?? 'draft'}`;
-  let storageIssue = '';
-  try { workspace = sheet.backendId ? parseWorkspace(localStorage.getItem(key())) : emptyWorkspace(); }
-  catch { workspace = emptyWorkspace(); storageIssue = 'Layout could not be restored. Your deck is intact.'; }
+  const workspace: Workspace = sheet.workspace ??= emptyWorkspace();
   const fresh = workspace.cards.length === 0 && !workspace.zonesInitialized;
   let needsInitialFit = fresh;
   let rows: Row[] = [];
@@ -33,16 +29,16 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     <aside class="dt-panel dt-analysis" hidden aria-label="Deck analysis"><header><h3>Analyse</h3><button data-dt="analysis" aria-label="Close analysis">✕</button></header><div class="dt-analysis-content"></div></aside></div>
     <div class="dt-tools"><button data-dt="fit">Show all · F</button><button data-dt="out" aria-label="Zoom out">−</button><span data-dt-zoom></span><button data-dt="in" aria-label="Zoom in">+</button></div>
     <div class="dt-selection" hidden><span data-dt-selected>0 selected</span><button data-dt="exclude">Set aside</button><button data-dt="include">Add to deck</button><button data-dt="clear" aria-label="Clear selection">✕</button></div>
-    <footer class="dt-footer"><span>Ctrl + glisser : déplacer la vue · F : tout voir</span><span data-dt-storage role="status"></span><span data-save-status></span></footer>`;
+    <footer class="dt-footer"><span>Ctrl + glisser : déplacer la vue · F : tout voir</span><span data-dt-storage role="status"></span><span data-save-status role="status"></span><button data-action="retry-save" hidden>Réessayer</button></footer>`;
   const get = <T extends HTMLElement = HTMLElement>(s: string) => root.querySelector<T>(s)!;
   const canvas = get('.dt-canvas');
   let panTool = false;
   let control = false;
   function updatePanCursor() { canvas.classList.toggle('is-pan', panTool || control || space); }
   function persist() {
-    if (!sheet.backendId) { get('[data-dt-storage]').textContent = 'Layout awaits the first deck save'; return; }
-    try { localStorage.setItem(key(), JSON.stringify(workspace)); get('[data-dt-storage]').textContent = storageIssue || 'Layout saved on this device'; }
-    catch { get('[data-dt-storage]').textContent = 'Layout not saved — browser storage unavailable'; }
+    sheet.workspace = workspace;
+    options.changed();
+    get('[data-dt-storage]').textContent = 'Table et deck enregistrés ensemble';
   }
   function camera() {
     const c = workspace.camera;
@@ -113,7 +109,7 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     group.entries.push({card,quantity:1});
     rows=reconcileWorkspace(sheet,workspace); row=rows.find(r=>r.entry.card===card)!;
     Object.assign(row.placement,point); assignZone([row],zoneId ?? zoneAt(workspace,point)?.id); selected.clear();selected.add(row.placement.id);
-    render(); options.changed();
+    render();
   }
   let nextOffset: number | null = null;
   let searchQuery: {query?:string;raw?:string} = {};
@@ -151,7 +147,7 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     if(action==='pan'){panTool=!panTool;target.setAttribute('aria-pressed',String(panTool));updatePanCursor();}
     if(action==='in'||action==='out'){zoomAt(workspace.camera,{x:canvas.clientWidth/2,y:canvas.clientHeight/2},workspace.camera.zoom*(action==='in'?1.25:.8));camera();persist();}
     if(action==='clear'){selected.clear();selection();}
-    if(action==='include'||action==='exclude'){for(const row of rows.filter(r=>selected.has(r.placement.id)))setRowMembership(sheet,row,action==='include');render();options.changed();}
+    if(action==='include'||action==='exclude'){for(const row of rows.filter(r=>selected.has(r.placement.id)))setRowMembership(sheet,row,action==='include');render();}
     if(action==='more')void search(true);
     // Keyboard-generated clicks select cards; pointer selection is handled on pointerdown.
     if(target.dataset.dtCard && (e as MouseEvent).detail===0){if(!(e as MouseEvent).shiftKey)selected.clear();selected.add(target.dataset.dtCard);selection();}
@@ -227,5 +223,5 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     if(!(e.target as HTMLElement).closest('.dt-menu')) get<HTMLDetailsElement>('.dt-menu').open=false;
   },{signal:abort.signal});
   render();
-  return { refresh: render, dispose(){persist();disposed=true;abort.abort();searchAbort?.abort();} };
+  return { refresh: render, checkpoint: persist, dispose(){persist();disposed=true;abort.abort();searchAbort?.abort();} };
 }

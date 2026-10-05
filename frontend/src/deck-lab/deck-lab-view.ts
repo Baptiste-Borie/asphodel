@@ -6,6 +6,8 @@ import { initFilterCombobox } from './filter-combobox';
 import './deck-lab.css';
 import { deckStatistics, type Group, type Sheet } from './deck-model';
 import { mountDeckTable } from './deck-table-view';
+import type { BuilderProject } from '../../../shared/builder-project.mjs';
+import { loadDrafts, ProjectPersistence, sheetFromProject } from './project-persistence';
 
 type Card = LabCard;
 /** `maybeboard` groups (born from the triage feature, or manually named "Maybeboard") hold cards
@@ -42,10 +44,7 @@ type TriageCategoryKey = typeof TRIAGE_CATEGORIES[number]['key'];
 type DeckSection = 'commander' | 'mainboard' | 'maybeboard';
 interface DeckCardView { name: string; manaCost: string | null; manaValue: number; typeLine: string; oracleText: string | null; colorIdentity: string[]; imageUri: string | null; quantity: number; section: DeckSection; category: string; categoryPosition: number; }
 interface DeckSummary { id: number; name: string; totalCards: number; commanders: { name: string; imageUri: string | null }[]; }
-interface DeckDetailView { id: number; name: string; totalCards: number; cards: DeckCardView[]; }
-/** What `PUT /decks/:id/cards` expects — mirrors backend/src/decks/deck-service.ts's DeckEntryGroupInput. */
-interface DeckEntryGroupInput { name: string; section: DeckSection; entries: { name: string; quantity: number }[]; }
-
+interface DeckDetailView { id: number; name: string; totalCards: number; cards: DeckCardView[]; project?: BuilderProject | null; }
 /** The backend's deck cards are a flatter, camelCase shape (see backend/src/decks/deck-service.ts DeckCardView) —
  *  this fills in the Scryfall-shaped fields the Builder's rendering/stats code reads but the backend never stored. */
 function deckCardToLabCard(c: DeckCardView): Card {
@@ -54,25 +53,6 @@ function deckCardToLabCard(c: DeckCardView): Card {
     power: null, toughness: null, loyalty: null, set_name: '', set: '', collector_number: '', rarity: '', lang: 'en',
     color_identity: c.colorIdentity, image: c.imageUri ?? '', related: [],
   };
-}
-/** The inverse direction: every category round-trips now, not just Commander vs. everything-else — the backend stores a category + its position per card (see deck-service.ts). Cuts are excluded (a cut card isn't in the deck); Maybeboard is included (so it survives a reload) but flagged with its own section so the backend never counts it. */
-function sheetToGroups(sheet: Sheet): DeckEntryGroupInput[] {
-  return sheet.groups
-    .filter(g => g.entries.length > 0)
-    .map(g => ({
-      name: g.name,
-      section: g.commander ? 'commander' : g.maybeboard ? 'maybeboard' : 'mainboard',
-      entries: g.entries.map(e => ({ name: e.card.name, quantity: e.quantity })),
-    }));
-}
-/** Persists a Deck Lab selection as a brand-new deck, via the same decklist-import route the old Decks page used — everything lands under Mainboard since a freshly-created sheet has no Commander category filled in yet. */
-function createPersistedDeck(name: string, cards: Card[]): Promise<DeckDetailView> {
-  const decklist = 'Mainboard\n' + cards.map(c => `1x ${c.name}`).join('\n');
-  return apiRequest<DeckDetailView>('/decks', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, decklist }),
-  });
 }
 const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const mana = (s: string | null) => (s ?? '').replace(/\{([^}]+)\}/g, (_, x: string) => `<span class="lab-mana" data-color="${esc(x)}">${esc(x)}</span>`);
@@ -95,7 +75,7 @@ function loadStoredSelection(): { names: string[]; cards: Card[] } {
   return { names: [], cards: [] };
 }
 
-/** Complete local catalog search; deck sheets remain session-only, Selection persists locally (see selection-storage). */
+/** Decks and tables share one snapshot; local journals protect deferred writes. */
 export function initDeckLabView(root: HTMLElement) {
   const selection = new Set<string>();
   const knownCards = new Map<string, Card>(sampleCards.map(c => [c.name, c]));
@@ -127,9 +107,7 @@ export function initDeckLabView(root: HTMLElement) {
   let addSearchDebounce: ReturnType<typeof setTimeout> | undefined;
   let addSearchController: AbortController | undefined;
   let savedDecks: DeckSummary[] = [];
-  const autoSaveTimers = new Map<Sheet, ReturnType<typeof setTimeout>>();
-  const saveQueues = new Map<Sheet, Promise<void>>();
-  let autoSaveVersion = 0;
+
   let triage: { groupIndex: number; queue: { card: Card; quantity: number }[]; position: number; buckets: Record<TriageCategoryKey, { card: Card; quantity: number }[]> } | undefined;
   const filterField = (label: string, kind: string, placeholder: string) => `<div class="lab-filter-combobox" data-filter="${kind}"><label for="lab-filter-${kind}">${label}</label><div class="lab-filter-chips"></div><input id="lab-filter-${kind}" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="lab-options-${kind}" autocomplete="off" placeholder="${placeholder}" /><div class="lab-filter-options" id="lab-options-${kind}" role="listbox" aria-label="${label} suggestions" hidden></div><span class="lab-sr-only" role="status"></span></div>`;
   const scrollPositions: Record<string, number> = { search: 0, builder: 0 };
@@ -143,7 +121,8 @@ export function initDeckLabView(root: HTMLElement) {
     return { name: 'Growing wild · sample', cuts: [], groups: [commanderGroup(), ...sections.map(([name, start, end]) => ({ name, entries: sampleCards.slice(start, end).map(card => ({ card, quantity: card.name === 'Forest' ? 40 : 1 })) }))] };
   };
   root.innerHTML = `
-    <div class="lab-heading"><div><p class="lab-eyebrow">ASPHODEL / DECK LAB</p><h1>A place to think in cards.</h1></div><span class="lab-prototype">Local catalog · Selection saved on this device · sheets kept for this session</span></div>
+    <div class="lab-heading"><div><p class="lab-eyebrow">ASPHODEL / DECK LAB</p><h1>A place to think in cards.</h1></div><span class="lab-prototype">Catalogue local · Decks et tables enregistrés automatiquement</span></div>
+    <div class="lab-recovery" role="status" hidden></div>
     <div class="lab-workbar"><div class="lab-tabs"><button data-view="search" aria-pressed="true">Search</button><button data-view="builder" aria-pressed="false">Builder</button><button data-view="table" aria-pressed="false">Table V2</button></div><p>Discover. Collect. Make it yours.</p><button class="lab-selection" data-action="selection">Selection <span data-count>0</span> ↗</button></div>
     <section class="lab-search">
       <form class="lab-query"><span aria-hidden="true">⌕</span><input aria-label="Search card name or Oracle text" placeholder="Search card name or Oracle text…" /><button type="submit" class="lab-primary">Search</button><button type="button" data-action="filters" aria-expanded="false">Filters <span>⌄</span></button><button type="button" data-action="advanced" aria-expanded="false">Advanced</button></form>
@@ -176,6 +155,52 @@ export function initDeckLabView(root: HTMLElement) {
   const inspect = get<HTMLDialogElement>('.lab-inspect');
   const triageDialog = get<HTMLDialogElement>('.lab-triage');
   function toast(message: string) { const el = get('.lab-toast'); el.textContent = message; el.hidden = false; setTimeout(() => el.hidden = true, 3200); }
+  let journalStorage: globalThis.Storage;
+  try { journalStorage = window.localStorage; }
+  catch {
+    journalStorage = { length: 0, key: () => null, getItem: () => null, setItem: () => { throw new Error('Stockage local indisponible.'); }, removeItem: () => {} } as unknown as globalThis.Storage;
+  }
+  const persistence = new ProjectPersistence(journalStorage, async (project, id) => {
+    const result = await apiRequest<DeckDetailView>(id ? `/decks/${id}/project` : '/decks/projects', {
+      method: id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(project),
+    });
+    document.dispatchEvent(new Event('decks-changed'));
+    return result;
+  }, (sheet, status, error) => {
+    if (active === sheet) setSaveStatus(status);
+    if (error) toast(error instanceof Error ? error.message : 'Enregistrement impossible. Le brouillon reste disponible si son écriture locale a réussi.');
+  });
+  let recovery = { drafts: [] as ReturnType<typeof loadDrafts>['drafts'], unreadable: 0 };
+  try { recovery = loadDrafts(journalStorage); }
+  catch { toast('Stockage local indisponible : la récupération après arrêt brutal ne peut pas être garantie.'); }
+  const recoveryBanner = get('.lab-recovery');
+  if (recovery.drafts.length || recovery.unreadable) {
+    recoveryBanner.hidden = false;
+    recoveryBanner.innerHTML = `<p>${recovery.drafts.length} brouillon(s) non envoyé(s) retrouvé(s). Reprendre réapplique ces modifications au deck et à sa table.${recovery.unreadable ? ` ${recovery.unreadable} brouillon(s) illisible(s), conservé(s) sur cet appareil.` : ''}</p>${recovery.drafts.length ? '<button type="button" data-recover-projects>Reprendre les brouillons</button> <button type="button" data-discard-projects>Écarter ces brouillons</button>' : ''}`;
+    recoveryBanner.querySelector('[data-discard-projects]')?.addEventListener('click', () => {
+      const remaining = recovery.drafts.filter(draft => {
+        try { journalStorage.removeItem(`asphodel.builder-draft.v1.${draft.project.projectId}`); return false; }
+        catch { return true; }
+      });
+      recovery.drafts = remaining;
+      if (remaining.length) toast('Certains brouillons n’ont pas pu être retirés.');
+      else { recoveryBanner.hidden = true; toast('Les versions enregistrées ont été conservées.'); }
+    });
+    recoveryBanner.querySelector('button')?.addEventListener('click', () => {
+      for (const draft of recovery.drafts) {
+        const sheet = sheetFromProject(draft.project, draft.backendId);
+        for (const c of [...sheet.groups.flatMap(g => g.entries.map(e => e.card)), ...sheet.cuts]) knownCards.set(c.name, c);
+        const existing = sheets.findIndex(s => s.projectId === sheet.projectId || (sheet.backendId && s.backendId === sheet.backendId));
+        if (existing >= 0) sheets[existing] = sheet; else sheets.push(sheet);
+        active ??= sheet;
+        scheduleAutoSave(sheet);
+      }
+      recovery.drafts = [];
+      recoveryBanner.hidden = true;
+      switchView('builder');
+      toast('Brouillons repris. Leur enregistrement est en cours.');
+    });
+  }
   function selectedButton(c: Card) { return `<button class="lab-add" data-card="${esc(c.name)}" data-print="${esc(c.set + '/' + c.collector_number)}" aria-pressed="${selection.has(c.name)}">${selection.has(c.name) ? '✓ Selected' : '+ Selection'}</button>`; }
   function searchBody(): LabSearchQuery {
     const fields: Record<string,string> = {};
@@ -250,6 +275,10 @@ export function initDeckLabView(root: HTMLElement) {
    *  category, in the order the backend already sorted them (by categoryPosition) — so a deck saved
    *  with "Ramp"/"Removal"/etc. reopens with those same categories, not flattened back to one bucket. */
   function sheetFromDeckDetail(deck: DeckDetailView): Sheet {
+    if (deck.project) {
+      for (const c of [...deck.project.groups.flatMap(g => g.entries.map(e => e.card)), ...deck.project.cuts]) knownCards.set(c.name, c);
+      return sheetFromProject({ ...deck.project, name: deck.name }, deck.id);
+    }
     for (const c of deck.cards) knownCards.set(c.name, deckCardToLabCard(c));
     const entry = (c: DeckCardView) => ({ card: deckCardToLabCard(c), quantity: c.quantity });
     function regroup(section: 'mainboard' | 'maybeboard', fallbackName: string): Group[] {
@@ -286,9 +315,11 @@ export function initDeckLabView(root: HTMLElement) {
     const existing = sheets.find(s => s.backendId === deck.id);
     active = existing ?? sheetFromDeckDetail(deck);
     if (!existing) sheets.push(active);
+    scheduleAutoSave(active);
     switchView('builder');
   }
   async function openSavedDeck(id: number) {
+    if (recovery.drafts.some(d => d.backendId === id)) { recoveryBanner.hidden = false; recoveryBanner.scrollIntoView(); toast('Un brouillon attend ta récupération avant l’ouverture de ce deck.'); return; }
     const existing = sheets.find(s => s.backendId === id);
     if (existing) { active = existing; switchView('builder'); return; }
     try {
@@ -334,7 +365,7 @@ export function initDeckLabView(root: HTMLElement) {
   }
   function renderTable() {
     if (!active) return;
-    if (table && tableSheet === active) { table.refresh(); return; }
+    if (table && tableSheet === active) { table.refresh(); setSaveStatus(persistence.status(active)); return; }
     table?.dispose();
     tableSheet = active;
     const sheet = active;
@@ -344,6 +375,7 @@ export function initDeckLabView(root: HTMLElement) {
       legacy: () => switchView('builder'),
       library: () => { active = undefined; switchView('builder'); },
     });
+    setSaveStatus(persistence.status(sheet));
   }
   function renderBuilder() {
     if (view === 'table' && active) { renderTable(); return; }
@@ -368,9 +400,10 @@ export function initDeckLabView(root: HTMLElement) {
       ? '<p class="lab-builder-warning" role="status">No commander yet — search or drag a card into the <strong>Commander</strong> category.</p>'
       : commanderCount > 2 ? `<p class="lab-builder-warning" role="status">The Commander category has <strong>${commanderCount}</strong> cards — most decks run just one (two with Partner).</p>` : '';
     const warning = total !== 100 ? `<p class="lab-builder-warning" role="status">This sheet has <strong>${total}</strong> card${total === 1 ? '' : 's'} — a Commander deck needs exactly 100.</p>` : '';
-    const saveStatus = active.backendId ? '<span class="lab-save-status" data-save-status data-status="saved">Saved</span>' : '';
-    const deckActions = active.backendId ? '<button data-action="rename-deck">Rename</button><button data-action="delete-deck">Delete</button>' : '';
+    const saveStatus = '<span class="lab-save-status" data-save-status role="status"></span><button data-action="retry-save" hidden>Réessayer</button>';
+    const deckActions = '<button data-action="rename-deck">Rename</button><button data-action="delete-deck">Delete</button>';
     get('.lab-builder').innerHTML = `${commanderWarning}${warning}<div class="lab-deck-heading"><div><button class="lab-back" data-action="close-sheet" aria-label="Back to all decks">← All decks</button><p class="lab-eyebrow">COMMANDER / CANDIDATE SHEET</p><h2>${esc(active.name)}${saveStatus}</h2><p><strong>${total}</strong> candidate cards <span> / 100 final deck target</span></p></div><div><select class="lab-sheet-picker" aria-label="Open deck sheet">${sheets.map((s,i) => `<option value="${i}" ${s === active ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><button data-action="new">+ New sheet</button><button data-action="selection">+ From Selection</button>${deckActions}</div></div><div class="lab-builder-tools"><span>Manual categories <span class="lab-muted">· drag a card, use its menu, or search a category to add one</span></span><form class="lab-new-category"><input aria-label="New category name" placeholder="Name your category" required maxlength="60" /><button>+ New category</button></form></div><div class="lab-categories">${active.groups.map(categoryHtml).join('')}</div><details class="lab-cuts"><summary>Cuts · ${active.cuts.length} <span>Keep discarded ideas nearby</span></summary>${active.cuts.map((c,i) => `<button data-restore="${i}">↶ ${esc(c.name)}</button>`).join('') || '<p>No cuts yet. Cut a card using its menu to keep it here.</p>'}</details><section class="lab-stats"><div><p class="lab-eyebrow">DECK STATISTICS</p><h2>The shape of your sheet.</h2><p class="lab-muted">All candidates · cuts excluded<br>Card types may overlap.</p><div class="lab-type-counts">${['Creature','Instant','Sorcery','Artifact','Enchantment','Planeswalker','Land'].map(type => `<div><span>${type}</span><strong>${entries.filter(e => e.card.type_line.includes(type)).reduce((n,e) => n+e.quantity,0)}</strong></div>`).join('')}</div></div><div><div class="lab-curve-heading"><h3>Mana curve</h3><span>${spells} nonland spells</span></div><div class="lab-curve">${curve.map((n,i) => `<div><span>${n}</span><i style="height:${n / Math.max(...curve,1) * 150}px"></i><label>${i === 7 ? '7+' : i}</label></div>`).join('')}</div><p class="lab-average">${spells ? (nonlands.reduce((n,e) => n+e.card.cmc*e.quantity,0)/spells).toFixed(2) : '—'} <span>Average mana value · nonlands</span></p></div></section>`;
+    setSaveStatus(persistence.status(active));
   }
   /** Debounced per-category "search the catalog, click to add" — lets you build a category without detouring through Search/Selection. */
   function scheduleAddSearch(gi: number, value: string) { clearTimeout(addSearchDebounce); addSearchDebounce = setTimeout(() => void runAddSearch(gi, value), 250); }
@@ -411,74 +444,18 @@ export function initDeckLabView(root: HTMLElement) {
     toast(`${cardName} added to ${group.name}.`);
   }
   function setSaveStatus(status: 'pending' | 'saved' | 'error') {
-    const el = root.querySelector<HTMLElement>(`${view === 'table' ? '.lab-table' : '.lab-builder'} [data-save-status]`);
+    const container = root.querySelector<HTMLElement>(view === 'table' ? '.lab-table' : '.lab-builder');
+    const el = container?.querySelector<HTMLElement>('[data-save-status]');
     if (!el) return;
     el.dataset.status = status;
-    el.textContent = status === 'pending' ? 'Saving…' : status === 'saved' ? 'Saved' : 'Save failed';
+    el.textContent = status === 'pending' ? 'Modifications en cours…' : status === 'saved' ? 'Enregistré' : 'Échec de l’enregistrement';
+    const retry = container?.querySelector<HTMLElement>('[data-action=retry-save]');
+    if (retry) retry.hidden = status !== 'error';
   }
-  /** Debounced whole-deck auto-save — any Builder edit pushes the sheet back with `PUT /decks/:id/cards`.
-   *  A sheet without a backendId yet (a brand-new empty sheet, or the sample workspace) is created on
-   *  the backend first — lazily, on its first card, since the backend refuses an empty deck — so no
-   *  sheet stays local-only (and thus outside the committed deck database) once it holds real cards. */
   function scheduleAutoSave(sheet = active) {
     if (!sheet) return;
-    if (!sheet.backendId) { void createBackendDeck(sheet); return; }
-    setSaveStatus('pending');
-    clearTimeout(autoSaveTimers.get(sheet));
-    autoSaveTimers.set(sheet, setTimeout(() => { autoSaveTimers.delete(sheet); void runAutoSave(sheet); }, 700));
-  }
-  /** One creation attempt per sheet at a time — several edits made before the first save round-trips
-   *  would otherwise each try to create their own backend deck. */
-  const creatingSheets = new WeakSet<Sheet>();
-  async function createBackendDeck(sheet: Sheet) {
-    if (sheet.backendId || creatingSheets.has(sheet)) return;
-    const bootstrapCard = sheetToGroups(sheet).flatMap(g => g.entries)[0];
-    if (!bootstrapCard) return; // nothing to save yet — an empty sheet has nothing a backend deck could hold
-    creatingSheets.add(sheet);
-    try {
-      const deck = await apiRequest<DeckDetailView>('/decks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // Bootstraps with one real card so the backend accepts the (otherwise-empty) deck; the
-        // immediate runAutoSave below replaces it with the sheet's full, categorized groups.
-        body: JSON.stringify({ name: sheet.name, decklist: `Mainboard\n1x ${bootstrapCard.name}` }),
-      });
-      sheet.backendId = deck.id;
-      if (active === sheet) renderBuilder();
-      void loadSavedDecks();
-      await runAutoSave(sheet);
-    } catch (error) {
-      toast(error instanceof ApiError ? error.message : `Could not save "${sheet.name}" to your Decks library. It stays in Deck Lab for now.`);
-    } finally {
-      creatingSheets.delete(sheet);
-    }
-  }
-  function runAutoSave(sheet: Sheet): Promise<void> {
-    const previous = saveQueues.get(sheet) ?? Promise.resolve();
-    const next = previous.then(() => persistSheet(sheet));
-    saveQueues.set(sheet, next);
-    void next.finally(() => { if (saveQueues.get(sheet) === next) saveQueues.delete(sheet); });
-    return next;
-  }
-  async function persistSheet(sheet: Sheet) {
-    if (!sheet.backendId) return;
-    const version = ++autoSaveVersion;
-    try {
-      await apiRequest<DeckDetailView>(`/decks/${sheet.backendId}/cards`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ groups: sheetToGroups(sheet) }),
-      });
-      // No reconciliation from the response on purpose: the Builder's local state is already what
-      // the user sees, and pulling the just-saved snapshot back in would risk clobbering a newer
-      // edit made while this request was in flight. An empty category not surviving a save is only
-      // visible after a reload (see sheetToGroups), which is an acceptable, rare edge.
-      if (version === autoSaveVersion && active === sheet) setSaveStatus('saved');
-      document.dispatchEvent(new Event('decks-changed'));
-    } catch (error) {
-      if (version === autoSaveVersion && active === sheet) setSaveStatus('error');
-      toast(error instanceof ApiError ? error.message : `Could not save "${sheet.name}" — your changes stay local for now.`);
-    }
+    try { persistence.changed(sheet); if (active === sheet) setSaveStatus(persistence.status(sheet)); }
+    catch (error) { setSaveStatus('error'); toast(error instanceof Error ? error.message : 'Projet non enregistré.'); }
   }
   /** Opens the inspect dialog immediately with whatever card data is on hand, then — for a card whose
    *  name shows it's double-faced ("Front // Back") but that arrived from a saved deck (see
@@ -603,7 +580,7 @@ export function initDeckLabView(root: HTMLElement) {
     }
     if (b.dataset.triage && active) startTriage(Number(b.dataset.triage));
     if (b.dataset.triagePick) decideTriage(b.dataset.triagePick as TriageCategoryKey);
-    if (b.dataset.reorder && active) { const i = Number(b.dataset.reorder); [active.groups[i-1],active.groups[i]] = [active.groups[i]!,active.groups[i-1]!]; renderBuilder(); }
+    if (b.dataset.reorder && active) { const i = Number(b.dataset.reorder); [active.groups[i-1],active.groups[i]] = [active.groups[i]!,active.groups[i-1]!]; renderBuilder(); scheduleAutoSave(); }
     if (b.dataset.restore && active) { const c = active.cuts.splice(Number(b.dataset.restore),1)[0]!; defaultGroup(active).entries.push({card:c,quantity:1}); renderBuilder(); scheduleAutoSave(); }
     if (b.dataset.addCardName) addCardToGroup(Number(b.dataset.addCardGroup), b.dataset.addCardName);
     if (b.dataset.openDeck) {
@@ -620,26 +597,25 @@ export function initDeckLabView(root: HTMLElement) {
       case 'triage-cancel': cancelTriage(); break;
       case 'filters': case 'advanced': { const panel = get(`.lab-${b.dataset.action}`); panel.hidden = !panel.hidden; b.setAttribute('aria-expanded',String(!panel.hidden)); break; }
       case 'sample': active = sample(); sheets.push(active); scheduleAutoSave(); renderBuilder(); break;
-      case 'new': active = { name: `Untitled exploration ${sheets.length+1}`, groups: [commanderGroup(), {name:'Unsorted', entries:[]}], cuts:[] }; sheets.push(active); switchView('builder'); break;
+      case 'new': active = { name: `Untitled exploration ${sheets.length+1}`, groups: [commanderGroup(), {name:'Unsorted', entries:[]}], cuts:[] }; sheets.push(active); scheduleAutoSave(); switchView('builder'); break;
+      case 'retry-save': if (active) void persistence.retry(active); break;
       case 'close-sheet': active = undefined; renderBuilder(); break;
       case 'import': openImportModal(); break;
       case 'transfer': { const value = get<HTMLSelectElement>('.lab-transfer select').value; if (!value) { toast('Choose a destination deck first.'); break; } if (!selection.size) { toast('Add cards to Selection first.'); break; } active = sheets[Number(value)]!; transfer(false); break; }
       case 'rename-deck': {
-        if (!active?.backendId) break;
+        if (!active) break;
         const name = window.prompt('New deck name', active.name)?.trim();
         if (!name || name === active.name) break;
-        const sheet = active; const id = sheet.backendId;
-        void apiRequest<DeckDetailView>(`/decks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
-          .then(() => { sheet.name = name; if (active === sheet) renderBuilder(); void loadSavedDecks(); document.dispatchEvent(new Event('decks-changed')); })
-          .catch(error => toast(error instanceof ApiError ? error.message : 'Rename failed.'));
+        active.name = name; scheduleAutoSave(); renderBuilder();
         break;
       }
       case 'delete-deck': {
         if (!active?.backendId) break;
         if (!window.confirm(`Delete "${active.name}" permanently? This cannot be undone.`)) break;
         const sheet = active; const id = sheet.backendId;
-        void apiRequest<null>(`/decks/${id}`, { method: 'DELETE' })
-          .then(() => {
+        void persistence.flush().then(ok => { if (!ok) throw new Error('Enregistrement en échec. Réessaie avant de supprimer le deck.'); return apiRequest<null>(`/decks/${id}`, { method: 'DELETE' }); })
+          .then(async () => {
+            await persistence.remove(sheet);
             const idx = sheets.indexOf(sheet); if (idx >= 0) sheets.splice(idx, 1);
             if (active === sheet) active = undefined;
             renderBuilder(); void loadSavedDecks(); document.dispatchEvent(new Event('decks-changed'));
@@ -687,18 +663,9 @@ export function initDeckLabView(root: HTMLElement) {
     defaultGroup(active!).entries.push(...added.map(card => ({card,quantity:1})));
     drawer.close(); switchView('builder');
     if (!isNew) { scheduleAutoSave(); toast('Selection added to ' + active!.name); return; }
-    const sheet = active!;
-    toast(`Creating "${sheet.name}"…`);
     selection.clear(); persistSelection(); renderPool();
-    void createPersistedDeck(sheet.name, added)
-      .then(deck => {
-        sheet.backendId = deck.id;
-        void loadSavedDecks();
-        if (active === sheet) renderBuilder();
-        document.dispatchEvent(new Event('decks-changed'));
-        toast(`"${sheet.name}" saved to your Decks library.`);
-      })
-      .catch(error => toast(error instanceof ApiError ? error.message : `Could not save "${sheet.name}" to your Decks library. It stays in Deck Lab for now.`));
+    scheduleAutoSave();
+    toast('Deck créé. Enregistrement en cours.');
   }
   root.addEventListener('submit', event => {
     event.preventDefault(); const form = event.target as HTMLFormElement;
@@ -715,7 +682,7 @@ export function initDeckLabView(root: HTMLElement) {
           active.groups.push({ name, entries: [] });
         }
         input.value = '';
-        renderBuilder();
+        renderBuilder(); scheduleAutoSave();
       }
     }
     if (form.matches('.lab-transfer')) { if (!selection.size) { toast('Add cards to Selection first.'); return; } active = {name: form.querySelector('input')!.value.trim() || `Untitled exploration ${sheets.length+1}`, groups:[commanderGroup(),{name:'Unsorted',entries:[]}],cuts:[]}; sheets.push(active); transfer(true); form.reset(); }
@@ -724,7 +691,7 @@ export function initDeckLabView(root: HTMLElement) {
     const el = event.target as HTMLInputElement;
     if (el.matches('select[data-search-field]')) void renderSearch();
     if (el.matches('.lab-sheet-picker')) { active = sheets[Number(el.value)]; renderBuilder(); }
-    if (el.dataset.rename && active) { el.value = el.value.trim() || 'Untitled category'; active.groups[Number(el.dataset.rename)]!.name = el.value; renderBuilder(); }
+    if (el.dataset.rename && active) { el.value = el.value.trim() || 'Untitled category'; active.groups[Number(el.dataset.rename)]!.name = el.value; renderBuilder(); scheduleAutoSave(); }
     if (el.dataset.move && el.value && active) { const [g,i] = el.dataset.move.split(':').map(Number); const entry = active.groups[g!]!.entries.splice(i!,1)[0]!; if (el.value === 'cut') { for (let n=0;n<entry.quantity;n++) active.cuts.push(entry.card); } else active.groups[Number(el.value)]!.entries.push(entry); renderBuilder(); scheduleAutoSave(); }
     if (el.dataset.triageMove && el.value && triage) { const [fromKey, i] = el.dataset.triageMove.split(':'); moveTriageBucket(fromKey as TriageCategoryKey, Number(i), el.value as TriageCategoryKey); }
   });
@@ -836,7 +803,8 @@ export function initDeckLabView(root: HTMLElement) {
   element<HTMLButtonElement>('#cancel-deck-modal').addEventListener('click', closeImportModal);
   deckModal.addEventListener('click', event => { if (event.target === deckModal) closeImportModal(); });
 
-  return { activate() {
+  window.addEventListener('pagehide', () => { table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); });
+  return { async flush() { table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); return persistence.flush(); }, activate() {
     void loadCatalog();
     void loadSavedDecks();
     if (!activated) { activated = true; void renderSearch(); }

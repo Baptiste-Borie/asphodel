@@ -1,9 +1,10 @@
 import type { Group, Sheet } from './deck-model';
 
-export type Point = { x: number; y: number };
-export type Placement = Point & { id: string; name: string; category: string; section: string; z: number; zoneId?: string; origin?: { category: string; commander: boolean }; cut?: boolean };
-export type Zone = Point & { id: string; name: string; width: number; height: number };
-export type Workspace = { version: 1; zonesInitialized?: boolean; cards: Placement[]; zones: Zone[]; camera: Point & { zoom: number } };
+import type { ProjectPoint, ProjectPlacement, ProjectZone, ProjectWorkspace } from '../../../shared/builder-project.mjs';
+export type Point = ProjectPoint;
+export type Placement = ProjectPlacement;
+export type Zone = ProjectZone;
+export type Workspace = ProjectWorkspace;
 export type Row = { group: Group; entry: Group['entries'][number]; placement: Placement };
 export const sectionOf = (g: Group) => g.commander ? 'commander' : g.maybeboard ? 'maybeboard' : 'mainboard';
 export const emptyWorkspace = (): Workspace => ({ version: 1, cards: [], zones: [], camera: { x: 50, y: 65, zoom: .65 } });
@@ -30,15 +31,20 @@ export function reconcileWorkspace(sheet: Sheet, workspace: Workspace): Row[] {
   const available = new Set(workspace.cards);
   const matches = new Map<typeof pending[number], Placement>();
   for (const row of pending) {
-    const match = [...available].find(p => p.name === row.entry.card.name && p.category === row.group.name && p.section === sectionOf(row.group));
+    const match = [...available].find(p => p.id === row.entry.id);
+    if (match) { matches.set(row, match); available.delete(match); }
+  }
+  const assigned = new Set(pending.map(r => r.entry.id).filter(Boolean));
+  for (const row of pending.filter(r => !matches.has(r))) {
+    const match = [...available].find(p => !assigned.has(p.id) && p.name === row.entry.card.name && p.category === row.group.name && p.section === sectionOf(row.group));
     if (match) { matches.set(row, match); available.delete(match); }
   }
   return pending.map(row => {
-    let placement = matches.get(row) ?? [...available].find(p => p.name === row.entry.card.name);
+    let placement = matches.get(row) ?? [...available].find(p => !assigned.has(p.id) && p.name === row.entry.card.name);
     if (placement) available.delete(placement);
     else {
       const i = workspace.cards.length;
-      placement = { id: crypto.randomUUID(), name: row.entry.card.name, category: row.group.name, section: sectionOf(row.group), x: (i % 10) * 190, y: Math.floor(i / 10) * 275, z: i };
+      placement = { id: row.entry.id ?? crypto.randomUUID(), name: row.entry.card.name, category: row.group.name, section: sectionOf(row.group), x: (i % 10) * 190, y: Math.floor(i / 10) * 275, z: i };
       workspace.cards.push(placement);
     }
     placement.category = row.group.name;
@@ -51,10 +57,10 @@ export function reconcileWorkspace(sheet: Sheet, workspace: Workspace): Row[] {
 export function setRowMembership(sheet: Sheet, row: Row, included: boolean) {
   if (included === !row.group.maybeboard) return;
   const { placement, entry, group } = row;
-  if (!included) placement.origin = { category: group.name, commander: !!group.commander };
+  if (!included) placement.origin = { category: group.name, commander: !!group.commander, ...(group.id ? { groupId: group.id } : {}) };
   const name = included ? placement.origin?.category ?? 'Unsorted' : group.name;
   const commander = included && !!placement.origin?.commander;
-  let destination = sheet.groups.find(g => g.name === name && !!g.commander === commander && !!g.maybeboard === !included);
+  let destination = sheet.groups.find(g => included && placement.origin?.groupId ? g.id === placement.origin.groupId && !g.maybeboard : g.name === name && !!g.commander === commander && !!g.maybeboard === !included);
   if (!destination) {
     destination = { name, commander, maybeboard: !included, entries: [] };
     sheet.groups.push(destination);

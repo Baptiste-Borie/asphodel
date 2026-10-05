@@ -1,3 +1,4 @@
+import { parseBuilderProject, type BuilderProject } from '../../../shared/builder-project.mjs';
 import { ArchidektDeckSource } from "./archidekt-deck-source.js";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
@@ -7,7 +8,7 @@ import {
 } from "../app-errors.js";
 import type { CardProvider, ResolvedCard } from "../cards/card-provider.js";
 import type { AsphodelDatabase } from "../db/client.js";
-import { cards, deckEntries, decks } from "../db/schema.js";
+import { cards, deckEntries, decks, deckProjects } from "../db/schema.js";
 import {
   parseDeckList,
   type DeckSection,
@@ -41,6 +42,7 @@ export interface DeckDetailView {
   updatedAt: string;
   totalCards: number;
   cards: DeckCardView[];
+  project?: BuilderProject | null;
 }
 
 /** What the Builder sends on auto-save: its groups, in order, each with the cards it currently holds. */
@@ -206,6 +208,7 @@ export class DeckService {
       .where(eq(deckEntries.deckId, id))
       .orderBy(asc(deckEntries.section), asc(deckEntries.categoryPosition), asc(cards.name));
 
+    const [project] = await this.db.select().from(deckProjects).where(eq(deckProjects.deckId, id)).limit(1);
     return {
       id: deck.id,
       name: deck.name,
@@ -214,6 +217,7 @@ export class DeckService {
       // Maybeboard cards are deliberately "not really in the deck" (Builder triage) — never counted.
       totalCards: entries.filter((entry) => entry.section !== "maybeboard").reduce((sum, entry) => sum + entry.quantity, 0),
       cards: entries,
+      project: project ? { ...project.state, name: deck.name } : null,
     };
   }
 
@@ -389,6 +393,7 @@ export class DeckService {
       if (existing.length === 0) throw new DeckNotFoundError();
 
       await transaction.delete(deckEntries).where(eq(deckEntries.deckId, id));
+      await transaction.delete(deckProjects).where(eq(deckProjects.deckId, id));
 
       if (entries.length > 0) {
         await transaction.insert(deckEntries).values(
@@ -412,6 +417,41 @@ export class DeckService {
     });
 
     return this.getDeck(id);
+  }
+
+  /** New projects can be empty. projectId makes a lost creation response safe to retry. */
+  async saveProject(value: unknown, id?: number): Promise<DeckDetailView> {
+    const project = parseBuilderProject(value);
+    const groups: DeckEntryGroupInput[] = project.groups.map(g => ({
+      name: g.name, section: g.commander ? 'commander' : g.maybeboard ? 'maybeboard' : 'mainboard',
+      entries: g.entries.map(e => ({ name: e.card.name, quantity: e.quantity })),
+    }));
+    const entries = aggregateCategorizedEntries(groups);
+    const cardIds = await this.resolveEntries(entries);
+    const deckId = await this.db.transaction(async transaction => {
+      const [owner] = await transaction.select().from(deckProjects).where(eq(deckProjects.projectId, project.projectId)).limit(1);
+      if (id !== undefined && owner && owner.deckId !== id) throw new Error('Ce projet appartient à un autre deck.');
+      let target = id ?? owner?.deckId;
+      if (target !== undefined) {
+        const [deck] = await transaction.select().from(decks).where(eq(decks.id, target)).limit(1);
+        if (!deck) throw new DeckNotFoundError();
+        const [existing] = await transaction.select().from(deckProjects).where(eq(deckProjects.deckId, target)).limit(1);
+        if (existing && existing.projectId !== project.projectId) throw new Error('Identité du projet différente.');
+      } else {
+        const [created] = await transaction.insert(decks).values({ name: project.name }).returning({ id: decks.id });
+        target = created!.id;
+      }
+      await transaction.delete(deckEntries).where(eq(deckEntries.deckId, target));
+      if (entries.length) await transaction.insert(deckEntries).values(entries.map(e => ({
+        deckId: target!, cardId: cardIds.get(e.normalizedName)!, quantity: e.quantity, section: e.section,
+        category: e.category, categoryPosition: e.categoryPosition,
+      })));
+      await transaction.insert(deckProjects).values({ deckId: target, projectId: project.projectId, state: project })
+        .onConflictDoUpdate({ target: deckProjects.deckId, set: { state: project } });
+      await transaction.update(decks).set({ name: project.name, updatedAt: new Date() }).where(eq(decks.id, target));
+      return target;
+    });
+    return this.getDeck(deckId);
   }
 
   async renameDeck(id: number, name: string): Promise<DeckDetailView> {

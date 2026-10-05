@@ -14,6 +14,7 @@ const navVoiceTest = element<HTMLButtonElement>("#nav-voice-test");
 const labView = element<HTMLElement>("#deck-lab-view");
 const navLab = element<HTMLButtonElement>("#nav-deck-lab");
 const deckLab = initDeckLabView(labView);
+window.asphodelDesktop?.onBeforeClose(() => deckLab.flush());
 
 // Deck Lab is the app's home view — it now owns deck browsing, importing and building, replacing
 // the old separate Decks page. Play and the voice mic test remain their own nav entries.

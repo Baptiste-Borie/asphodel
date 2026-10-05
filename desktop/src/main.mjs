@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Menu, protocol, session, shell, utilityProcess } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell, utilityProcess } from 'electron';
 import { randomBytes } from 'node:crypto';
 import { appendFile, readFile } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
@@ -7,6 +7,7 @@ import { APP_ORIGIN, assetPath, isApiPath, prepareUserData } from './paths.mjs';
 import { ArtCache, installArtworkHeaderGuard } from './art-cache.mjs';
 import { DisplayPreferences } from './display-preferences.mjs';
 import { desktopWindowOptions, installWindowControls } from './window-controls.mjs';
+import { installCloseGuard } from './close-guard.mjs';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'asphodel', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
 app.setName('Asphodel');
@@ -126,6 +127,28 @@ function createWindow() {
     console.error('[Asphodel] Préférence d’affichage:', error);
     void log(error.stack ?? String(error));
   });
+  installCloseGuard({ app, ipcMain, window,
+    onError: error => void log(error.stack ?? String(error)),
+    confirmFailure: async () => {
+      const { response } = await dialog.showMessageBox(window, {
+        type: 'warning', title: 'Asphodel — enregistrement inachevé',
+        message: 'Les dernières modifications n’ont pas pu être enregistrées.',
+        detail: 'Reste dans l’application pour réessayer. Si tu quittes, seules les modifications dont le brouillon local a pu être écrit seront récupérables.',
+        buttons: ['Rester dans l’application', 'Quitter quand même'], defaultId: 0, cancelId: 0,
+      });
+      return response === 1;
+    },
+    shutdown: async () => {
+      quitting = true;
+      session.defaultSession.flushStorageData();
+      if (!backend) { app.exit(); return; }
+      const worker = backend;
+      // Only stop the backend after deck/table saves finish (Forge/report flush stays bounded).
+      const timer = setTimeout(() => { worker.kill(); app.exit(); }, 8_000);
+      worker.once('exit', () => { clearTimeout(timer); app.exit(); });
+      worker.postMessage({ type: 'shutdown' });
+    },
+  });
   window.once('ready-to-show', () => window.show());
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\//.test(url)) void shell.openExternal(url);
@@ -146,14 +169,6 @@ if (!app.requestSingleInstanceLock()) {
 else {
   app.on('second-instance', () => { if (window?.isMinimized()) window.restore(); window?.show(); window?.focus(); });
   app.on('window-all-closed', () => app.quit());
-  app.on('before-quit', event => {
-    if (quitting || !backend) return;
-    event.preventDefault(); quitting = true;
-    // Leave time for Forge's bounded shutdown and local report/database flush.
-    const timer = setTimeout(() => { backend.kill(); app.exit(); }, 8_000);
-    backend.once('exit', () => { clearTimeout(timer); app.exit(); });
-    backend.postMessage({ type: 'shutdown' });
-  });
   // Electron emits ready only after its ESM entry point finishes evaluating.
   // A top-level await here would make the module and ready wait on each other.
   void app.whenReady().then(async () => {

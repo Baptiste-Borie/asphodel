@@ -7,6 +7,7 @@ export interface DesktopAPI {
   setFullscreen(fullscreen: boolean): Promise<void>;
   openData(): Promise<void>;
   quit(): Promise<void>;
+  onBeforeClose(callback: () => Promise<boolean>): () => void;
   onDisplayState(callback: (state: DesktopDisplayState) => void): () => void;
 }
 declare global { interface Window { asphodelDesktop?: DesktopAPI } }

@@ -47,6 +47,21 @@ try {
     const response = await fetch(`/decks/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Desktop persistent deck' }) });
     if (!response.ok) throw new Error('Rename failed');
   }, id);
+  // Close immediately after a real builder/table edit, before its debounce can finish.
+  await page.getByRole('button', { name: 'Builder', exact: true }).click();
+  await page.getByRole('button', { name: 'New empty sheet', exact: true }).click();
+  await page.getByLabel('New category name', { exact: true }).fill('Preserved empty role');
+  await page.getByLabel('New category name', { exact: true }).press('Enter');
+  await page.getByRole('button', { name: 'Table V2', exact: true }).click();
+  await page.locator('.dt-create summary').click();
+  await page.getByLabel('New zone name', { exact: true }).fill('Preserved empty zone');
+  await page.getByLabel('New zone name', { exact: true }).press('Enter');
+  const expectedProject = await page.evaluate(() => {
+    document.querySelector('.dt-canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 120, clientX: 400, clientY: 300, bubbles: true, cancelable: true }));
+    const key = Object.keys(localStorage).find(key => key.startsWith('asphodel.builder-draft.v1.'));
+    if (!key) throw new Error('Builder did not journal its edit');
+    return JSON.parse(localStorage.getItem(key)).project;
+  });
   await electron.close(); electron = undefined;
   page = await launch();
   await electron.evaluate(({ session }) => {
@@ -58,6 +73,25 @@ try {
   await assertArtworkLoads(page, `${artUrl}?offline-restart`);
   assert.equal(await page.evaluate(() => localStorage.getItem('desktop-smoke')), 'survives restart');
   assert.equal(await page.evaluate(async id => (await (await fetch(`/decks/${id}`)).json()).name, id), 'Desktop persistent deck');
+  const restoredProject = await page.evaluate(async projectId => {
+    const library = await (await fetch('/decks')).json();
+    for (const deck of library.decks) {
+      const detail = await (await fetch(`/decks/${deck.id}`)).json();
+      if (detail.project?.projectId === projectId) return detail.project;
+    }
+    throw new Error('Empty builder project did not survive immediate close');
+  }, expectedProject.projectId);
+  assert.deepEqual(restoredProject, expectedProject);
+  assert.equal(await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('asphodel.builder-draft.v1.')).length), 0);
+  // Simulate an outstanding disk journal from an interrupted session, then reload the actual UI.
+  await page.evaluate(project => localStorage.setItem(`asphodel.builder-draft.v1.${project.projectId}`, JSON.stringify({
+    version: 1, project: { ...project, name: 'Recovered interrupted exploration' }, pending: true, updatedAt: new Date().toISOString(),
+  })), expectedProject);
+  await page.reload();
+  await page.getByRole('button', { name: 'Reprendre les brouillons', exact: true }).click();
+  await page.locator('.lab-builder [data-save-status][data-status=saved]').waitFor();
+  const recovered = await page.evaluate(async () => (await (await fetch('/decks')).json()).decks.filter(d => d.name === 'Recovered interrupted exploration'));
+  assert.equal(recovered.length, 1, 'creation retry must reuse the project id rather than duplicate its deck');
   // Block renderer internet: fixture gameplay still uses the real local Java engine.
   await page.route(/^https?:\/\//, route => route.abort());
   const started = await page.evaluate(async () => {
@@ -75,7 +109,7 @@ try {
   assert.deepEqual(errors, []);
   // Closing mid-game exercises the shutdown hook, rather than only an idle quit.
   await electron.close(); electron = undefined;
-  console.log('Desktop smoke passed: startup, artwork decode/offline restart, real local game, persistent decks/localStorage, active-game shutdown.');
+  console.log('Desktop smoke passed: startup, artwork decode/offline restart, real local game, persistent decks/localStorage, immediate builder close, unified empty table, recovery and active-game shutdown.');
 } finally {
   if (electron) await electron.close();
   await rm(userData, { recursive: true, force: true });

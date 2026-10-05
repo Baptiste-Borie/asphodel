@@ -184,6 +184,21 @@ export async function buildApp(options: BuildAppOptions = {}) {
     },
   );
 
+  app.post('/decks/projects', { bodyLimit: 8_000_000 }, async (request, reply) => {
+    try { return reply.code(201).send(await deckService.saveProject(request.body)); }
+    catch (error) {
+      if (error instanceof Error && /Projet|Identifiants|volumineux|projet|Identité/.test(error.message)) return reply.code(400).send({ error: error.message });
+      throw error;
+    }
+  });
+  app.put<{ Params: DeckParams }>('/decks/:id/project', { bodyLimit: 8_000_000, schema: { params: deckIdParamsSchema } }, async (request, reply) => {
+    try { return await deckService.saveProject(request.body, request.params.id); }
+    catch (error) {
+      if (error instanceof Error && /Projet|Identifiants|volumineux|projet|Identité/.test(error.message)) return reply.code(400).send({ error: error.message });
+      throw error;
+    }
+  });
+
   app.patch<{ Params: DeckParams; Body: RenameDeckBody }>(
     "/decks/:id",
     {

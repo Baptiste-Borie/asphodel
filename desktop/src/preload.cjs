@@ -9,6 +9,16 @@ contextBridge.exposeInMainWorld('asphodelDesktop', {
   },
   openData: () => ipcRenderer.invoke('asphodel:open-data'),
   quit: () => ipcRenderer.invoke('asphodel:quit'),
+  onBeforeClose: callback => {
+    const listener = async (_event, id) => {
+      let saved = false;
+      try { saved = await callback() === true; } catch { /* keep the window open */ }
+      ipcRenderer.send('asphodel:save-result', id, saved);
+    };
+    ipcRenderer.on('asphodel:prepare-close', listener);
+    ipcRenderer.send('asphodel:save-ready');
+    return () => ipcRenderer.removeListener('asphodel:prepare-close', listener);
+  },
   onDisplayState: callback => {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on('asphodel:display-changed', listener);
