@@ -2,7 +2,8 @@ import { apiRequest } from '../api/api-client';
 import type { LabCard, LabSearchResult } from '../../../shared/deck-lab';
 import type { ProjectHistory } from './project-history';
 import { deckStatistics, type Sheet } from './deck-model';
-import { assignZone, createZone, fitZones, initializeZones, zoneAt, emptyWorkspace, reconcileWorkspace, screenToWorld, setRowMembership, zoomAt, type Point, type Row, type Workspace } from './deck-workspace';
+import { assignZone, createZone, fitZones, initializeZones, zoneAt, emptyWorkspace, reconcileWorkspace, screenToWorld, setRowMembership, zoomAt, type Point, type Row, type Workspace, type Zone } from './deck-workspace';
+import { addToPile, arrangePile, arrangeZone, createPile, detachPileCards, dissolvePile, pileBounds, pileFor, pileRows, resizeZone, visibleInPile } from './deck-piles';
 import './deck-table.css';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -21,17 +22,17 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
   let results: LabCard[] = [];
   let space = false;
   let disposed = false;
-  let gesture: { pointer: number; start: Point; camera: Point; positions: { point: Point; x: number; y: number }[]; pan: boolean; lasso: boolean; additive: boolean; cards: boolean; moved: boolean; last: Point; selection: string[]; raised: boolean } | undefined;
+  let gesture: { pointer: number; start: Point; camera: Point; positions: { point: Point; x: number; y: number }[]; pan: boolean; lasso: boolean; additive: boolean; cards: boolean; moved: boolean; last: Point; selection: string[]; raised: boolean; pile?: string; resize?: { zone: Zone; width: number; height: number } } | undefined;
   root.innerHTML = `<div class="dt-heading"><h2 title="${esc(sheet.name)}">${esc(sheet.name)}</h2><span data-dt-count></span>
     <details class="dt-create"><summary>+ Zone</summary><form class="dt-zone-form"><label for="dt-zone-name">Nouvelle zone</label><input id="dt-zone-name" aria-label="New zone name" placeholder="Ramp, Draw, À tester…" maxlength="60" required><button>Create zone</button><small>Le contour s’adapte aux cartes déposées.</small></form></details>
     <div class="dt-history"><button type="button" data-history="undo" aria-label="Annuler">↶</button><button type="button" data-history="redo" aria-label="Rétablir">↷</button></div>
     <button data-dt="search" aria-expanded="false">Search</button><button data-dt="analysis" aria-expanded="false">Analyse</button>
-    <details class="dt-menu"><summary aria-label="Table tools">•••</summary><div class="dt-menu-content"><button data-action="export-deck">Exporter le deck</button><button data-dt="library">Tous les decks</button><button data-dt="legacy">Builder V1</button><button data-action="selection">Selection</button><button data-dt="deck">Center deck</button><button data-dt="pan" aria-pressed="false">Pan tool</button><p>Ctrl / Espace + glisser : déplacer la vue<br>Shift + clic : sélectionner plusieurs cartes<br>Glisser sur le vide : sélectionner une zone<br>Échap : annuler le geste en cours<br>Ctrl+Z : annuler · Ctrl+Maj+Z / Ctrl+Y : rétablir<br>Molette : zoom · F : tout voir<br>Double clic : inspecter une carte</p></div></details></div>
-    <div class="dt-body"><div class="dt-canvas" tabindex="0" aria-label="Deck table. Drag cards to move. Shift click to select several. Control or Space drag to pan. Wheel to zoom."><div class="dt-world"><div class="dt-zones"></div><div class="dt-cards"></div></div><div class="dt-lasso" hidden></div><p class="dt-empty" hidden>Room to think. Search for cards and place your first ideas.</p></div>
+    <details class="dt-menu"><summary aria-label="Table tools">•••</summary><div class="dt-menu-content"><button data-action="export-deck">Exporter le deck</button><button data-dt="library">Tous les decks</button><button data-dt="legacy">Builder V1</button><button data-action="selection">Selection</button><button data-dt="deck">Center deck</button><button data-dt="pan" aria-pressed="false">Pan tool</button><p>Ctrl / Espace + glisser : déplacer la vue<br>Shift + clic : sélectionner plusieurs cartes<br>Créer une pile depuis la sélection<br>Glisser une carte hors d’une pile : l’extraire<br>Poignée ↘ : redimensionner une zone<br>Verrouiller une zone fixe son cadre, pas ses cartes<br>Glisser sur le vide : sélectionner une zone<br>Échap : annuler le geste en cours<br>Ctrl+Z : annuler · Ctrl+Maj+Z / Ctrl+Y : rétablir<br>Molette : zoom · F : tout voir<br>Double clic : inspecter une carte</p></div></details></div>
+    <div class="dt-body"><div class="dt-canvas" tabindex="0" aria-label="Deck table. Drag cards to move. Shift click to select several. Control or Space drag to pan. Wheel to zoom."><div class="dt-world"><div class="dt-zones"></div><div class="dt-cards"></div><div class="dt-piles"></div></div><div class="dt-lasso" hidden></div><p class="dt-empty" hidden>Room to think. Search for cards and place your first ideas.</p></div>
     <aside class="dt-panel dt-search" hidden><header><h3>Find cards</h3><button data-dt="search" aria-label="Close search">✕</button></header><form class="dt-search-form"><input aria-label="Table card search" placeholder="Name or Oracle text…"><label><input type="checkbox" name="advanced"> Advanced syntax</label><button>Search catalog</button></form><p class="dt-search-status" role="status"></p><div class="dt-search-results"></div><button data-dt="more" hidden>Load more</button><small>Click or drag a result onto the table. It starts as a candidate.</small></aside>
     <aside class="dt-panel dt-analysis" hidden aria-label="Deck analysis"><header><h3>Analyse</h3><button data-dt="analysis" aria-label="Close analysis">✕</button></header><div class="dt-analysis-content"></div></aside></div>
     <div class="dt-tools"><button data-dt="fit">Show all · F</button><button data-dt="out" aria-label="Zoom out">−</button><span data-dt-zoom></span><button data-dt="in" aria-label="Zoom in">+</button></div>
-    <div class="dt-selection" hidden><span data-dt-selected>0 selected</span><label class="dt-quantity">Quantité <input type="number" min="1" max="999" step="1" data-dt-quantity aria-label="Quantité de la carte sélectionnée"></label><button data-dt="exclude">Set aside</button><button data-dt="include">Add to deck</button><button data-dt="clear" aria-label="Clear selection">✕</button></div>
+    <div class="dt-selection" hidden><span data-dt-selected>0 selected</span><label class="dt-quantity">Quantité <input type="number" min="1" max="999" step="1" data-dt-quantity aria-label="Quantité de la carte sélectionnée"></label><button data-dt="exclude">Set aside</button><button data-dt="include">Add to deck</button><details class="dt-new-pile"><summary>Créer une pile</summary><form class="dt-pile-form"><label for="dt-pile-name">Nom de la pile</label><input id="dt-pile-name" maxlength="60" value="Nouvelle pile" required><button>Regrouper</button></form></details><select data-add-to-pile aria-label="Ajouter la sélection à une pile"></select><button data-dt="clear" aria-label="Clear selection">✕</button></div>
     <footer class="dt-footer"><span>Ctrl + glisser : déplacer la vue · F : tout voir</span><span data-dt-storage role="status"></span><span data-save-status role="status"></span><button data-action="retry-save" hidden>Réessayer</button></footer>`;
   const get = <T extends HTMLElement = HTMLElement>(s: string) => root.querySelector<T>(s)!;
   const canvas = get('.dt-canvas');
@@ -58,6 +59,10 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     }
     get('.dt-selection').hidden = selected.size === 0;
     get('[data-dt-selected]').textContent = `${selected.size} selected`;
+    get('.dt-new-pile').hidden = selected.size < 2;
+    const destination = get<HTMLSelectElement>('[data-add-to-pile]');
+    destination.hidden = !workspace.piles?.length;
+    destination.innerHTML = '<option value="">Ajouter à une pile…</option>' + (workspace.piles ?? []).map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
     const quantity = get<HTMLInputElement>('[data-dt-quantity]');
     const row = rows.find(r => selected.has(r.placement.id));
     quantity.disabled = selected.size !== 1; quantity.value = selected.size === 1 && row ? String(row.entry.quantity) : '';
@@ -76,8 +81,12 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     initializeZones(workspace, rows, fresh);
     fitZones(workspace, rows);
     for (const id of selected) if (!rows.some(r => r.placement.id === id)) selected.delete(id);
-    get('.dt-cards').innerHTML = rows.map(r => `<button class="dt-card ${r.group.maybeboard ? 'is-aside' : ''}" data-dt-card="${r.placement.id}" style="left:${r.placement.x}px;top:${r.placement.y}px;z-index:${r.placement.z}" aria-label="${esc(r.entry.card.name)} · ${r.entry.quantity} · ${r.group.maybeboard?'outside deck':'in deck'}" aria-pressed="false">${r.entry.card.image ? `<img draggable="false" src="${esc(r.entry.card.image)}" alt="${esc(r.entry.card.name)}" loading="lazy">` : `<span class="dt-fallback">${esc(r.entry.card.name)}</span>`}<span class="dt-card-label">${esc(r.entry.card.name)}</span><span class="dt-badge">${r.entry.quantity > 1 ? `×${r.entry.quantity} · ` : ''}${r.group.maybeboard ? r.placement.cut ? 'Cut' : 'Candidate' : r.group.commander ? 'Commander' : 'In deck'}</span></button>`).join('');
-    get('.dt-zones').innerHTML = workspace.zones.map(z => `<section class="dt-zone" data-dt-zone="${z.id}" style="left:${z.x}px;top:${z.y}px;width:${z.width}px;height:${z.height}px"><header><input aria-label="Zone name" maxlength="60" value="${esc(z.name)}"><span data-zone-count></span><button data-delete-zone="${z.id}" aria-label="Delete zone ${esc(z.name)}">×</button></header><span class="dt-zone-empty">Déposer des cartes ici</span></section>`).join('');
+    get('.dt-cards').innerHTML = rows.map(r => `<button class="dt-card ${r.group.maybeboard ? 'is-aside' : ''}" data-dt-card="${r.placement.id}" ${visibleInPile(workspace,r.placement.id) ? '' : 'hidden'} style="left:${r.placement.x}px;top:${r.placement.y}px;z-index:${r.placement.z}" aria-label="${esc(r.entry.card.name)} · ${r.entry.quantity} · ${r.group.maybeboard?'outside deck':'in deck'}" aria-pressed="false">${r.entry.card.image ? `<img draggable="false" src="${esc(r.entry.card.image)}" alt="${esc(r.entry.card.name)}" loading="lazy">` : `<span class="dt-fallback">${esc(r.entry.card.name)}</span>`}<span class="dt-card-label">${esc(r.entry.card.name)}</span><span class="dt-badge">${r.entry.quantity > 1 ? `×${r.entry.quantity} · ` : ''}${r.group.maybeboard ? r.placement.cut ? 'Cut' : 'Candidate' : r.group.commander ? 'Commander' : 'In deck'}</span></button>`).join('');
+    get('.dt-zones').innerHTML = workspace.zones.map(z => `<section class="dt-zone ${z.locked?'is-locked':''} ${z.sizing==='manual'?'is-manual':''}" data-dt-zone="${z.id}" style="left:${z.x}px;top:${z.y}px;width:${z.width}px;height:${z.height}px"><header><input aria-label="Zone name" maxlength="60" value="${esc(z.name)}" ${z.locked?'readonly':''}><span data-zone-count></span><button data-zone-action="fit" data-zone="${z.id}" aria-label="Ajuster la zone ${esc(z.name)} aux cartes" title="Ajuster le cadre aux cartes" ${z.locked?'disabled':''}>↔</button><button data-zone-action="arrange" data-zone="${z.id}" aria-label="Ranger les cartes dans ${esc(z.name)}" title="Ranger en grille, sur demande" ${z.locked?'disabled':''}>▦</button><button data-zone-action="lock" data-zone="${z.id}" aria-label="${z.locked?'Déverrouiller':'Verrouiller'} la zone ${esc(z.name)}" title="${z.locked?'Déverrouiller le cadre':'Fixer le cadre ; les cartes restent libres'}" aria-pressed="${!!z.locked}">${z.locked?'🔒':'🔓'}</button><button data-delete-zone="${z.id}" aria-label="Delete zone ${esc(z.name)}" ${z.locked?'disabled':''}>×</button></header><span class="dt-zone-empty">Déposer des cartes ici</span><button class="dt-zone-resize" data-resize-zone="${z.id}" aria-label="Redimensionner la zone ${esc(z.name)}" title="Glisser pour redimensionner · flèches au clavier" ${z.locked?'disabled':''}>↘</button></section>`).join('');
+    get('.dt-piles').innerHTML = (workspace.piles ?? []).map(p => {
+      const members=pileRows(p,rows), total=members.reduce((n,r)=>n+r.entry.quantity,0), included=members.filter(r=>!r.group.maybeboard).reduce((n,r)=>n+r.entry.quantity,0);
+      return `<header class="dt-pile" data-dt-pile="${p.id}" style="left:${p.x}px;top:${p.y}px;width:${pileBounds(p,rows).width}px;z-index:${Math.max(0,...members.map(r=>r.placement.z))}" aria-label="Pile ${esc(p.name)}"><div class="dt-pile-title"><span class="dt-pile-grip" title="Déplacer la pile">⠿</span><input aria-label="Nom de la pile ${esc(p.name)}" maxlength="60" value="${esc(p.name)}"><span title="${total} cartes, dont ${included} dans le deck">×${total}</span></div><div class="dt-pile-actions"><button data-pile-action="toggle" data-pile="${p.id}" aria-expanded="${p.expanded}">${p.expanded?'Réduire':'Déplier'}</button><button data-pile-action="select" data-pile="${p.id}" aria-label="Sélectionner la pile ${esc(p.name)}" title="Sélectionner toutes ses cartes">☷</button><button data-pile-action="dissolve" data-pile="${p.id}" title="Séparer les cartes sans les retirer du deck">Dissoudre</button></div></header>`;
+    }).join('');
     get('.dt-empty').hidden = rows.length > 0;
     updateZoneCounts(); selection(); analysis(); camera();
     if (needsInitialFit && canvas.clientWidth > 0) { needsInitialFit = false; fit(); }
@@ -91,7 +100,8 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     for (const z of workspace.zones) {
       const count = rows.filter(r => r.placement.zoneId === z.id).reduce((n,r)=>n+r.entry.quantity,0);
       const el = get(`[data-dt-zone="${z.id}"]`);
-      el.querySelector('[data-zone-count]')!.textContent = `${count} cards`;
+      el.querySelector<HTMLElement>('[data-zone-count]')!.textContent = String(count);
+      el.querySelector<HTMLElement>('[data-zone-count]')!.title = `${count} cartes`;
       el.classList.toggle('is-empty', count === 0);
       Object.assign(el.style, { left: `${z.x}px`, top: `${z.y}px`, width: `${z.width}px`, height: `${z.height}px` });
     }
@@ -105,6 +115,7 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
   function center(): Point { return screenToWorld({x:canvas.clientWidth/2,y:canvas.clientHeight/2},workspace.camera); }
   function fit(deckOnly=false) {
     const points = rows.filter(r=>!deckOnly || !r.group.maybeboard).map(r=>({x:r.placement.x,y:r.placement.y,width:170,height:265}));
+    points.push(...(workspace.piles ?? []).filter(p=>!deckOnly || pileRows(p,rows).some(r=>!r.group.maybeboard)).map(p=>pileBounds(p,rows)));
     if (!deckOnly) points.push(...workspace.zones);
     if (!points.length) { Object.assign(workspace.camera,emptyWorkspace().camera); camera(); persist(); return; }
     const x=Math.min(...points.map(p=>p.x)), y=Math.min(...points.map(p=>p.y));
@@ -144,12 +155,27 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
   root.addEventListener('submit',e=>{
     e.preventDefault(); const form=e.target as HTMLFormElement;
     if(form.matches('.dt-search-form'))void search();
+    if(form.matches('.dt-pile-form')) {
+      const name=form.querySelector('input')!.value;
+      if(selected.size<2)return;
+      edit('Créer une pile',()=>{createPile(workspace,rows,selected,name);selected.clear();});
+      get<HTMLDetailsElement>('.dt-new-pile').open=false;canvas.focus();
+    }
     if(form.matches('.dt-zone-form')){const input=form.querySelector('input')!;const name=input.value.trim();if(!name)return; edit('Créer une zone', () => { const point=center(); workspace.zones.push(createZone(name,{x:point.x-125,y:point.y-157})); });get<HTMLDetailsElement>('.dt-create').open=false;canvas.focus();}
   },{signal:abort.signal});
   root.addEventListener('click',e=>{
     const target=(e.target as HTMLElement).closest<HTMLElement>('button');if(!target)return;
     if(target.dataset.result!==undefined)addCandidate(results[Number(target.dataset.result)]!);
-    if(target.dataset.deleteZone)edit('Supprimer une zone', () => {assignZone(rows.filter(r=>r.placement.zoneId===target.dataset.deleteZone),undefined);workspace.zones=workspace.zones.filter(z=>z.id!==target.dataset.deleteZone);});
+    if(target.dataset.deleteZone && !workspace.zones.find(z=>z.id===target.dataset.deleteZone)?.locked)edit('Supprimer une zone', () => {assignZone(rows.filter(r=>r.placement.zoneId===target.dataset.deleteZone),undefined);workspace.zones=workspace.zones.filter(z=>z.id!==target.dataset.deleteZone);});
+    const zone=workspace.zones.find(z=>z.id===target.dataset.zone);
+    if(zone && target.dataset.zoneAction==='lock')edit(zone.locked?'Déverrouiller une zone':'Verrouiller une zone',()=>{zone.locked=!zone.locked;});
+    if(zone && !zone.locked && target.dataset.zoneAction==='fit')edit('Ajuster une zone aux cartes',()=>{zone.sizing='auto';});
+    if(zone && !zone.locked && target.dataset.zoneAction==='arrange')edit('Ranger les cartes d’une zone',()=>{arrangeZone(workspace,zone,rows);});
+    const pile=workspace.piles?.find(p=>p.id===target.dataset.pile);
+    if(pile && target.dataset.pileAction==='toggle')edit(pile.expanded?'Réduire une pile':'Déplier une pile',()=>{pile.expanded=!pile.expanded;arrangePile(workspace,pile,rows);});
+    if(pile && target.dataset.pileAction==='dissolve')edit('Dissoudre une pile',()=>{dissolvePile(workspace,pile,rows);});
+    if(pile && target.dataset.pileAction==='select'){selected.clear();pile.cardIds.forEach(id=>selected.add(id));selection();}
+
     const action=target.dataset.dt;
     if(action==='legacy')options.legacy();
     if(action==='library')options.library();
@@ -172,57 +198,77 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
       if(!Number.isSafeInteger(quantity)||quantity<1||quantity>999){input.value=String(row.entry.quantity);return;}
       edit('Modifier une quantité',()=>{row.entry.quantity=quantity;});return;
     }
+    if(input.matches('[data-add-to-pile]')) {
+      const pile=workspace.piles?.find(p=>p.id===input.value);
+      if(pile)edit('Ajouter les cartes à une pile',()=>{addToPile(workspace,pile,rows,selected);});return;
+    }
+    const pile=input.closest<HTMLElement>('[data-dt-pile]');
+    if(pile && input.matches('input')) {
+      const p=workspace.piles?.find(p=>p.id===pile.dataset.dtPile);if(p)edit('Renommer une pile',()=>{p.name=input.value.trim()||p.name;});return;
+    }
     const zone=input.closest<HTMLElement>('[data-dt-zone]');if(!zone || !input.matches('input'))return;
     const z=workspace.zones.find(z=>z.id===zone.dataset.dtZone)!;
-    edit('Renommer une zone',()=>{z.name=input.value.trim()||z.name;});
+    if(!z.locked)edit('Renommer une zone',()=>{z.name=input.value.trim()||z.name;});
   },{signal:abort.signal});
   canvas.addEventListener('dblclick',e=>{const el=document.elementFromPoint(e.clientX,e.clientY)?.closest<HTMLElement>('[data-dt-card]');const row=rows.find(r=>r.placement.id===el?.dataset.dtCard);if(row)options.inspect(row.entry.card);},{signal:abort.signal});
   canvas.addEventListener('wheel',e=>{e.preventDefault();if(gesture)return;zoomAt(workspace.camera,local(e),workspace.camera.zoom*Math.exp(-e.deltaY*(e.deltaMode===1?.04:.0015)));camera();persist();},{passive:false,signal:abort.signal});
   canvas.addEventListener('pointerdown',e=>{
     if(gesture || (e.button!==0 && e.button!==1))return;
     const target=e.target as HTMLElement;
-    if(target.closest('input,[data-delete-zone]'))return;
-    e.preventDefault();canvas.focus();canvas.setPointerCapture(e.pointerId);
-    const selectedBefore=[...selected];
+    if(target.closest('input,[data-delete-zone],[data-zone-action],[data-pile-action]'))return;
     const start=local(e),pan=e.ctrlKey||space||panTool||e.button===1;
-    const card=target.closest<HTMLElement>('[data-dt-card]');const zone=target.closest<HTMLElement>('[data-dt-zone]');
-    const positions: {point:Point;x:number;y:number}[]=[];
+    const card=target.closest<HTMLElement>('[data-dt-card]'),zoneEl=target.closest<HTMLElement>('[data-dt-zone]'),pileEl=target.closest<HTMLElement>('[data-dt-pile]');
+    const zone=workspace.zones.find(z=>z.id===zoneEl?.dataset.dtZone);
+    if(zone?.locked && !pan)return;
+    const pile=workspace.piles?.find(p=>p.id===pileEl?.dataset.dtPile);
+    const resizing=!pan && target.closest('[data-resize-zone]') && zone ? {zone,width:zone.width,height:zone.height}:undefined;
+    e.preventDefault();canvas.focus();canvas.setPointerCapture(e.pointerId);
+    const selectedBefore=[...selected],positions: {point:Point;x:number;y:number}[]=[];
     if(!pan && card){const id=card.dataset.dtCard!;if(e.shiftKey && selected.has(id))selected.delete(id);else{if(!e.shiftKey && !selected.has(id))selected.clear();selected.add(id);}for(const row of rows.filter(r=>selected.has(r.placement.id)))positions.push({point:row.placement,x:row.placement.x,y:row.placement.y});selection();}
-    if(!pan && zone && !card){
-      const z=workspace.zones.find(z=>z.id===zone.dataset.dtZone)!;
-      positions.push({point:z,x:z.x,y:z.y});
-      for(const row of rows.filter(r=>r.placement.zoneId===z.id)) positions.push({point:row.placement,x:row.placement.x,y:row.placement.y});
+    if(!pan && pile){positions.push({point:pile,x:pile.x,y:pile.y});selected.clear();for(const row of pileRows(pile,rows)){positions.push({point:row.placement,x:row.placement.x,y:row.placement.y});selected.add(row.placement.id);}selection();}
+    if(!pan && zone && !card && !resizing){
+      positions.push({point:zone,x:zone.x,y:zone.y});
+      for(const row of rows.filter(r=>r.placement.zoneId===zone.id))positions.push({point:row.placement,x:row.placement.x,y:row.placement.y});
+      for(const p of workspace.piles ?? [])if(pileRows(p,rows).every(r=>r.placement.zoneId===zone.id))positions.push({point:p,x:p.x,y:p.y});
     }
-    const lasso=!pan&&!card&&!zone;
+    const lasso=!pan&&!card&&!zone&&!pile;
     if(lasso&&!e.shiftKey){selected.clear();selection();}
-    if(!pan && positions.length)history.begin(card ? 'Déplacer les cartes' : 'Déplacer une zone');
-    gesture={pointer:e.pointerId,start,last:start,camera:{...workspace.camera},positions,pan,lasso,additive:e.shiftKey,cards:!pan&&!!card&&positions.length>0,moved:false,selection:selectedBefore,raised:false};
+    if(!pan && (positions.length || resizing))history.begin(resizing?'Redimensionner une zone':pile?'Déplacer une pile':card?'Déplacer les cartes':'Déplacer une zone');
+    gesture={pointer:e.pointerId,start,last:start,camera:{...workspace.camera},positions,pan,lasso,additive:e.shiftKey,cards:!pan&&!!card&&positions.length>0,moved:false,selection:selectedBefore,raised:false,pile:!pan?pile?.id:undefined,resize:resizing};
   },{signal:abort.signal});
-  canvas.addEventListener('pointermove',e=>{
+  function moveGesture(e: PointerEvent) {
     if(!gesture || e.pointerId!==gesture.pointer)return;const p=local(e),dx=p.x-gesture.start.x,dy=p.y-gesture.start.y;
     gesture.last=p;
     if(Math.hypot(dx,dy)>3)gesture.moved=true;
     if(!gesture.moved)return;
-    if(gesture.cards && !gesture.raised) {
+    if((gesture.cards || gesture.pile) && !gesture.raised) {
+      const moving=new Set(gesture.positions.map(item=>item.point));
+      if(gesture.cards){detachPileCards(workspace,rows.filter(r=>moving.has(r.placement)).map(r=>r.placement.id));render();}
       gesture.raised=true;let z=Math.max(0,...workspace.cards.map(p=>p.z));
-      for(const row of rows.filter(r=>selected.has(r.placement.id))){row.placement.z=++z;get(`[data-dt-card="${row.placement.id}"]`).style.zIndex=String(z);}
+      for(const row of rows.filter(r=>moving.has(r.placement))){row.placement.z=++z;get(`[data-dt-card="${row.placement.id}"]`).style.zIndex=String(z);}
     }
-    if(gesture.pan){workspace.camera.x=gesture.camera.x+dx;workspace.camera.y=gesture.camera.y+dy;camera();}
+    if(gesture.resize){resizeZone(gesture.resize.zone,gesture.resize.width+dx/workspace.camera.zoom,gesture.resize.height+dy/workspace.camera.zoom);updateZoneCounts();}
+    else if(gesture.pan){workspace.camera.x=gesture.camera.x+dx;workspace.camera.y=gesture.camera.y+dy;camera();}
     else if(gesture.lasso){const box=get('.dt-lasso');box.hidden=false;Object.assign(box.style,{left:`${Math.min(p.x,gesture.start.x)}px`,top:`${Math.min(p.y,gesture.start.y)}px`,width:`${Math.abs(dx)}px`,height:`${Math.abs(dy)}px`});}
-    else {for(const item of gesture.positions){item.point.x=item.x+dx/workspace.camera.zoom;item.point.y=item.y+dy/workspace.camera.zoom;}for(const row of rows){const el=get(`[data-dt-card="${row.placement.id}"]`);el.style.left=`${row.placement.x}px`;el.style.top=`${row.placement.y}px`;}for(const z of workspace.zones){const el=get(`[data-dt-zone="${z.id}"]`);Object.assign(el.style,{left:`${z.x}px`,top:`${z.y}px`,width:`${z.width}px`,height:`${z.height}px`});}updateZoneCounts();if(gesture.cards && gesture.moved)highlightZone(screenToWorld(p,workspace.camera));}
-  },{signal:abort.signal});
+    else {for(const item of gesture.positions){item.point.x=item.x+dx/workspace.camera.zoom;item.point.y=item.y+dy/workspace.camera.zoom;}for(const row of rows){const el=get(`[data-dt-card="${row.placement.id}"]`);el.style.left=`${row.placement.x}px`;el.style.top=`${row.placement.y}px`;}for(const z of workspace.zones){const el=get(`[data-dt-zone="${z.id}"]`);Object.assign(el.style,{left:`${z.x}px`,top:`${z.y}px`,width:`${z.width}px`,height:`${z.height}px`});}updatePilePositions();updateZoneCounts();if(gesture.cards && gesture.moved)highlightZone(screenToWorld(p,workspace.camera));}
+  }
+  canvas.addEventListener('pointermove',moveGesture,{signal:abort.signal});
   function finishGesture() {
     if (!gesture) return;
     const completed = gesture;
     gesture = undefined;
-    if (completed.cards && completed.moved) {
+    if ((completed.cards || completed.pile) && completed.moved) {
       const target = zoneAt(workspace, screenToWorld(completed.last, workspace.camera));
       const moved = new Set(completed.positions.map(item => item.point));
       assignZone(rows.filter(row => moved.has(row.placement)), target?.id);
     } else if (completed.lasso) {
       const a = screenToWorld(completed.start, workspace.camera), b = screenToWorld(completed.last, workspace.camera);
       if (!completed.additive) selected.clear();
-      if (completed.moved) for (const row of rows) {
+      if (completed.moved) for (const pile of workspace.piles ?? []) {
+        const p=pileBounds(pile,rows);
+        if(p.x+p.width>=Math.min(a.x,b.x)&&p.x<=Math.max(a.x,b.x)&&p.y+p.height>=Math.min(a.y,b.y)&&p.y<=Math.max(a.y,b.y))pile.cardIds.forEach(id=>selected.add(id));
+      }
+      if (completed.moved) for (const row of rows.filter(r=>!pileFor(workspace,r.placement.id))) {
         const p = row.placement;
         if (p.x+170 >= Math.min(a.x,b.x) && p.x <= Math.max(a.x,b.x) && p.y+238 >= Math.min(a.y,b.y) && p.y <= Math.max(a.y,b.y)) selected.add(p.id);
       }
@@ -248,12 +294,20 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     if (canvas.hasPointerCapture(canceled.pointer)) canvas.releasePointerCapture(canceled.pointer);
     render(); persist(); return true;
   }
+  function updatePilePositions(){for(const p of workspace.piles ?? []){const el=get(`[data-dt-pile="${p.id}"]`);el.style.left=`${p.x}px`;el.style.top=`${p.y}px`;el.style.zIndex=String(Math.max(0,...pileRows(p,rows).map(r=>r.placement.z)));}}
   function checkpoint() { if (gesture) finishGesture(); else persist(); }
-  canvas.addEventListener('pointerup',e=>{if(gesture?.pointer===e.pointerId)finishGesture();},{signal:abort.signal});
+  canvas.addEventListener('pointerup',e=>{if(gesture?.pointer===e.pointerId){moveGesture(e);finishGesture();}},{signal:abort.signal});
   canvas.addEventListener('pointercancel',e=>{if(gesture?.pointer===e.pointerId)cancelGesture();},{signal:abort.signal});
   canvas.addEventListener('lostpointercapture',e=>{if(gesture?.pointer===e.pointerId)cancelGesture();},{signal:abort.signal});
   root.addEventListener('keydown',e=>{
     if((e.target as HTMLElement).closest('input,textarea,select'))return;
+    const zone=workspace.zones.find(z=>z.id===(e.target as HTMLElement).closest<HTMLElement>('[data-resize-zone]')?.dataset.resizeZone);
+    if(zone && !zone.locked && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){
+      e.preventDefault();const step=e.shiftKey?50:10;
+      edit('Redimensionner une zone',()=>{resizeZone(zone,zone.width+(e.key==='ArrowRight'?step:e.key==='ArrowLeft'?-step:0),zone.height+(e.key==='ArrowDown'?step:e.key==='ArrowUp'?-step:0));});
+      get(`[data-resize-zone="${zone.id}"]`).focus();return;
+    }
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='a'){e.preventDefault();if(gesture)return;selected.clear();rows.forEach(r=>selected.add(r.placement.id));selection();return;}
     if(e.key==='Escape' && gesture){e.preventDefault();e.stopPropagation();cancelGesture();return;}
     if(e.code==='Space'){e.preventDefault();space=true;updatePanCursor();}
     if(e.key.toLowerCase()==='f'&&!e.ctrlKey&&!e.metaKey){e.preventDefault();fit();}

@@ -20,7 +20,7 @@ const project = (): BuilderProject => ({ version:1,projectId:'portable-project',
   {id:'candidates',name:'Candidates',maybeboard:true,entries:[{id:'idea',card:{...card,name:'Idea'},quantity:2}]},
 ],cuts:[{...card,name:'Discarded idea'}],workspace:{version:1,zonesInitialized:true,cards:[
   {id:'forest',name:'Forest',category:'Lands',section:'mainboard',x:-340,y:1280,z:9,zoneId:'zone'},
-],zones:[{id:'zone',name:'Plan for Aang',x:-500,y:800,width:1000,height:900}],camera:{x:270,y:-110,zoom:.27}} });
+],zones:[{id:'zone',name:'Plan for Aang',x:-500,y:800,width:1000,height:900,sizing:'manual',locked:true}],piles:[{id:'mana-pile',name:'Mana to test',x:-340,y:1228,expanded:false,cardIds:['forest']}],camera:{x:270,y:-110,zoom:.27}} });
 function comparable(snapshot: LibrarySnapshot) {
   const names = new Map(snapshot.cards.map(c=>[c.id,c.normalizedName]));
   return {...snapshot,cards:snapshot.cards.map(({id,...c})=>c).sort((a,b)=>a.name.localeCompare(b.name)),

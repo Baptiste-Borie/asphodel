@@ -2,13 +2,28 @@ import type { LabCard } from './deck-lab.js';
 
 export type ProjectPoint = { x: number; y: number };
 export type ProjectPlacement = ProjectPoint & { id: string; name: string; category: string; section: string; z: number; zoneId?: string; origin?: { category: string; commander: boolean; groupId?: string }; cut?: boolean };
-export type ProjectZone = ProjectPoint & { id: string; name: string; width: number; height: number };
-export type ProjectWorkspace = { version: 1; zonesInitialized?: boolean; cards: ProjectPlacement[]; zones: ProjectZone[]; camera: ProjectPoint & { zoom: number } };
+export type ProjectZone = ProjectPoint & { id: string; name: string; width: number; height: number; sizing?: 'auto' | 'manual'; locked?: boolean };
+export type ProjectPile = ProjectPoint & { id: string; name: string; expanded: boolean; cardIds: string[] };
+export type ProjectWorkspace = { version: 1; zonesInitialized?: boolean; cards: ProjectPlacement[]; zones: ProjectZone[]; piles?: ProjectPile[]; camera: ProjectPoint & { zoom: number } };
 export type ProjectGroup = { id?: string; name: string; entries: { id?: string; card: LabCard; quantity: number }[]; commander?: boolean; maybeboard?: boolean };
 export type BuilderProject = { version: 1; projectId: string; name: string; groups: ProjectGroup[]; cuts: LabCard[]; workspace: ProjectWorkspace };
 const text = (v: unknown, max = 200): v is string => typeof v === 'string' && v.length <= max;
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const identifier = (v: unknown): v is string => text(v, 100) && /^[a-zA-Z0-9_-]+$/.test(v);
+/** Additive workspace fields: old projects stay readable without rearranging cards. */
+export function validWorkspaceExtras(w: ProjectWorkspace): boolean {
+  if (!w.zones.every(z => (z.sizing === undefined || ['auto','manual'].includes(z.sizing)) && (z.locked === undefined || typeof z.locked === 'boolean'))) return false;
+  if (w.piles === undefined) return true;
+  if (!Array.isArray(w.piles) || w.piles.length > 1000) return false;
+  const placements = new Set(w.cards.map(c => c.id));
+  const ids = new Set<string>();
+  for (const p of w.piles) {
+    if (!p || !identifier(p.id) || !text(p.name,60) || !p.name.trim() || !finite(p.x) || !finite(p.y) || typeof p.expanded !== 'boolean'
+      || !Array.isArray(p.cardIds) || p.cardIds.length < 1 || p.cardIds.length > 18000) return false;
+    for (const id of p.cardIds) { if (!identifier(id) || !placements.has(id) || ids.has(id)) return false; ids.add(id); }
+  }
+  return new Set(w.piles.map(p => p.id)).size === w.piles.length;
+}
 const card = (v: any): boolean => v && text(v.name) && !!v.name.trim() && text(v.type_line, 1000) && finite(v.cmc)
   && text(v.image, 4000) && Array.isArray(v.color_identity) && v.color_identity.every((s: unknown) => text(s, 10))
   && Array.isArray(v.related) && v.related.every((s: unknown) => text(s))
@@ -32,7 +47,9 @@ export function parseBuilderProject(value: unknown): BuilderProject {
       && (c.cut === undefined || typeof c.cut === 'boolean')
       && (!c.origin || (text(c.origin.category, 60) && typeof c.origin.commander === 'boolean' && (c.origin.groupId === undefined || identifier(c.origin.groupId)))))
     || !w.zones.every(z => z && identifier(z.id) && text(z.name, 60) && finite(z.x) && finite(z.y) && finite(z.width) && finite(z.height) && z.width > 0 && z.height > 0)
-    || (w.zonesInitialized !== undefined && typeof w.zonesInitialized !== 'boolean')) throw new Error('Projet de construction invalide.');
+    || (w.zonesInitialized !== undefined && typeof w.zonesInitialized !== 'boolean') || !validWorkspaceExtras(w)) throw new Error('Projet de construction invalide.');
+  const entries = new Set(p.groups.flatMap(g => g.entries.map(e => e.id)));
+  if (w.piles?.some(pile => pile.cardIds.some(id => !entries.has(id)))) throw new Error('Une pile référence une carte absente de la table.');
   for (const ids of [p.groups.map(g => g.id), p.groups.flatMap(g => g.entries.map(e => e.id)), w.cards.map(c => c.id), w.zones.map(z => z.id)]) {
     if (new Set(ids).size !== ids.length) throw new Error('Identifiants de projet dupliqués.');
   }

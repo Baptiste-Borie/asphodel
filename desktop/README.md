@@ -1,4 +1,4 @@
-# Asphodel Desktop 0.1.4
+# Asphodel Desktop 0.1.5
 
 Desktop wrapper around the existing TypeScript/Vite frontend, Node backend and pinned Forge bridge. No stack migration. Launch Asphodel, choose a saved deck, play locally, close the application. The packaged app includes Chromium/Node, Java and Forge's resources; no terminal, Node installation, Java installation or remote server is needed to run it.
 
@@ -10,17 +10,17 @@ Close Asphodel, then from the repository root:
 npm --prefix desktop run install:local
 ```
 
-This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.4-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
+This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.5-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
 
 Afterwards, open **Asphodel** from Ubuntu's application menu and pin it to your dock if desired. The package installs the app in `/opt/Asphodel`, the desktop entry `Asphodel.desktop`, the existing icon and the `asphodel` command. This launch uses the installed app, independent of the checkout, and needs no local server command. The normal desktop settings, fullscreen preference and Quitter button remain available.
 
 To update after a new patch/pull, close Asphodel and run the same command again. Decks, cached images, drafts and display settings remain in the existing `~/.config/Asphodel` profile; the package contains no home-directory files. Package removal (`sudo apt-get remove asphodel-desktop`) leaves this profile in place. Backup/restore is available in settings; abrupt-crash recovery still depends on a persisted draft.
 
-To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.4-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
+To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.5-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
 
 ## Automated Linux packages
 
-The Desktop workflow now runs for relevant changes on `main`, matching pull requests, manual dispatch, and `v*` tags. A release tag must equal the desktop version (for example `v0.1.4`); both package files must agree. A newer run on the same ref cancels an obsolete build.
+The Desktop workflow now runs for relevant changes on `main`, matching pull requests, manual dispatch, and `v*` tags. A release tag must equal the desktop version (for example `v0.1.5`); both package files must agree. A newer run on the same ref cancels an obsolete build.
 
 CI runs the existing desktop/window/artwork/runtime checks, builds versioned AppImage and Debian packages, and checks that the `.deb` contains the launcher, icon, frontend, backend dependencies, seed library, Java and Forge. Successful packages appear in the workflow's **Artifacts**, under `Asphodel-Desktop-Linux-<commit>`. Building does not automatically publish a release or install an updater.
 
@@ -131,3 +131,20 @@ History keeps up to 100 actions per deck, evicting older actions beyond an estim
 The resulting state after undo/redo uses the normal recovery journal, SQLite save and native close handshake. A save acknowledgement for an earlier edit cannot overwrite a newer undo. Portable backups retain the resulting deck/table state, not the undo stack. There is no database or Forge migration in this patch.
 
 The frontend tests cover immutable snapshots, batched gestures, cancellation, independent histories, memory limits, metadata/identity retention and undo during an in-flight save. The desktop smoke adds native category undo/redo, keyboard zone undo/redo, shared V1/V2 history and exact zone identities before immediate close/restart. Native smoke still requires an Electron-capable display and the built Forge runtime.
+
+
+## Named piles and adjustable zones (patch 06)
+
+In **Table V2**, select at least two cards with Shift+click, a lasso or Ctrl/Cmd+A, then choose **Créer une pile** in the selection bar and give it a name. The new pile starts collapsed. Its header shows the total quantity; its tooltip distinguishes cards included in the deck. Drag the grip/header to move all members together. **Déplier / Réduire** switches between a compact stack and a fan, wrapping after eight entries. Name changes, expansion, grouping and gestures use the shared undo/redo history.
+
+Use the pile's **☷** button to select every member for inclusion/exclusion or adding cards to another pile. The selection bar's **Ajouter à une pile…** joins the selected entries to an existing pile. To extract a card, select it individually and drag it; Escape puts it back with its original position, membership and layer. **Dissoudre** removes the pile container and leaves its cards in a usable fan. None of these commands changes Commander/mainboard/candidate membership or quantities. A basic land with quantity 37 remains one entry representing 37 cards, not 37 independent table objects.
+
+Zone headers now provide **↔ Ajuster**, **▦ Ranger**, a lock and delete. Drag **↘** at the bottom right to resize; focused handles also accept arrow keys (10 units, or 50 with Shift). Resizing switches to a manual frame and never moves cards. **↔** explicitly returns to automatic fitting. **▦** arranges that zone's members into a grid, keeping piles intact as units and leaving other zones alone. No grid/fan repacking runs on a normal refresh or reopening the app.
+
+A locked zone keeps its frame fixed: moving, resizing, renaming, arrangement and deletion are disabled until unlocking. Its cards remain movable and membership counts remain current. Unlocking preserves the previous manual/automatic sizing mode. Each completed drag/resize is one undo action; Escape, lost pointer capture and window blur cancel an unfinished gesture. The final pointer-up position is included.
+
+Piles are optional additive fields in the existing version-1 project JSON; zone sizing and lock flags are optional too. Old projects and backups load unchanged, retaining their card coordinates. Stable pile IDs and ordered entry IDs survive save/restart, recovery journals, undo/redo and full library backup/restore. V1 cuts or merged entries remove dead pile references without repacking surviving cards. The result remains a normal playable deck. No SQLite or Forge migration is needed.
+
+Validation covers a 200-entry table, mixed included/candidate quantities, grouping/fans/extraction/dissolution, cancellation, exact history states, manual/locked frames, explicit arrangement, old-file compatibility and rejected malformed references. SQLite tests reopen a database containing the new objects; offline library restoration includes piles and locked frames. The native desktop smoke exercises the real seeded deck and restarts after pile edits, in addition to manual-frame/lock undo/redo. It requires a display and the built Forge runtime; a DOM event test does not replace native visual verification.
+
+Rebuild/install after applying with `npm --prefix desktop run install:local`.

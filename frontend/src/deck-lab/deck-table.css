@@ -32,8 +32,8 @@ body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .header-actions 
 .dt-canvas { position:absolute;inset:0;overflow:hidden;background-color:#141518;background-image:radial-gradient(#35353b .8px,transparent .8px);touch-action:none;user-select:none;isolation:isolate; }
 .dt-canvas.is-pan { cursor:grab; }
 .dt-world { position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform; }
-.dt-cards,.dt-zones { position:absolute;left:0;top:0; }
-.dt-zones { z-index:0; }.dt-cards { z-index:1; }
+.dt-cards,.dt-zones,.dt-piles { position:absolute;left:0;top:0; }
+.dt-zones { z-index:2; }.dt-cards { z-index:1; }.dt-piles { z-index:3; }
 #deck-lab-view .dt-card { position:absolute;width:170px;height:238px;padding:0;border:0;border-radius:8px;background:#25262a;cursor:grab;box-shadow:0 5px 14px #0007;text-align:left;touch-action:none; }
 .dt-card img { width:100%;height:100%;object-fit:contain;border-radius:8px;pointer-events:none; }.dt-card.is-aside { outline:2px dashed #92929a; }
 #deck-lab-view .dt-card.is-selected { outline:4px solid #d4c29c;outline-offset:4px; }
@@ -49,6 +49,29 @@ body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .header-actions 
 .dt-zone.is-empty .dt-zone-empty { display:flex; }
 .dt-zone.is-drop-target { border-color:#ad9aff;background:#9981ee22;box-shadow:0 0 0 3px #ad9aff66,0 0 28px #9981ee20; }
 .dt-zone.is-drop-target header { background:#9981ee22; }.dt-zone.is-drop-target .dt-zone-empty { color:#d4c9ff; }
+.dt-zone.is-manual { border-style:dashed; }
+.dt-zone.is-locked { border-color:#c0ac7a88; }
+.dt-zone.is-locked header { cursor:default; }
+#deck-lab-view .dt-zone header { gap:4px; padding:6px 8px; }
+#deck-lab-view .dt-zone header input { font-size:16px; min-width:35px; }
+#deck-lab-view .dt-zone header button { font-size:13px; padding:3px; min-width:20px; }
+#deck-lab-view .dt-zone header button:disabled { opacity:.3; cursor:default; }
+#deck-lab-view .dt-zone-resize { position:absolute;right:-1px;bottom:-1px;width:25px;height:25px;padding:0;background:#232329;border:1px solid #64636e;color:#c8c4d1;pointer-events:auto;cursor:nwse-resize;touch-action:none;border-radius:0;font-size:18px; }
+#deck-lab-view .dt-zone-resize:disabled { opacity:.2;cursor:default; }
+.dt-pile { position:absolute;height:52px;padding:3px 6px;border:1px solid #8c7b5766;border-radius:5px 5px 0 0;background:#24221ef5;cursor:grab;touch-action:none;box-sizing:border-box; }
+.dt-pile-title { display:flex;gap:5px;align-items:center;height:22px; }
+.dt-pile-grip { color:#c5b58f; }
+#deck-lab-view .dt-pile-title input { min-width:0;width:0;flex:1;background:transparent;border:0;padding:0 2px;font:15px Georgia,serif; }
+.dt-pile-title>span:last-child { white-space:nowrap;color:#d5c5a4;font-size:12px;font-variant-numeric:tabular-nums; }
+.dt-pile-actions { display:flex;gap:5px;align-items:center;height:22px; }
+#deck-lab-view .dt-pile-actions button { font-size:10px;padding:2px 5px;background:transparent;border-color:#64583f; }
+.dt-new-pile { position:relative; }
+.dt-new-pile summary { cursor:pointer;border:1px solid var(--lab-border);padding:6px 9px;font-size:11px;list-style:none;white-space:nowrap; }
+.dt-pile-form { position:absolute;right:0;bottom:36px;width:230px;padding:14px;display:grid;gap:9px;background:#1a1b20;border:1px solid #64583f;box-shadow:0 8px 24px #0008; }
+.dt-pile-form label { font-size:12px; }
+#deck-lab-view .dt-selection select { width:150px;padding:5px;font-size:11px; }
+.dt-selection { max-width:calc(100vw - 280px);flex-wrap:wrap;justify-content:flex-end; }
+@media(max-width:800px) { .dt-tools { bottom:92px; }.dt-selection { max-width:calc(100vw - 32px); } }
 .dt-lasso { position:absolute;pointer-events:none;border:1px solid #d4c29c;background:#d4c29c22;z-index:3; }.dt-empty { position:absolute;left:24px;top:10px;color:var(--lab-muted);pointer-events:none; }
 .dt-panel { position:absolute;z-index:6;right:0;top:0;bottom:0;width:min(370px,90%);overflow:auto;background:#17181bf5;border-left:1px solid #494951;padding:18px;box-shadow:-12px 0 30px #0004; }
 .dt-panel header { display:flex;align-items:center;justify-content:space-between;margin-bottom:20px; }.dt-panel h3 { font:22px Georgia,serif; }.dt-panel h4 { margin:24px 0 10px;color:#bbb; }

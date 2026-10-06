@@ -53,3 +53,21 @@ test('API rejects invalid snapshots; legacy imports migrate without changing id 
     assert.throws(()=>parseBuilderProject({...p,groups:[...p.groups,p.groups[0]]}));
   } finally {await app.close();db.close();}
 });
+
+test('pile order, manual frames and locks persist across SQLite reopen without changing gameplay quantities',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'asphodel-piles-')),url=`file:${join(dir,'library.sqlite')}`;let db=await createDatabase(url);
+  try {
+    let service=new DeckService(db.db,new FakeCardProvider());const p=project();
+    p.groups[1]!.entries=[{id:'forest',card,quantity:37},{id:'draw',card:{...card,name:'Draw idea'},quantity:1}];
+    p.workspace.zones[0]!.sizing='manual';p.workspace.zones[0]!.locked=true;
+    p.workspace.cards=[{id:'forest',name:'Forest',category:'Ramp',section:'mainboard',x:750,y:500,z:3,zoneId:'zone'},{id:'draw',name:'Draw idea',category:'Ramp',section:'mainboard',x:792,y:500,z:4,zoneId:'zone'}];
+    p.workspace.piles=[{id:'pile',name:'Mana and draw',x:750,y:448,expanded:true,cardIds:['forest','draw']}];
+    const saved=await service.saveProject(p);assert.equal(saved.totalCards,38);assert.deepEqual(saved.project,p);
+    db.close();db=await createDatabase(url);service=new DeckService(db.db,new FakeCardProvider());
+    assert.deepEqual((await service.getDeck(saved.id)).project,p);
+    p.workspace.piles[0]!.expanded=false;p.workspace.zones[0]!.width=900;
+    await service.saveProject(p,saved.id);assert.deepEqual((await service.getDeck(saved.id)).project,p);
+    const bad=structuredClone(p);bad.workspace.piles![0]!.cardIds=['not-in-project'];
+    await assert.rejects(service.saveProject(bad,saved.id));assert.deepEqual((await service.getDeck(saved.id)).project,p);
+  } finally {db.close();await rm(dir,{recursive:true,force:true});}
+});

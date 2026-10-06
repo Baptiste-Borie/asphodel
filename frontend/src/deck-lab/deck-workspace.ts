@@ -1,6 +1,6 @@
 import type { Group, Sheet } from './deck-model';
 
-import type { ProjectPoint, ProjectPlacement, ProjectZone, ProjectWorkspace } from '../../../shared/builder-project.mjs';
+import { validWorkspaceExtras, type ProjectPoint, type ProjectPlacement, type ProjectZone, type ProjectWorkspace } from '../../../shared/builder-project.mjs';
 export type Point = ProjectPoint;
 export type Placement = ProjectPlacement;
 export type Zone = ProjectZone;
@@ -21,7 +21,7 @@ export function parseWorkspace(raw: string | null): Workspace {
     || !value.zones.every(z => z && typeof z.id === 'string' && typeof z.name === 'string' && finite(z.x) && finite(z.y) && finite(z.width) && finite(z.height) && z.width > 0 && z.height > 0)
     || (value.zonesInitialized !== undefined && typeof value.zonesInitialized !== 'boolean')
     || new Set(value.zones.map(z => z.id)).size !== value.zones.length
-    || new Set(value.cards.map(c => c.id)).size !== value.cards.length) throw new Error('Invalid workspace');
+    || new Set(value.cards.map(c => c.id)).size !== value.cards.length || !validWorkspaceExtras(value)) throw new Error('Invalid workspace');
   return value;
 }
 
@@ -39,7 +39,7 @@ export function reconcileWorkspace(sheet: Sheet, workspace: Workspace): Row[] {
     const match = [...available].find(p => !assigned.has(p.id) && p.name === row.entry.card.name && p.category === row.group.name && p.section === sectionOf(row.group));
     if (match) { matches.set(row, match); available.delete(match); }
   }
-  return pending.map(row => {
+  const rows = pending.map(row => {
     let placement = matches.get(row) ?? [...available].find(p => !assigned.has(p.id) && p.name === row.entry.card.name);
     if (placement) available.delete(placement);
     else {
@@ -51,6 +51,14 @@ export function reconcileWorkspace(sheet: Sheet, workspace: Workspace): Row[] {
     placement.section = sectionOf(row.group);
     return { ...row, placement };
   });
+  // V1 cuts/merges can remove entries. Keep remaining pile identities and positions;
+  // only remove dead references, never repack the surviving cards on a refresh.
+  if (workspace.piles) {
+    const active = new Set(rows.map(r => r.placement.id));
+    for (const pile of workspace.piles) pile.cardIds = pile.cardIds.filter(id => active.has(id));
+    workspace.piles = workspace.piles.filter(pile => pile.cardIds.length > 0);
+  }
+  return rows;
 }
 
 /** Exclusion is a deck command, never a geometric test. Preserve quantities and commander role. */
@@ -88,6 +96,7 @@ export function zoomAt(camera: Workspace['camera'], anchor: Point, zoom: number)
 
 export const CARD_WIDTH = 170;
 export const CARD_HEIGHT = 238;
+export const PILE_HEADER = 52;
 export const ZONE_MIN_WIDTH = 250;
 export const ZONE_MIN_HEIGHT = 314;
 const ZONE_PADDING = 24;
@@ -100,14 +109,16 @@ export function createZone(name: string, point: Point): Zone {
 /** Bounds describe only the spatial members. They never pack, snap or move a card. */
 export function fitZones(workspace: Workspace, rows: Row[]) {
   for (const zone of workspace.zones) {
+    if (zone.locked || zone.sizing === 'manual') continue;
     const members = rows.filter(row => row.placement.zoneId === zone.id).map(row => row.placement);
     if (!members.length) {
       zone.width = ZONE_MIN_WIDTH;
       zone.height = ZONE_MIN_HEIGHT;
       continue;
     }
-    zone.x = Math.min(...members.map(p => p.x)) - ZONE_PADDING;
-    zone.y = Math.min(...members.map(p => p.y)) - ZONE_HEADER;
+    const piles = (workspace.piles ?? []).filter(p => p.cardIds.some(id => members.some(c => c.id === id)));
+    zone.x = Math.min(...members.map(p => p.x), ...piles.map(p => p.x)) - ZONE_PADDING;
+    zone.y = Math.min(...members.map(p => p.y), ...piles.map(p => p.y)) - ZONE_HEADER;
     zone.width = Math.max(ZONE_MIN_WIDTH, Math.max(...members.map(p => p.x + CARD_WIDTH)) - zone.x + ZONE_PADDING);
     zone.height = Math.max(ZONE_MIN_HEIGHT, Math.max(...members.map(p => p.y + CARD_HEIGHT)) - zone.y + ZONE_PADDING);
   }

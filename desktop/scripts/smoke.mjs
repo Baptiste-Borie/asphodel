@@ -74,6 +74,16 @@ try {
   assert.equal(await page.locator(`[data-dt-zone="${zoneId}"]`).count(), 0);
   await page.getByRole('button', { name: 'Rétablir', exact: true }).click();
   assert.equal(await page.locator(`[data-dt-zone="${zoneId}"]`).count(), 1);
+  await page.locator(`[data-resize-zone="${zoneId}"]`).press('ArrowRight');
+  assert.equal(await page.locator(`[data-dt-zone="${zoneId}"]`).evaluate(el => el.style.width), '260px');
+  await page.locator(`[data-zone-action="lock"][data-zone="${zoneId}"]`).click();
+  assert.equal(await page.locator(`[data-resize-zone="${zoneId}"]`).isDisabled(), true);
+  await page.locator('.dt-canvas').press('Control+z');
+  assert.equal(await page.locator(`[data-resize-zone="${zoneId}"]`).isDisabled(), false);
+  await page.locator('.dt-canvas').press('Control+z');
+  assert.equal(await page.locator(`[data-dt-zone="${zoneId}"]`).evaluate(el => el.style.width), '250px');
+  await page.locator('.dt-canvas').press('Control+y');
+  await page.locator('.dt-canvas').press('Control+y');
   const expectedProject = await page.evaluate(() => {
     document.querySelector('.dt-canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 120, clientX: 400, clientY: 300, bubbles: true, cancelable: true }));
     const key = Object.keys(localStorage).find(key => key.startsWith('asphodel.builder-draft.v1.'));
@@ -150,6 +160,41 @@ try {
   assert.match(await page.getByLabel('Liste du deck à exporter', { exact: true }).inputValue(), /^Commander\n/);
   assert.equal(await page.locator('[data-export-candidates]').isChecked(), false);
   await page.getByRole('button', { name: 'Fermer l’export', exact: true }).click();
+  // Real seeded cards exercise pile rendering, pointer capture and persisted state.
+  await page.getByRole('button', { name: 'Back to all decks', exact: true }).click();
+  await page.locator(`[data-open-deck="saved:${id}"]`).click();
+  await page.getByRole('button', { name: 'Table V2', exact: true }).click();
+  await page.locator('.lab-table [data-save-status][data-status=saved]').waitFor();
+  const beforePile = await page.evaluate(async id => (await (await fetch(`/decks/${id}`)).json()), id);
+  await page.locator('.dt-canvas').press('Control+a');
+  await page.locator('.dt-new-pile summary').click();
+  await page.getByLabel('Nom de la pile', { exact: true }).fill('Commander laboratory');
+  await page.getByLabel('Nom de la pile', { exact: true }).press('Enter');
+  const pileId = await page.locator('[data-dt-pile]').getAttribute('data-dt-pile');
+  assert.ok(pileId);
+  await page.locator('[data-pile-action=toggle]').click();
+  assert.equal(await page.locator('[data-dt-card]:not([hidden])').count(), beforePile.project.groups.flatMap(g => g.entries).length);
+  await page.locator('.dt-canvas').press('Control+z');
+  await page.locator('[data-dt=fit]').click();
+  const card = page.locator('[data-dt-card]:not([hidden])').last();
+  const entryId = await card.getAttribute('data-dt-card');
+  const originalLeft = await card.evaluate(el => el.style.left);
+  const box = await card.boundingBox();
+  assert.ok(box);
+  await page.mouse.move(box.x + box.width/2, box.y + box.height/2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width/2 + 40, box.y + box.height/2 + 25, { steps: 8 });
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  assert.equal(await page.locator(`[data-dt-card="${entryId}"]`).evaluate(el => el.style.left), originalLeft);
+  await page.locator('.lab-table [data-save-status][data-status=saved]').waitFor();
+  const afterPile = await page.evaluate(async id => (await (await fetch(`/decks/${id}`)).json()), id);
+  assert.equal(afterPile.totalCards, beforePile.totalCards);
+  assert.deepEqual(afterPile.project.groups, beforePile.project.groups);
+  assert.equal(afterPile.project.workspace.piles[0].id, pileId);
+  await electron.close(); electron = undefined;
+  page = await launch();
+  assert.deepEqual(await page.evaluate(async id => (await (await fetch(`/decks/${id}`)).json()).project, id), afterPile.project);
   // Block renderer internet: fixture gameplay still uses the real local Java engine.
   await page.route(/^https?:\/\//, route => route.abort());
   const started = await page.evaluate(async () => {
@@ -167,7 +212,7 @@ try {
   assert.deepEqual(errors, []);
   // Closing mid-game exercises the shutdown hook, rather than only an idle quit.
   await electron.close(); electron = undefined;
-  console.log('Desktop smoke passed: startup, artwork decode/offline restart, real local game, persistent decks/localStorage, shared builder undo/redo and zone identities, immediate builder close, unified empty table, recovery and active-game shutdown.');
+  console.log('Desktop smoke passed: startup, offline artwork, local game, shared undo/redo, native pile/cancellation/restart, manual locked zones, immediate close, backups/recovery and active-game shutdown.');
 } finally {
   if (electron) await electron.close();
   await rm(userData, { recursive: true, force: true });
