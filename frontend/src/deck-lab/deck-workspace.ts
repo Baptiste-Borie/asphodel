@@ -1,4 +1,5 @@
 import type { Group, Sheet } from './deck-model';
+import { reconcileNotes } from './deck-notes';
 
 import { validWorkspaceExtras, type ProjectPoint, type ProjectPlacement, type ProjectZone, type ProjectWorkspace } from '../../../shared/builder-project.mjs';
 export type Point = ProjectPoint;
@@ -53,8 +54,9 @@ export function reconcileWorkspace(sheet: Sheet, workspace: Workspace): Row[] {
   });
   // V1 cuts/merges can remove entries. Keep remaining pile identities and positions;
   // only remove dead references, never repack the surviving cards on a refresh.
+  const active = new Set(rows.map(r => r.placement.id));
+  reconcileNotes(workspace, active);
   if (workspace.piles) {
-    const active = new Set(rows.map(r => r.placement.id));
     for (const pile of workspace.piles) pile.cardIds = pile.cardIds.filter(id => active.has(id));
     workspace.piles = workspace.piles.filter(pile => pile.cardIds.length > 0);
   }

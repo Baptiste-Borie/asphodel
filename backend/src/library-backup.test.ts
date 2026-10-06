@@ -12,7 +12,7 @@ import { parseLibraryBackup, type LibrarySnapshot } from '../../shared/library-b
 import type { BuilderProject } from '../../shared/builder-project.mjs';
 import type { PlaytestSessionManager } from './human/playtest-session-manager.js';
 
-const card = { name:'Forest',type_line:'Basic Land',cmc:0,mana_cost:null,oracle_text:null,power:null,toughness:null,loyalty:null,set:'tla',set_name:'Avatar',collector_number:'123',rarity:'common',lang:'en',color_identity:['G'],image:'https://cards.scryfall.io/selected.png',related:[] };
+const card = { name:'Forest',type_line:'Basic Land',cmc:0,mana_cost:null,oracle_text:null,power:null,toughness:null,loyalty:null,set:'tla',set_name:'Avatar',collector_number:'123',rarity:'common',lang:'en',faces:[{name:'Front',image:'https://cards.scryfall.io/selected.png'},{name:'Back',image:'https://cards.scryfall.io/selected-back.png'}],color_identity:['G'],image:'https://cards.scryfall.io/selected.png',related:[] };
 const project = (): BuilderProject => ({ version:1,projectId:'portable-project',name:'Portable table',groups:[
   {id:'commanders',name:'Commander',commander:true,entries:[{id:'commander-one',card:{...card,name:'Aang'},quantity:1},{id:'commander-two',card:{...card,name:'Appa'},quantity:1}]},
   {id:'lands',name:'Lands',entries:[{id:'forest',card,quantity:37}]},
@@ -20,7 +20,7 @@ const project = (): BuilderProject => ({ version:1,projectId:'portable-project',
   {id:'candidates',name:'Candidates',maybeboard:true,entries:[{id:'idea',card:{...card,name:'Idea'},quantity:2}]},
 ],cuts:[{...card,name:'Discarded idea'}],workspace:{version:1,zonesInitialized:true,cards:[
   {id:'forest',name:'Forest',category:'Lands',section:'mainboard',x:-340,y:1280,z:9,zoneId:'zone'},
-],zones:[{id:'zone',name:'Plan for Aang',x:-500,y:800,width:1000,height:900,sizing:'manual',locked:true}],piles:[{id:'mana-pile',name:'Mana to test',x:-340,y:1228,expanded:false,cardIds:['forest']}],camera:{x:270,y:-110,zoom:.27}} });
+],zones:[{id:'zone',name:'Plan for Aang',x:-500,y:800,width:1000,height:900,sizing:'manual',locked:true}],piles:[{id:'mana-pile',name:'Mana to test',x:-340,y:1228,expanded:false,cardIds:['forest']}],notes:[{id:'free-note',text:'Protection for Aang',color:'lavender',x:-800,y:600},{id:'linked-note',text:'Selected art kept offline',color:'sage',x:190,y:20,cardId:'forest'}],camera:{x:270,y:-110,zoom:.27}} });
 function comparable(snapshot: LibrarySnapshot) {
   const names = new Map(snapshot.cards.map(c=>[c.id,c.normalizedName]));
   return {...snapshot,cards:snapshot.cards.map(({id,...c})=>c).sort((a,b)=>a.name.localeCompare(b.name)),

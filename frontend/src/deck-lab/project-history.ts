@@ -62,6 +62,7 @@ export class ProjectHistory {
     // A missing optional flag in an older snapshot must not leak from a later state.
     if (p.workspace.zonesInitialized === undefined) delete w.zonesInitialized;
     if (p.workspace.piles === undefined) delete w.piles;
+    if (p.workspace.notes === undefined) delete w.notes;
   }
   get state(): HistoryState {
     return { canUndo: !this.pending && this.past.length > 0, canRedo: !this.pending && this.future.length > 0,

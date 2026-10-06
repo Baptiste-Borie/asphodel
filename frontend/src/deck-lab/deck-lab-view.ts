@@ -8,6 +8,8 @@ import { initFilterCombobox } from './filter-combobox';
 import './deck-lab.css';
 import { deckStatistics, type Group, type Sheet } from './deck-model';
 import { mountDeckTable } from './deck-table-view';
+import { mountCardInspector, enrichInspection, type InspectionActions } from './card-inspector';
+import { reconcileWorkspace, setRowMembership } from './deck-workspace';
 import type { BuilderProject } from '../../../shared/builder-project.mjs';
 import { loadDrafts, ProjectPersistence, sheetFromProject } from './project-persistence';
 
@@ -149,7 +151,7 @@ export function initDeckLabView(root: HTMLElement) {
     <section class="lab-builder" hidden></section>
     <section class="lab-table" hidden></section>
     <dialog class="lab-drawer" aria-labelledby="lab-selection-title"><div class="lab-drawer-head"><div><p class="lab-eyebrow">YOUR WORKING POOL</p><h2 id="lab-selection-title">Selection <span data-count>0</span></h2></div><button data-action="close" aria-label="Close selection">✕</button></div><p class="lab-muted">Collected ideas, independent of any deck.</p><div class="lab-pool"></div><form class="lab-transfer"><label>New deck name<input name="deckName" placeholder="Untitled exploration" /></label><button class="lab-primary" type="submit">Create a new deck from these cards</button><div class="lab-or">or add to a deck sheet</div><select aria-label="Choose destination deck"><option value="">Choose a deck explicitly…</option></select><button type="button" data-action="transfer">Add Selection to chosen deck</button><small>Cards stay in Selection until you remove them.</small></form></dialog>
-    <dialog class="lab-inspect"><button data-action="close-inspect" aria-label="Close card inspection">✕</button><div></div></dialog>
+    <dialog class="lab-inspect" aria-labelledby="lab-inspection-title"><button data-action="close-inspect" aria-label="Close card inspection">✕</button><div></div></dialog>
     <dialog class="lab-triage" aria-labelledby="lab-triage-title"><div class="lab-triage-head"><div><p class="lab-eyebrow" data-triage-category></p><h2 id="lab-triage-title">How interesting is this card?</h2></div><button data-action="triage-cancel" aria-label="Close sorting">✕</button></div><div class="lab-triage-body"></div></dialog>
     <p class="lab-toast" role="status" hidden></p>`;
   const exportDialog = document.createElement('dialog');
@@ -196,6 +198,9 @@ export function initDeckLabView(root: HTMLElement) {
   const get = <T extends HTMLElement>(s: string) => root.querySelector<T>(s)!;
   const drawer = get<HTMLDialogElement>('.lab-drawer');
   const inspect = get<HTMLDialogElement>('.lab-inspect');
+  let inspection: ReturnType<typeof mountCardInspector> | undefined;
+  let inspectionAbort: AbortController | undefined;
+  inspect.addEventListener('close', () => { inspection?.dispose(); inspection = undefined; inspectionAbort?.abort(); });
   const triageDialog = get<HTMLDialogElement>('.lab-triage');
   function toast(message: string) { const el = get('.lab-toast'); el.textContent = message; el.hidden = false; setTimeout(() => el.hidden = true, 3200); }
   let journalStorage: globalThis.Storage;
@@ -455,7 +460,7 @@ export function initDeckLabView(root: HTMLElement) {
     table = mountDeckTable(get('.lab-table'), sheet, {
       history: historyFor(sheet),
       changed: () => scheduleAutoSave(sheet),
-      inspect: card => { knownCards.set(card.name, card); openInspect(card.name); },
+      inspect: (card, entryId) => { knownCards.set(card.name, card); openInspect(card.name, entryId); },
       legacy: () => switchView('builder'),
       library: () => { active = undefined; switchView('builder'); },
     });
@@ -541,30 +546,36 @@ export function initDeckLabView(root: HTMLElement) {
     try { historyFor(sheet).sync(); persistence.changed(sheet); if (active === sheet) { setSaveStatus(persistence.status(sheet)); updateHistoryControls(); } }
     catch (error) { setSaveStatus('error'); toast(error instanceof Error ? error.message : 'Projet non enregistré.'); }
   }
-  /** Opens the inspect dialog immediately with whatever card data is on hand, then — for a card whose
-   *  name shows it's double-faced ("Front // Back") but that arrived from a saved deck (see
-   *  deckCardToLabCard, which never gets back-face art from the backend) — quietly fetches the full
-   *  local-catalog entry so the flip button appears, same as it already does for Search results. */
-  function openInspect(name: string) {
-    const c = knownCards.get(name);
+  /** Render saved metadata immediately; local catalog enrichment is optional and read-only. */
+  function openInspect(name: string, entryId?: string) {
+    table?.checkpoint();
+    const sheet = active;
+    const first = sheet?.groups.flatMap(g => g.entries).find(e => entryId ? e.id === entryId : e.card.name === name);
+    const c = first?.card ?? knownCards.get(name);
     if (!c) return;
-    const stage = get('.lab-inspect div');
-    stage.dataset.inspecting = name;
-    stage.innerHTML = cardStage(c);
-    inspect.showModal();
-    if (c.faces || !c.name.includes(' // ')) return;
+    const id = first?.id;
+    const find = () => sheet?.groups.flatMap(group => group.entries.map(entry => ({group,entry}))).find(r => r.entry.id === id);
+    const actions: InspectionActions | undefined = sheet && id ? {
+      state: () => { const row = find(); return { quantity: row?.entry.quantity ?? 1, included: !row?.group.maybeboard }; },
+      quantity: value => { if (active === sheet) editSheet('Modifier une quantité', () => { const row=find(); if(row)row.entry.quantity=value; }); },
+      membership: included => { if (active === sheet) editSheet(included ? 'Inclure une carte dans le deck' : 'Mettre une carte de côté', () => {
+        const row = reconcileWorkspace(sheet,sheet.workspace!).find(r => r.entry.id === id); if(row)setRowMembership(sheet,row,included);
+      }); },
+      printing: card => { if (active === sheet) editSheet('Changer l’illustration d’une carte', () => { const row=find(); if(row)row.entry.card=structuredClone(card); }); },
+      note: () => { if(active !== sheet)return; inspect.close(); switchView('table'); table?.addNote(id); },
+    } : undefined;
+    inspectionAbort?.abort(); inspection?.dispose();
+    const instance = inspection = mountCardInspector(get('.lab-inspect > div'),c,actions);
+    if (!inspect.open) inspect.showModal();
+    if (c.otherPrintings !== undefined && (c.faces || !c.name.includes(' // '))) return;
+    const controller = inspectionAbort = new AbortController();
     void apiRequest<LabSearchResult>('/cards/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ raw: `name:"${c.name.replace(/"/g, '')}"`, limit: 3 }),
-    })
-      .then(data => {
-        const full = data.cards.find(card => card.name === c.name && card.faces && card.faces.length >= 2);
-        if (!full) return;
-        knownCards.set(full.name, full);
-        if (stage.dataset.inspecting === name) stage.innerHTML = cardStage(full);
-      })
-      .catch(() => { /* best-effort enrichment only — the single-face view already rendered */ });
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({raw:`name:"${c.name.replace(/"/g,'')}"`,limit:24}),signal:controller.signal,
+    }).then(data => {
+      const full = data.cards.find(card => card.name === c.name);
+      if (full && !controller.signal.aborted && inspection === instance && inspect.open) instance.update(enrichInspection(c,full));
+    }).catch(() => { /* The saved text and illustration remain available without a catalog. */ });
   }
 /** One category, one card at a time: rate it into one of the four TRIAGE_CATEGORIES. */
   function startTriage(gi: number) {

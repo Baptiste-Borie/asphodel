@@ -71,3 +71,18 @@ test('pile order, manual frames and locks persist across SQLite reopen without c
     await assert.rejects(service.saveProject(bad,saved.id));assert.deepEqual((await service.getDeck(saved.id)).project,p);
   } finally {db.close();await rm(dir,{recursive:true,force:true});}
 });
+
+test('linked/free notes and chosen double-sided art survive SQLite reopen; invalid notes leave saved state intact',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'asphodel-notes-')),url=`file:${join(dir,'library.sqlite')}`;let db=await createDatabase(url);
+  try {
+    let service=new DeckService(db.db,new FakeCardProvider());const p=project();
+    const chosen={...card,set:'tla',set_name:'Avatar',collector_number:'42',lang:'fr',image:'https://cards.scryfall.io/front.jpg',faces:[{name:'Front',image:'https://cards.scryfall.io/front.jpg'},{name:'Back',image:'https://cards.scryfall.io/back.jpg'}]};
+    p.groups[1]!.entries=[{id:'forest',card:chosen,quantity:37}];p.workspace.cards=[{id:'forest',name:'Forest',category:'Ramp',section:'mainboard',x:700,y:-30,z:1}];
+    p.workspace.notes=[{id:'free-note',text:'Find protection',color:'sand',x:-100,y:300},{id:'linked-note',text:'Try next\nKeep the selected art',color:'sage',x:190,y:0,cardId:'forest'}];
+    const saved=await service.saveProject(p);assert.equal(saved.totalCards,37);
+    db.close();db=await createDatabase(url);service=new DeckService(db.db,new FakeCardProvider());assert.deepEqual((await service.getDeck(saved.id)).project,p);
+    for(const mutate of [(x:BuilderProject)=>{x.workspace.notes![1]!.cardId='missing';},(x:BuilderProject)=>{x.workspace.notes![0]!.text='x'.repeat(4001);}]){
+      const bad=structuredClone(p);mutate(bad);await assert.rejects(service.saveProject(bad,saved.id));assert.deepEqual((await service.getDeck(saved.id)).project,p);
+    }
+  } finally {db.close();await rm(dir,{recursive:true,force:true});}
+});

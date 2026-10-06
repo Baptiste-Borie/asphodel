@@ -4,7 +4,8 @@ export type ProjectPoint = { x: number; y: number };
 export type ProjectPlacement = ProjectPoint & { id: string; name: string; category: string; section: string; z: number; zoneId?: string; origin?: { category: string; commander: boolean; groupId?: string }; cut?: boolean };
 export type ProjectZone = ProjectPoint & { id: string; name: string; width: number; height: number; sizing?: 'auto' | 'manual'; locked?: boolean };
 export type ProjectPile = ProjectPoint & { id: string; name: string; expanded: boolean; cardIds: string[] };
-export type ProjectWorkspace = { version: 1; zonesInitialized?: boolean; cards: ProjectPlacement[]; zones: ProjectZone[]; piles?: ProjectPile[]; camera: ProjectPoint & { zoom: number } };
+export type ProjectNote = ProjectPoint & { id: string; text: string; color: 'sand' | 'sage' | 'lavender'; cardId?: string };
+export type ProjectWorkspace = { version: 1; zonesInitialized?: boolean; cards: ProjectPlacement[]; zones: ProjectZone[]; piles?: ProjectPile[]; notes?: ProjectNote[]; camera: ProjectPoint & { zoom: number } };
 export type ProjectGroup = { id?: string; name: string; entries: { id?: string; card: LabCard; quantity: number }[]; commander?: boolean; maybeboard?: boolean };
 export type BuilderProject = { version: 1; projectId: string; name: string; groups: ProjectGroup[]; cuts: LabCard[]; workspace: ProjectWorkspace };
 const text = (v: unknown, max = 200): v is string => typeof v === 'string' && v.length <= max;
@@ -13,6 +14,10 @@ const identifier = (v: unknown): v is string => text(v, 100) && /^[a-zA-Z0-9_-]+
 /** Additive workspace fields: old projects stay readable without rearranging cards. */
 export function validWorkspaceExtras(w: ProjectWorkspace): boolean {
   if (!w.zones.every(z => (z.sizing === undefined || ['auto','manual'].includes(z.sizing)) && (z.locked === undefined || typeof z.locked === 'boolean'))) return false;
+  if (w.notes !== undefined && (!Array.isArray(w.notes) || w.notes.length > 500
+    || !w.notes.every(n => n && identifier(n.id) && text(n.text,4000) && finite(n.x) && finite(n.y)
+      && ['sand','sage','lavender'].includes(n.color) && (n.cardId === undefined || (identifier(n.cardId) && w.cards.some(c => c.id === n.cardId))))
+    || new Set(w.notes.map(n => n.id)).size !== w.notes.length)) return false;
   if (w.piles === undefined) return true;
   if (!Array.isArray(w.piles) || w.piles.length > 1000) return false;
   const placements = new Set(w.cards.map(c => c.id));
@@ -24,11 +29,15 @@ export function validWorkspaceExtras(w: ProjectWorkspace): boolean {
   }
   return new Set(w.piles.map(p => p.id)).size === w.piles.length;
 }
+const faces = (v: any): boolean => v === undefined || (Array.isArray(v) && v.length <= 16 && v.every(f => f && text(f.name) && text(f.image,4000)));
+const printing = (v: any): boolean => v && ['set_name','set','collector_number','rarity','lang'].every(k => text(v[k],1000)) && text(v.image,4000) && faces(v.faces);
 const card = (v: any): boolean => v && text(v.name) && !!v.name.trim() && text(v.type_line, 1000) && finite(v.cmc)
   && text(v.image, 4000) && Array.isArray(v.color_identity) && v.color_identity.every((s: unknown) => text(s, 10))
   && Array.isArray(v.related) && v.related.every((s: unknown) => text(s))
   && ['mana_cost', 'oracle_text', 'power', 'toughness', 'loyalty'].every(k => v[k] === null || text(v[k], 20000))
-  && ['set_name', 'set', 'collector_number', 'rarity', 'lang'].every(k => text(v[k], 1000));
+  && ['set_name', 'set', 'collector_number', 'rarity', 'lang'].every(k => text(v[k], 1000)) && faces(v.faces)
+  && (v.otherPrintings === undefined || (Array.isArray(v.otherPrintings) && v.otherPrintings.length <= 64 && v.otherPrintings.every(printing)))
+  && (v.commander_legal === undefined || text(v.commander_legal,100));
 
 /** Validate both API snapshots and recovery journals before rendering or updating SQLite. */
 export function parseBuilderProject(value: unknown): BuilderProject {
@@ -49,6 +58,7 @@ export function parseBuilderProject(value: unknown): BuilderProject {
     || !w.zones.every(z => z && identifier(z.id) && text(z.name, 60) && finite(z.x) && finite(z.y) && finite(z.width) && finite(z.height) && z.width > 0 && z.height > 0)
     || (w.zonesInitialized !== undefined && typeof w.zonesInitialized !== 'boolean') || !validWorkspaceExtras(w)) throw new Error('Projet de construction invalide.');
   const entries = new Set(p.groups.flatMap(g => g.entries.map(e => e.id)));
+  if (w.notes?.some(note => note.cardId !== undefined && !entries.has(note.cardId))) throw new Error('Une note référence une carte absente de la table.');
   if (w.piles?.some(pile => pile.cardIds.some(id => !entries.has(id)))) throw new Error('Une pile référence une carte absente de la table.');
   for (const ids of [p.groups.map(g => g.id), p.groups.flatMap(g => g.entries.map(e => e.id)), w.cards.map(c => c.id), w.zones.map(z => z.id)]) {
     if (new Set(ids).size !== ids.length) throw new Error('Identifiants de projet dupliqués.');

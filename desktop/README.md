@@ -1,4 +1,4 @@
-# Asphodel Desktop 0.1.6
+# Asphodel Desktop 0.1.7
 
 Desktop wrapper around the existing TypeScript/Vite frontend, Node backend and pinned Forge bridge. No stack migration. Launch Asphodel, choose a saved deck, play locally, close the application. The packaged app includes Chromium/Node, Java and Forge's resources; no terminal, Node installation, Java installation or remote server is needed to run it.
 
@@ -10,17 +10,17 @@ Close Asphodel, then from the repository root:
 npm --prefix desktop run install:local
 ```
 
-This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.6-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
+This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.7-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
 
 Afterwards, open **Asphodel** from Ubuntu's application menu and pin it to your dock if desired. The package installs the app in `/opt/Asphodel`, the desktop entry `Asphodel.desktop`, the existing icon and the `asphodel` command. This launch uses the installed app, independent of the checkout, and needs no local server command. The normal desktop settings, fullscreen preference and Quitter button remain available.
 
 To update after a new patch/pull, close Asphodel and run the same command again. Decks, cached images, drafts and display settings remain in the existing `~/.config/Asphodel` profile; the package contains no home-directory files. Package removal (`sudo apt-get remove asphodel-desktop`) leaves this profile in place. Backup/restore is available in settings; abrupt-crash recovery still depends on a persisted draft.
 
-To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.6-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
+To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.7-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
 
 ## Automated Linux packages
 
-The Desktop workflow now runs for relevant changes on `main`, matching pull requests, manual dispatch, and `v*` tags. A release tag must equal the desktop version (for example `v0.1.6`); both package files must agree. A newer run on the same ref cancels an obsolete build.
+The Desktop workflow now runs for relevant changes on `main`, matching pull requests, manual dispatch, and `v*` tags. A release tag must equal the desktop version (for example `v0.1.7`); both package files must agree. A newer run on the same ref cancels an obsolete build.
 
 CI runs the existing desktop/window/artwork/runtime checks, builds versioned AppImage and Debian packages, and checks that the `.deb` contains the launcher, icon, frontend, backend dependencies, seed library, Java and Forge. Successful packages appear in the workflow's **Artifacts**, under `Asphodel-Desktop-Linux-<commit>`. Building does not automatically publish a release or install an updater.
 
@@ -150,3 +150,13 @@ Piles are optional additive fields in the existing version-1 project JSON; zone 
 Validation covers a 200-entry table, mixed included/candidate quantities, grouping/fans/extraction/dissolution, cancellation, exact history states, manual/locked frames, explicit arrangement, old-file compatibility and rejected malformed references. SQLite tests reopen a database containing the new objects; offline library restoration includes piles and locked frames. The native desktop smoke exercises the real seeded deck and restarts after pile edits, in addition to manual-frame/lock undo/redo. It requires a display and the built Forge runtime; a DOM event test does not replace native visual verification.
 
 Rebuild/install after applying with `npm --prefix desktop run install:local`.
+
+## Table notes and full inspection (patch 07)
+
+**+ Note** creates a free annotation at the center of the view. Creating a note centers it at a readable zoom, so typing remains usable on a distant overview. Select one card and choose **+ Note liée**, or add a note from its inspector, to attach an annotation to its stable entry id. Linked coordinates are offsets: notes follow their card during card, pile and zone moves. Drag a note by its header to adjust the offset, choose Sable/Sauge/Lavande, detach it without changing its visible position, or delete it. If V1 cuts/removes the entry, its note becomes a free annotation at the same position. Undo restores the original link.
+
+Text is journalled on every input; one editing session creates one history action. Escape while typing cancels that session, and Escape during a drag cancels the gesture. Closing or switching views checkpoints the latest text before the normal save handshake. Notes are additive fields in the existing version-1 workspace; old projects, SQLite snapshots, recovery journals and full library backups use the same path. Up to 500 notes of 4000 characters are allowed per project.
+
+Inspect a selected card with **Inspecter**, **I**, or double click. Both V1 and V2 share the full inspector: saved Oracle text, mana value, type, colors, power/toughness or loyalty when available, printing identity and related cards. Missing artwork retains a textual presentation. Saved double-faced artwork can be flipped without a catalog; missing faces and alternative printings are enriched from the local catalog when available, preserving the saved illustration.
+
+Changing the edition selector is a read-only preview. **Conserver cette illustration** saves the complete printing identity (set, collector number, language, rarity, image and both faces), with undo/redo and restart persistence. Quantity, include/set-aside and linked-note actions are also accessible in the inspector. Inspection/enrichment alone never modifies the deck. The available editions depend on the installed catalog, and no live rules update or external card database is required to inspect saved data.

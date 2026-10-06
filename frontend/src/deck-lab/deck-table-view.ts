@@ -4,10 +4,11 @@ import type { ProjectHistory } from './project-history';
 import { deckStatistics, type Sheet } from './deck-model';
 import { assignZone, createZone, fitZones, initializeZones, zoneAt, emptyWorkspace, reconcileWorkspace, screenToWorld, setRowMembership, zoomAt, type Point, type Row, type Workspace, type Zone } from './deck-workspace';
 import { addToPile, arrangePile, arrangeZone, createPile, detachPileCards, dissolvePile, pileBounds, pileFor, pileRows, resizeZone, visibleInPile } from './deck-piles';
+import { createNote, detachNote, notePosition, NOTE_WIDTH, NOTE_HEIGHT } from './deck-notes';
 import './deck-table.css';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-type Options = { history: ProjectHistory; changed: () => void; inspect: (card: LabCard) => void; legacy: () => void; library: () => void };
+type Options = { history: ProjectHistory; changed: () => void; inspect: (card: LabCard, entryId: string) => void; legacy: () => void; library: () => void };
 
 /** DOM rendering and pointer gestures stay outside deck business logic. */
 export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options) {
@@ -19,20 +20,21 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
   const selected = new Set<string>();
   const abort = new AbortController();
   let searchAbort: AbortController | undefined;
+  let noteEditing: string | undefined;
   let results: LabCard[] = [];
   let space = false;
   let disposed = false;
-  let gesture: { pointer: number; start: Point; camera: Point; positions: { point: Point; x: number; y: number }[]; pan: boolean; lasso: boolean; additive: boolean; cards: boolean; moved: boolean; last: Point; selection: string[]; raised: boolean; pile?: string; resize?: { zone: Zone; width: number; height: number } } | undefined;
+  let gesture: { pointer: number; start: Point; camera: Point; positions: { point: Point; x: number; y: number }[]; pan: boolean; lasso: boolean; additive: boolean; cards: boolean; moved: boolean; last: Point; selection: string[]; raised: boolean; note?: string; pile?: string; resize?: { zone: Zone; width: number; height: number } } | undefined;
   root.innerHTML = `<div class="dt-heading"><h2 title="${esc(sheet.name)}">${esc(sheet.name)}</h2><span data-dt-count></span>
     <details class="dt-create"><summary>+ Zone</summary><form class="dt-zone-form"><label for="dt-zone-name">Nouvelle zone</label><input id="dt-zone-name" aria-label="New zone name" placeholder="Ramp, Draw, À tester…" maxlength="60" required><button>Create zone</button><small>Le contour s’adapte aux cartes déposées.</small></form></details>
-    <div class="dt-history"><button type="button" data-history="undo" aria-label="Annuler">↶</button><button type="button" data-history="redo" aria-label="Rétablir">↷</button></div>
+    <button data-dt="note">+ Note</button><div class="dt-history"><button type="button" data-history="undo" aria-label="Annuler">↶</button><button type="button" data-history="redo" aria-label="Rétablir">↷</button></div>
     <button data-dt="search" aria-expanded="false">Search</button><button data-dt="analysis" aria-expanded="false">Analyse</button>
-    <details class="dt-menu"><summary aria-label="Table tools">•••</summary><div class="dt-menu-content"><button data-action="export-deck">Exporter le deck</button><button data-dt="library">Tous les decks</button><button data-dt="legacy">Builder V1</button><button data-action="selection">Selection</button><button data-dt="deck">Center deck</button><button data-dt="pan" aria-pressed="false">Pan tool</button><p>Ctrl / Espace + glisser : déplacer la vue<br>Shift + clic : sélectionner plusieurs cartes<br>Créer une pile depuis la sélection<br>Glisser une carte hors d’une pile : l’extraire<br>Poignée ↘ : redimensionner une zone<br>Verrouiller une zone fixe son cadre, pas ses cartes<br>Glisser sur le vide : sélectionner une zone<br>Échap : annuler le geste en cours<br>Ctrl+Z : annuler · Ctrl+Maj+Z / Ctrl+Y : rétablir<br>Molette : zoom · F : tout voir<br>Double clic : inspecter une carte</p></div></details></div>
-    <div class="dt-body"><div class="dt-canvas" tabindex="0" aria-label="Deck table. Drag cards to move. Shift click to select several. Control or Space drag to pan. Wheel to zoom."><div class="dt-world"><div class="dt-zones"></div><div class="dt-cards"></div><div class="dt-piles"></div></div><div class="dt-lasso" hidden></div><p class="dt-empty" hidden>Room to think. Search for cards and place your first ideas.</p></div>
+    <details class="dt-menu"><summary aria-label="Table tools">•••</summary><div class="dt-menu-content"><button data-action="export-deck">Exporter le deck</button><button data-dt="library">Tous les decks</button><button data-dt="legacy">Builder V1</button><button data-action="selection">Selection</button><button data-dt="deck">Center deck</button><button data-dt="pan" aria-pressed="false">Pan tool</button><p>Ctrl / Espace + glisser : déplacer la vue<br>Shift + clic : sélectionner plusieurs cartes<br>Créer une pile depuis la sélection<br>Glisser une carte hors d’une pile : l’extraire<br>Poignée ↘ : redimensionner une zone<br>Verrouiller une zone fixe son cadre, pas ses cartes<br>Glisser sur le vide : sélectionner une zone<br>Échap : annuler le geste en cours<br>Ctrl+Z : annuler · Ctrl+Maj+Z / Ctrl+Y : rétablir<br>Molette : zoom · F : tout voir<br>Double clic / I : inspecter une carte<br>Notes liées : suivent leur carte<br>Échap dans une note : annuler la saisie</p></div></details></div>
+    <div class="dt-body"><div class="dt-canvas" tabindex="0" aria-label="Deck table. Drag cards to move. Shift click to select several. Control or Space drag to pan. Wheel to zoom."><div class="dt-world"><div class="dt-zones"></div><div class="dt-cards"></div><div class="dt-piles"></div><div class="dt-notes"></div></div><div class="dt-lasso" hidden></div><p class="dt-empty" hidden>Room to think. Search for cards and place your first ideas.</p></div>
     <aside class="dt-panel dt-search" hidden><header><h3>Find cards</h3><button data-dt="search" aria-label="Close search">✕</button></header><form class="dt-search-form"><input aria-label="Table card search" placeholder="Name or Oracle text…"><label><input type="checkbox" name="advanced"> Advanced syntax</label><button>Search catalog</button></form><p class="dt-search-status" role="status"></p><div class="dt-search-results"></div><button data-dt="more" hidden>Load more</button><small>Click or drag a result onto the table. It starts as a candidate.</small></aside>
     <aside class="dt-panel dt-analysis" hidden aria-label="Deck analysis"><header><h3>Analyse</h3><button data-dt="analysis" aria-label="Close analysis">✕</button></header><div class="dt-analysis-content"></div></aside></div>
     <div class="dt-tools"><button data-dt="fit">Show all · F</button><button data-dt="out" aria-label="Zoom out">−</button><span data-dt-zoom></span><button data-dt="in" aria-label="Zoom in">+</button></div>
-    <div class="dt-selection" hidden><span data-dt-selected>0 selected</span><label class="dt-quantity">Quantité <input type="number" min="1" max="999" step="1" data-dt-quantity aria-label="Quantité de la carte sélectionnée"></label><button data-dt="exclude">Set aside</button><button data-dt="include">Add to deck</button><details class="dt-new-pile"><summary>Créer une pile</summary><form class="dt-pile-form"><label for="dt-pile-name">Nom de la pile</label><input id="dt-pile-name" maxlength="60" value="Nouvelle pile" required><button>Regrouper</button></form></details><select data-add-to-pile aria-label="Ajouter la sélection à une pile"></select><button data-dt="clear" aria-label="Clear selection">✕</button></div>
+    <div class="dt-selection" hidden><span data-dt-selected>0 selected</span><label class="dt-quantity">Quantité <input type="number" min="1" max="999" step="1" data-dt-quantity aria-label="Quantité de la carte sélectionnée"></label><button data-dt="inspect">Inspecter</button><button data-dt="card-note">+ Note liée</button><button data-dt="exclude">Set aside</button><button data-dt="include">Add to deck</button><details class="dt-new-pile"><summary>Créer une pile</summary><form class="dt-pile-form"><label for="dt-pile-name">Nom de la pile</label><input id="dt-pile-name" maxlength="60" value="Nouvelle pile" required><button>Regrouper</button></form></details><select data-add-to-pile aria-label="Ajouter la sélection à une pile"></select><button data-dt="clear" aria-label="Clear selection">✕</button></div>
     <footer class="dt-footer"><span>Ctrl + glisser : déplacer la vue · F : tout voir</span><span data-dt-storage role="status"></span><span data-save-status role="status"></span><button data-action="retry-save" hidden>Réessayer</button></footer>`;
   const get = <T extends HTMLElement = HTMLElement>(s: string) => root.querySelector<T>(s)!;
   const canvas = get('.dt-canvas');
@@ -60,6 +62,8 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     get('.dt-selection').hidden = selected.size === 0;
     get('[data-dt-selected]').textContent = `${selected.size} selected`;
     get('.dt-new-pile').hidden = selected.size < 2;
+    get<HTMLButtonElement>('[data-dt=inspect]').disabled = selected.size !== 1;
+    get<HTMLButtonElement>('[data-dt=card-note]').disabled = selected.size !== 1;
     const destination = get<HTMLSelectElement>('[data-add-to-pile]');
     destination.hidden = !workspace.piles?.length;
     destination.innerHTML = '<option value="">Ajouter à une pile…</option>' + (workspace.piles ?? []).map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
@@ -87,7 +91,8 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
       const members=pileRows(p,rows), total=members.reduce((n,r)=>n+r.entry.quantity,0), included=members.filter(r=>!r.group.maybeboard).reduce((n,r)=>n+r.entry.quantity,0);
       return `<header class="dt-pile" data-dt-pile="${p.id}" style="left:${p.x}px;top:${p.y}px;width:${pileBounds(p,rows).width}px;z-index:${Math.max(0,...members.map(r=>r.placement.z))}" aria-label="Pile ${esc(p.name)}"><div class="dt-pile-title"><span class="dt-pile-grip" title="Déplacer la pile">⠿</span><input aria-label="Nom de la pile ${esc(p.name)}" maxlength="60" value="${esc(p.name)}"><span title="${total} cartes, dont ${included} dans le deck">×${total}</span></div><div class="dt-pile-actions"><button data-pile-action="toggle" data-pile="${p.id}" aria-expanded="${p.expanded}">${p.expanded?'Réduire':'Déplier'}</button><button data-pile-action="select" data-pile="${p.id}" aria-label="Sélectionner la pile ${esc(p.name)}" title="Sélectionner toutes ses cartes">☷</button><button data-pile-action="dissolve" data-pile="${p.id}" title="Séparer les cartes sans les retirer du deck">Dissoudre</button></div></header>`;
     }).join('');
-    get('.dt-empty').hidden = rows.length > 0;
+    renderNotes();
+    get('.dt-empty').hidden = rows.length > 0 || !!workspace.notes?.length;
     updateZoneCounts(); selection(); analysis(); camera();
     if (needsInitialFit && canvas.clientWidth > 0) { needsInitialFit = false; fit(); }
   }
@@ -96,6 +101,51 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     try { mutate(); render(); history.commit(); persist(); }
     catch (error) { history.cancel(); render(); persist(); get('[data-dt-storage]').textContent = error instanceof Error ? error.message : 'Modification impossible.'; }
   }
+  function renderNotes() {
+    get('.dt-notes').innerHTML = (workspace.notes ?? []).map(n => {
+      const point = notePosition(n, workspace), name = rows.find(r => r.placement.id === n.cardId)?.entry.card.name;
+      return `<article class="dt-note" data-note="${n.id}" data-color="${n.color}" style="left:${point.x}px;top:${point.y}px"><header><span class="dt-note-grip" title="Glisser pour déplacer la note">⠿</span><span class="dt-note-anchor" title="${esc(name ?? 'Note libre')}">${esc(name ?? 'Note libre')}</span>${n.cardId ? `<button data-note-action="detach" data-note-id="${n.id}" aria-label="Détacher la note" title="Garder cette note ici, sans suivre la carte">⤴</button>` : ''}<button data-note-action="delete" data-note-id="${n.id}" aria-label="Supprimer la note">×</button></header><textarea data-note-text="${n.id}" aria-label="Texte de la note" maxlength="4000" placeholder="Protection pour Aang, à tester, coupe possible…">${esc(n.text)}</textarea><footer><select data-note-color="${n.id}" aria-label="Couleur de la note">${[['sand','Sable'],['sage','Sauge'],['lavender','Lavande']].map(([value,label]) => `<option value="${value}" ${value === n.color ? 'selected' : ''}>${label}</option>`).join('')}</select><small>${n.cardId ? 'Liée à la carte' : 'Note libre'}</small></footer></article>`;
+    }).join('');
+  }
+  function updateNotePositions() {
+    for (const n of workspace.notes ?? []) {
+      const point = notePosition(n, workspace), el = get(`[data-note="${n.id}"]`);
+      el.style.left = `${point.x}px`; el.style.top = `${point.y}px`;
+    }
+  }
+  function finishNoteEdit() {
+    if (!noteEditing) return;
+    noteEditing = undefined; history.commit(); persist();
+  }
+  function beginNoteEdit(id: string) {
+    if (noteEditing === id) return;
+    checkpoint(); history.begin('Modifier une note'); noteEditing = id;
+  }
+  function addNote(cardId?: string) {
+    let id = '';
+    edit(cardId ? 'Créer une note liée' : 'Créer une note', () => {
+      const count = (workspace.notes ?? []).filter(n => n.cardId === cardId).length;
+      const point = cardId ? { x: 190, y: count * 36 } : { x: center().x - NOTE_WIDTH / 2, y: center().y - NOTE_HEIGHT / 2 };
+      id = createNote(workspace, point, cardId).id;
+    });
+    const note = workspace.notes?.find(n => n.id === id);
+    if (note) {
+      const point = notePosition(note, workspace), zoom = Math.max(.65, workspace.camera.zoom);
+      Object.assign(workspace.camera, { zoom, x: canvas.clientWidth / 2 - (point.x + NOTE_WIDTH / 2) * zoom,
+        y: canvas.clientHeight / 2 - (point.y + NOTE_HEIGHT / 2) * zoom });
+      camera(); get<HTMLTextAreaElement>(`[data-note-text="${id}"]`).focus();
+    }
+  }
+  root.addEventListener('focusin', e => {
+    const id = (e.target as HTMLTextAreaElement).dataset.noteText;
+    if (id) beginNoteEdit(id);
+  }, {signal: abort.signal});
+  root.addEventListener('focusout', e => { if ((e.target as HTMLElement).dataset.noteText) finishNoteEdit(); }, {signal: abort.signal});
+  root.addEventListener('input', e => {
+    const input = e.target as HTMLTextAreaElement, note = workspace.notes?.find(n => n.id === input.dataset.noteText);
+    if (!note) return;
+    beginNoteEdit(note.id); note.text = input.value.slice(0,4000); persist();
+  }, {signal: abort.signal});
   function updateZoneCounts() {
     for (const z of workspace.zones) {
       const count = rows.filter(r => r.placement.zoneId === z.id).reduce((n,r)=>n+r.entry.quantity,0);
@@ -116,7 +166,7 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
   function fit(deckOnly=false) {
     const points = rows.filter(r=>!deckOnly || !r.group.maybeboard).map(r=>({x:r.placement.x,y:r.placement.y,width:170,height:265}));
     points.push(...(workspace.piles ?? []).filter(p=>!deckOnly || pileRows(p,rows).some(r=>!r.group.maybeboard)).map(p=>pileBounds(p,rows)));
-    if (!deckOnly) points.push(...workspace.zones);
+    if (!deckOnly) { points.push(...workspace.zones); points.push(...(workspace.notes ?? []).map(n => ({...notePosition(n,workspace),width:NOTE_WIDTH,height:NOTE_HEIGHT}))); }
     if (!points.length) { Object.assign(workspace.camera,emptyWorkspace().camera); camera(); persist(); return; }
     const x=Math.min(...points.map(p=>p.x)), y=Math.min(...points.map(p=>p.y));
     const w=Math.max(...points.map(p=>p.x+p.width))-x, h=Math.max(...points.map(p=>p.y+p.height))-y;
@@ -176,7 +226,14 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     if(pile && target.dataset.pileAction==='dissolve')edit('Dissoudre une pile',()=>{dissolvePile(workspace,pile,rows);});
     if(pile && target.dataset.pileAction==='select'){selected.clear();pile.cardIds.forEach(id=>selected.add(id));selection();}
 
+    const note=workspace.notes?.find(n=>n.id===target.dataset.noteId);
+    if(note && target.dataset.noteAction==='delete')edit('Supprimer une note',()=>{workspace.notes=workspace.notes?.filter(n=>n.id!==note.id);});
+    if(note && target.dataset.noteAction==='detach')edit('Détacher une note',()=>{detachNote(note,workspace);});
     const action=target.dataset.dt;
+    const selectedRow=selected.size===1?rows.find(r=>selected.has(r.placement.id)):undefined;
+    if(action==='note')addNote();
+    if(action==='card-note' && selectedRow)addNote(selectedRow.placement.id);
+    if(action==='inspect' && selectedRow){checkpoint();options.inspect(selectedRow.entry.card,selectedRow.placement.id);}
     if(action==='legacy')options.legacy();
     if(action==='library')options.library();
     if(action) get<HTMLDetailsElement>('.dt-menu').open=false;
@@ -192,6 +249,8 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
   },{signal:abort.signal});
   root.addEventListener('change',e=>{
     const input=e.target as HTMLInputElement;
+    const note=workspace.notes?.find(n=>n.id===input.dataset.noteColor);
+    if(note && ['sand','sage','lavender'].includes(input.value)){edit('Changer la couleur d’une note',()=>{note.color=input.value as typeof note.color;});return;}
     if(input.matches('[data-dt-quantity]')) {
       const row=rows.find(r=>selected.has(r.placement.id)), quantity=Number(input.value);
       if(!row || selected.size!==1)return;
@@ -210,14 +269,15 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     const z=workspace.zones.find(z=>z.id===zone.dataset.dtZone)!;
     if(!z.locked)edit('Renommer une zone',()=>{z.name=input.value.trim()||z.name;});
   },{signal:abort.signal});
-  canvas.addEventListener('dblclick',e=>{const el=document.elementFromPoint(e.clientX,e.clientY)?.closest<HTMLElement>('[data-dt-card]');const row=rows.find(r=>r.placement.id===el?.dataset.dtCard);if(row)options.inspect(row.entry.card);},{signal:abort.signal});
+  canvas.addEventListener('dblclick',e=>{const el=document.elementFromPoint(e.clientX,e.clientY)?.closest<HTMLElement>('[data-dt-card]');const row=rows.find(r=>r.placement.id===el?.dataset.dtCard);if(row){checkpoint();options.inspect(row.entry.card,row.placement.id);}},{signal:abort.signal});
   canvas.addEventListener('wheel',e=>{e.preventDefault();if(gesture)return;zoomAt(workspace.camera,local(e),workspace.camera.zoom*Math.exp(-e.deltaY*(e.deltaMode===1?.04:.0015)));camera();persist();},{passive:false,signal:abort.signal});
   canvas.addEventListener('pointerdown',e=>{
     if(gesture || (e.button!==0 && e.button!==1))return;
     const target=e.target as HTMLElement;
-    if(target.closest('input,[data-delete-zone],[data-zone-action],[data-pile-action]'))return;
+    if(target.closest('input,textarea,select,[data-delete-zone],[data-zone-action],[data-pile-action],[data-note-action]'))return;
     const start=local(e),pan=e.ctrlKey||space||panTool||e.button===1;
     const card=target.closest<HTMLElement>('[data-dt-card]'),zoneEl=target.closest<HTMLElement>('[data-dt-zone]'),pileEl=target.closest<HTMLElement>('[data-dt-pile]');
+    const note=workspace.notes?.find(n=>n.id===target.closest<HTMLElement>('[data-note]')?.dataset.note);
     const zone=workspace.zones.find(z=>z.id===zoneEl?.dataset.dtZone);
     if(zone?.locked && !pan)return;
     const pile=workspace.piles?.find(p=>p.id===pileEl?.dataset.dtPile);
@@ -231,10 +291,11 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
       for(const row of rows.filter(r=>r.placement.zoneId===zone.id))positions.push({point:row.placement,x:row.placement.x,y:row.placement.y});
       for(const p of workspace.piles ?? [])if(pileRows(p,rows).every(r=>r.placement.zoneId===zone.id))positions.push({point:p,x:p.x,y:p.y});
     }
-    const lasso=!pan&&!card&&!zone&&!pile;
+    if(!pan && note)positions.push({point:note,x:note.x,y:note.y});
+    const lasso=!pan&&!card&&!zone&&!pile&&!note;
     if(lasso&&!e.shiftKey){selected.clear();selection();}
-    if(!pan && (positions.length || resizing))history.begin(resizing?'Redimensionner une zone':pile?'Déplacer une pile':card?'Déplacer les cartes':'Déplacer une zone');
-    gesture={pointer:e.pointerId,start,last:start,camera:{...workspace.camera},positions,pan,lasso,additive:e.shiftKey,cards:!pan&&!!card&&positions.length>0,moved:false,selection:selectedBefore,raised:false,pile:!pan?pile?.id:undefined,resize:resizing};
+    if(!pan && (positions.length || resizing))history.begin(note?'Déplacer une note':resizing?'Redimensionner une zone':pile?'Déplacer une pile':card?'Déplacer les cartes':'Déplacer une zone');
+    gesture={pointer:e.pointerId,start,last:start,camera:{...workspace.camera},positions,pan,lasso,additive:e.shiftKey,cards:!pan&&!!card&&positions.length>0,moved:false,selection:selectedBefore,raised:false,note:!pan?note?.id:undefined,pile:!pan?pile?.id:undefined,resize:resizing};
   },{signal:abort.signal});
   function moveGesture(e: PointerEvent) {
     if(!gesture || e.pointerId!==gesture.pointer)return;const p=local(e),dx=p.x-gesture.start.x,dy=p.y-gesture.start.y;
@@ -250,7 +311,7 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     if(gesture.resize){resizeZone(gesture.resize.zone,gesture.resize.width+dx/workspace.camera.zoom,gesture.resize.height+dy/workspace.camera.zoom);updateZoneCounts();}
     else if(gesture.pan){workspace.camera.x=gesture.camera.x+dx;workspace.camera.y=gesture.camera.y+dy;camera();}
     else if(gesture.lasso){const box=get('.dt-lasso');box.hidden=false;Object.assign(box.style,{left:`${Math.min(p.x,gesture.start.x)}px`,top:`${Math.min(p.y,gesture.start.y)}px`,width:`${Math.abs(dx)}px`,height:`${Math.abs(dy)}px`});}
-    else {for(const item of gesture.positions){item.point.x=item.x+dx/workspace.camera.zoom;item.point.y=item.y+dy/workspace.camera.zoom;}for(const row of rows){const el=get(`[data-dt-card="${row.placement.id}"]`);el.style.left=`${row.placement.x}px`;el.style.top=`${row.placement.y}px`;}for(const z of workspace.zones){const el=get(`[data-dt-zone="${z.id}"]`);Object.assign(el.style,{left:`${z.x}px`,top:`${z.y}px`,width:`${z.width}px`,height:`${z.height}px`});}updatePilePositions();updateZoneCounts();if(gesture.cards && gesture.moved)highlightZone(screenToWorld(p,workspace.camera));}
+    else {for(const item of gesture.positions){item.point.x=item.x+dx/workspace.camera.zoom;item.point.y=item.y+dy/workspace.camera.zoom;}for(const row of rows){const el=get(`[data-dt-card="${row.placement.id}"]`);el.style.left=`${row.placement.x}px`;el.style.top=`${row.placement.y}px`;}for(const z of workspace.zones){const el=get(`[data-dt-zone="${z.id}"]`);Object.assign(el.style,{left:`${z.x}px`,top:`${z.y}px`,width:`${z.width}px`,height:`${z.height}px`});}updatePilePositions();updateNotePositions();updateZoneCounts();if(gesture.cards && gesture.moved)highlightZone(screenToWorld(p,workspace.camera));}
   }
   canvas.addEventListener('pointermove',moveGesture,{signal:abort.signal});
   function finishGesture() {
@@ -295,12 +356,14 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     render(); persist(); return true;
   }
   function updatePilePositions(){for(const p of workspace.piles ?? []){const el=get(`[data-dt-pile="${p.id}"]`);el.style.left=`${p.x}px`;el.style.top=`${p.y}px`;el.style.zIndex=String(Math.max(0,...pileRows(p,rows).map(r=>r.placement.z)));}}
-  function checkpoint() { if (gesture) finishGesture(); else persist(); }
+  function checkpoint() { finishNoteEdit(); if (gesture) finishGesture(); else persist(); }
   canvas.addEventListener('pointerup',e=>{if(gesture?.pointer===e.pointerId){moveGesture(e);finishGesture();}},{signal:abort.signal});
   canvas.addEventListener('pointercancel',e=>{if(gesture?.pointer===e.pointerId)cancelGesture();},{signal:abort.signal});
   canvas.addEventListener('lostpointercapture',e=>{if(gesture?.pointer===e.pointerId)cancelGesture();},{signal:abort.signal});
   root.addEventListener('keydown',e=>{
+    if(e.key==='Escape' && noteEditing){e.preventDefault();e.stopPropagation();noteEditing=undefined;history.cancel();render();persist();canvas.focus();return;}
     if((e.target as HTMLElement).closest('input,textarea,select'))return;
+    if(e.key.toLowerCase()==='i'&&!e.ctrlKey&&!e.metaKey&&!e.altKey && selected.size===1){const row=rows.find(r=>selected.has(r.placement.id));if(row){e.preventDefault();checkpoint();options.inspect(row.entry.card,row.placement.id);}return;}
     const zone=workspace.zones.find(z=>z.id===(e.target as HTMLElement).closest<HTMLElement>('[data-resize-zone]')?.dataset.resizeZone);
     if(zone && !zone.locked && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){
       e.preventDefault();const step=e.shiftKey?50:10;
@@ -326,5 +389,5 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     if(!(e.target as HTMLElement).closest('.dt-menu')) get<HTMLDetailsElement>('.dt-menu').open=false;
   },{signal:abort.signal});
   render(); persist();
-  return { refresh(){render();persist();}, cancelGesture, checkpoint, dispose(){checkpoint();disposed=true;abort.abort();searchAbort?.abort();} };
+  return { addNote, refresh(){render();persist();}, cancelGesture, checkpoint, dispose(){checkpoint();disposed=true;abort.abort();searchAbort?.abort();} };
 }

@@ -99,3 +99,17 @@ body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .header-actions 
 #deck-lab-view .dt-quantity input { width: 58px; padding: 4px 5px; font-size: 11px; }
 @media(max-width:1100px) { .dt-heading [data-dt-count] { display: none; } }
 @media(max-width:600px) { .dt-selection { flex-wrap: wrap; max-width: calc(100vw - 16px); } }
+
+/* Notes live in world coordinates; attached notes use offsets from their card. */
+.dt-notes { position:absolute;left:0;top:0;z-index:4; }
+.dt-note { position:absolute;width:270px;height:212px;background:#ded0ad;color:#2d291f;border:1px solid #998762;box-shadow:0 6px 18px #0006; }
+.dt-note[data-color=sage] { background:#c2d1bb;border-color:#7d9272; }
+.dt-note[data-color=lavender] { background:#cec5df;border-color:#9684b0; }
+.dt-note header { height:34px;display:flex;align-items:center;gap:6px;padding:4px 8px;border-bottom:1px solid #0002;cursor:grab; }
+.dt-note-grip { font-size:20px; }
+.dt-note-anchor { flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:13px; }
+#deck-lab-view .dt-note header button { padding:2px 5px;border:0;color:inherit;background:#fff3;font-size:17px; }
+#deck-lab-view .dt-note textarea { display:block;width:100%;height:140px;padding:10px 12px;resize:none;border:0;border-radius:0;background:transparent;color:inherit;font:17px/1.4 Georgia,serif;user-select:text; }
+.dt-note footer { height:36px;display:flex;align-items:center;justify-content:space-between;padding:2px 8px;gap:8px; }
+#deck-lab-view .dt-note select { padding:2px 5px;width:92px;color:inherit;background:#fff4;border:1px solid #0002;font-size:12px; }
+.dt-note small { font-size:11px;opacity:.75; }

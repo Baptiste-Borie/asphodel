@@ -84,6 +84,11 @@ try {
   assert.equal(await page.locator(`[data-dt-zone="${zoneId}"]`).evaluate(el => el.style.width), '250px');
   await page.locator('.dt-canvas').press('Control+y');
   await page.locator('.dt-canvas').press('Control+y');
+  // Text remains focused until close: the production checkpoint must finish its history/save.
+  await page.getByRole('button', {name:'+ Note',exact:true}).click();
+  await page.getByLabel('Texte de la note', {exact:true}).fill('Protection for Aang');
+  await page.getByLabel('Couleur de la note', {exact:true}).selectOption('sage');
+  await page.getByLabel('Texte de la note', {exact:true}).fill('Protection for Aang — saved before closing');
   const expectedProject = await page.evaluate(() => {
     document.querySelector('.dt-canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 120, clientX: 400, clientY: 300, bubbles: true, cancelable: true }));
     const key = Object.keys(localStorage).find(key => key.startsWith('asphodel.builder-draft.v1.'));
@@ -165,6 +170,14 @@ try {
   await page.locator(`[data-open-deck="saved:${id}"]`).click();
   await page.getByRole('button', { name: 'Table V2', exact: true }).click();
   await page.locator('.lab-table [data-save-status][data-status=saved]').waitFor();
+  await page.locator('[data-dt-card]').first().press('Enter');
+  await page.getByRole('button', {name:'Inspecter',exact:true}).click();
+  await page.locator('.lab-inspect[open] .lab-inspection-info').waitFor();
+  assert.ok(await page.locator('.lab-inspection-info h2').textContent());
+  await page.getByRole('button', {name:'Ajouter une note liée',exact:true}).click();
+  await page.getByLabel('Texte de la note', {exact:true}).fill('Linked idea survives moving the pile');
+  await page.locator('.dt-canvas').focus();
+  await page.locator('.lab-table [data-save-status][data-status=saved]').waitFor();
   const beforePile = await page.evaluate(async id => (await (await fetch(`/decks/${id}`)).json()), id);
   await page.locator('.dt-canvas').press('Control+a');
   await page.locator('.dt-new-pile summary').click();
@@ -212,7 +225,7 @@ try {
   assert.deepEqual(errors, []);
   // Closing mid-game exercises the shutdown hook, rather than only an idle quit.
   await electron.close(); electron = undefined;
-  console.log('Desktop smoke passed: startup, offline artwork, local game, shared undo/redo, native pile/cancellation/restart, manual locked zones, immediate close, backups/recovery and active-game shutdown.');
+  console.log('Desktop smoke passed: startup, offline artwork, local game, shared undo/redo, native pile/cancellation/restart, manual locked zones, notes/full inspection, immediate close, backups/recovery and active-game shutdown.');
 } finally {
   if (electron) await electron.close();
   await rm(userData, { recursive: true, force: true });

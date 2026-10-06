@@ -245,3 +245,24 @@ body:has(#deck-lab-view:not([hidden])) .header-actions .primary-button { backgro
 .lab-history button:disabled { opacity: .4; cursor: default; }
 .lab-card-quantity { position: absolute; left: 4px; top: 34px; display: flex; align-items: center; gap: 3px; padding: 0 5px; border-radius: 3px; color: #d0d0d3; background: #19191deb; }
 #deck-lab-view .lab-card-quantity input { width: 54px; height: 24px; padding: 2px 3px; background: transparent; border: 0; font-size: 12px; }
+
+#deck-lab-view .lab-inspect { width:min(980px,calc(100vw - 32px));max-width:980px;max-height:calc(100dvh - 32px);padding:32px; }
+#deck-lab-view .lab-inspect>div { width:auto; }
+.lab-inspection { display:grid;grid-template-columns:minmax(220px,350px) minmax(0,1fr);gap:28px; }
+.lab-inspection-art { align-self:start; }
+.lab-inspection-image { display:grid;place-items:center;min-height:200px;background:#222227;border-radius:8px; }
+#deck-lab-view .lab-inspect .lab-inspection-image img { width:100%;max-height:65vh;object-fit:contain; }
+.lab-inspection-art button { margin-top:12px;width:100%; }
+.lab-inspection-info h2 { font:26px/1.2 Georgia,serif;margin:0 30px 14px 0; }
+.lab-inspection-mana { display:flex;align-items:center;flex-wrap:wrap;gap:4px; }
+.lab-inspection-mana>span:last-child { margin-left:8px;color:var(--lab-muted);font-size:12px; }
+.lab-inspection-info p { margin:12px 0;font-size:14px;line-height:1.6; }
+.lab-inspection-info .lab-rules { padding:12px 0;border-block:1px solid var(--lab-border); }
+.lab-inspection-printing,.lab-inspection-actions { display:grid;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--lab-border); }
+.lab-inspection-printing label,.lab-inspection-actions label { font-size:13px; }
+.lab-inspection-printing small { color:var(--lab-muted);font-size:11px; }
+.lab-inspection-actions label { display:flex;align-items:center;gap:10px; }
+.lab-inspection-actions input { width:80px; }
+.lab-inspection-status { color:#b4ccaa;min-height:22px; }
+.lab-inspection-no-image { padding:32px;color:var(--lab-muted);text-align:center; }
+@media(max-width:700px) { #deck-lab-view .lab-inspect { padding:24px 18px; }.lab-inspection { grid-template-columns:1fr;gap:20px; }.lab-inspection-art { max-width:300px;justify-self:center; } }
