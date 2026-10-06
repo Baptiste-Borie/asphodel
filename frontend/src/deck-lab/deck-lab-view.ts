@@ -11,7 +11,8 @@ import { mountDeckTable } from './deck-table-view';
 import { mountCardInspector, enrichInspection, type InspectionActions } from './card-inspector';
 import { reconcileWorkspace, setRowMembership } from './deck-workspace';
 import type { BuilderProject } from '../../../shared/builder-project.mjs';
-import { loadDrafts, ProjectPersistence, sheetFromProject } from './project-persistence';
+import { loadDrafts, prepareProject, ProjectPersistence, sheetFromProject } from './project-persistence';
+import { openDeckArtwork } from '../artwork-controls';
 
 type Card = LabCard;
 /** `maybeboard` groups (born from the triage feature, or manually named "Maybeboard") hold cards
@@ -490,7 +491,7 @@ export function initDeckLabView(root: HTMLElement) {
       : commanderCount > 2 ? `<p class="lab-builder-warning" role="status">The Commander category has <strong>${commanderCount}</strong> cards — most decks run just one (two with Partner).</p>` : '';
     const warning = total !== 100 ? `<p class="lab-builder-warning" role="status">This sheet has <strong>${total}</strong> card${total === 1 ? '' : 's'} — a Commander deck needs exactly 100.</p>` : '';
     const saveStatus = '<span class="lab-save-status" data-save-status role="status"></span><button data-action="retry-save" hidden>Réessayer</button>';
-    const deckActions = historyButtons + '<button data-action="export-deck">Exporter</button><button data-action="rename-deck">Rename</button><button data-action="delete-deck">Delete</button>';
+    const deckActions = historyButtons + (window.asphodelDesktop ? '<button data-action="prepare-artwork">Préparer hors ligne</button>' : '') + '<button data-action="export-deck">Exporter</button><button data-action="rename-deck">Rename</button><button data-action="delete-deck">Delete</button>';
     get('.lab-builder').innerHTML = `${commanderWarning}${warning}<div class="lab-deck-heading"><div><button class="lab-back" data-action="close-sheet" aria-label="Back to all decks">← All decks</button><p class="lab-eyebrow">COMMANDER / CANDIDATE SHEET</p><h2>${esc(active.name)}${saveStatus}</h2><p><strong>${total}</strong> candidate cards <span> / 100 final deck target</span></p></div><div><select class="lab-sheet-picker" aria-label="Open deck sheet">${sheets.map((s,i) => `<option value="${i}" ${s === active ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><button data-action="new">+ New sheet</button><button data-action="selection">+ From Selection</button>${deckActions}</div></div><div class="lab-builder-tools"><span>Manual categories <span class="lab-muted">· drag a card, use its menu, or search a category to add one</span></span><form class="lab-new-category"><input aria-label="New category name" placeholder="Name your category" required maxlength="60" /><button>+ New category</button></form></div><div class="lab-categories">${active.groups.map(categoryHtml).join('')}</div><details class="lab-cuts"><summary>Cuts · ${active.cuts.length} <span>Keep discarded ideas nearby</span></summary>${active.cuts.map((c,i) => `<button data-restore="${i}">↶ ${esc(c.name)}</button>`).join('') || '<p>No cuts yet. Cut a card using its menu to keep it here.</p>'}</details><section class="lab-stats"><div><p class="lab-eyebrow">DECK STATISTICS</p><h2>The shape of your sheet.</h2><p class="lab-muted">All candidates · cuts excluded<br>Card types may overlap.</p><div class="lab-type-counts">${['Creature','Instant','Sorcery','Artifact','Enchantment','Planeswalker','Land'].map(type => `<div><span>${type}</span><strong>${entries.filter(e => e.card.type_line.includes(type)).reduce((n,e) => n+e.quantity,0)}</strong></div>`).join('')}</div></div><div><div class="lab-curve-heading"><h3>Mana curve</h3><span>${spells} nonland spells</span></div><div class="lab-curve">${curve.map((n,i) => `<div><span>${n}</span><i style="height:${n / Math.max(...curve,1) * 150}px"></i><label>${i === 7 ? '7+' : i}</label></div>`).join('')}</div><p class="lab-average">${spells ? (nonlands.reduce((n,e) => n+e.card.cmc*e.quantity,0)/spells).toFixed(2) : '—'} <span>Average mana value · nonlands</span></p></div></section>`;
     setSaveStatus(persistence.status(active)); updateHistoryControls();
   }
@@ -695,6 +696,7 @@ export function initDeckLabView(root: HTMLElement) {
       case 'sample': active = sample(); sheets.push(active); scheduleAutoSave(); renderBuilder(); break;
       case 'new': active = { name: `Untitled exploration ${sheets.length+1}`, groups: [commanderGroup(), {name:'Unsorted', entries:[]}], cuts:[] }; sheets.push(active); scheduleAutoSave(); switchView('builder'); break;
       case 'export-deck': openExport(); break;
+      case 'prepare-artwork': if(active){table?.checkpoint();openDeckArtwork(prepareProject(active,journalStorage));} break;
       case 'retry-save': if (active) void persistence.retry(active); break;
       case 'close-sheet': active = undefined; renderBuilder(); break;
       case 'import': openImportModal(); break;

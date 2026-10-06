@@ -5,6 +5,7 @@ import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { APP_ORIGIN, assetPath, isApiPath, prepareUserData } from './paths.mjs';
 import { ArtCache, installArtworkHeaderGuard } from './art-cache.mjs';
+import { ArtworkLibrary, installArtworkCommands } from './artwork-library.mjs';
 import { DisplayPreferences } from './display-preferences.mjs';
 import { desktopWindowOptions, installWindowControls } from './window-controls.mjs';
 import { installCloseGuard } from './close-guard.mjs';
@@ -23,6 +24,7 @@ let address;
 let quitting = false;
 let displayPreferences;
 let libraryBackups;
+let artworkLibrary;
 const token = randomBytes(32).toString('hex');
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2', '.json': 'application/json' };
 const csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://cards.scryfall.io data: blob:; font-src 'self' data:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'";
@@ -65,6 +67,8 @@ async function installProtocol() {
   installArtworkHeaderGuard(artDownloads);
   const art = new ArtCache(join(app.getPath('userData'), 'card-art'), join(runtime, 'card-art'),
     (url, options) => artDownloads.fetch(url, options));
+  artworkLibrary = new ArtworkLibrary(art,join(app.getPath('userData'),'artwork-library.json'),{onError:error=>void log(error.stack??String(error))});
+  await artworkLibrary.ready;
   protocol.handle('asphodel', async request => {
     try {
       const url = new URL(request.url);
@@ -131,6 +135,7 @@ function createWindow() {
     console.error('[Asphodel] Préférence d’affichage:', error);
     void log(error.stack ?? String(error));
   });
+  installArtworkCommands({ipcMain,window,library:artworkLibrary});
   installCloseGuard({ app, ipcMain, window, canClose: () => !libraryBackups?.busy,
     onError: error => void log(error.stack ?? String(error)),
     confirmFailure: async () => {
@@ -144,6 +149,7 @@ function createWindow() {
     },
     shutdown: async () => {
       quitting = true;
+      await artworkLibrary?.close().catch(error=>void log(error.stack??String(error)));
       session.defaultSession.flushStorageData();
       if (!backend) { app.exit(); return; }
       const worker = backend;

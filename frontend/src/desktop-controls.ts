@@ -1,9 +1,20 @@
 import './desktop-controls.css';
+import type { ArtworkRequest, ArtworkPlan, ArtworkState } from '../../shared/artwork.mjs';
+import { mountArtworkSettings } from './artwork-controls';
 import { element } from './dom';
 import { captureLibraryStorage } from './library-storage';
 
 export interface DesktopDisplayState { fullscreen: boolean; saveError: string | null }
 export interface DesktopAPI {
+  getArtworkState(): Promise<ArtworkState>;
+  planArtwork(request: ArtworkRequest): Promise<ArtworkPlan>;
+  prepareArtwork(request: ArtworkRequest): Promise<ArtworkState>;
+  controlArtwork(action: 'pause'|'resume'|'cancel'): Promise<ArtworkState>;
+  setArtworkLimit(bytes: number): Promise<ArtworkState>;
+  setArtworkKeep(id: string, keep: boolean): Promise<ArtworkState>;
+  forgetArtwork(id: string): Promise<ArtworkState>;
+  purgeArtwork(): Promise<ArtworkState>;
+  resetArtworkSettings(): Promise<ArtworkState>;
   saveBackup(storage: Record<string, string>): Promise<{ canceled: boolean; decks?: number }>;
   chooseBackup(): Promise<{ createdAt: string; decks: string[]; drafts: number } | null>;
   restoreBackup(storage: Record<string, string>): Promise<{ canceled: boolean; restartRequired?: boolean }>;
@@ -50,9 +61,11 @@ export function initDesktopControls(closeMenu: () => void, builder: { flush(): P
         <button type="button" data-backup-restore class="primary-button">Restaurer cette sauvegarde…</button></div>
       <p data-backup-status role="status" aria-live="polite" hidden></p>
     </section>
+    <section class="desktop-artwork" data-artwork-settings></section>
     <footer><button type="button" data-desktop-data class="secondary-button">Ouvrir mes données</button>
       <button type="button" data-desktop-close class="primary-button">Terminé</button></footer>`;
   document.body.append(dialog);
+  const artwork = mountArtworkSettings(element<HTMLElement>('[data-artwork-settings]',dialog));
   const mode = element<HTMLSelectElement>('#desktop-display-mode', dialog);
   const feedback = element<HTMLElement>('[data-desktop-status]', dialog);
   let changing = false;
@@ -70,12 +83,14 @@ export function initDesktopControls(closeMenu: () => void, builder: { flush(): P
     closeMenu();
     status('');
     dialog.showModal();
+    artwork.refresh();
     mode.disabled = true;
     void desktop.getDisplayState().then(render).catch(() => status('Impossible de lire le mode d’affichage.', true))
       .finally(() => { mode.disabled = false; mode.focus(); });
   });
   dialog.querySelectorAll<HTMLButtonElement>('[data-desktop-close]').forEach(button => button.addEventListener('click', () => dialog.close()));
   dialog.addEventListener('close', () => {
+    artwork.stop();
     if (settings.getClientRects().length) settings.focus();
     else element<HTMLButtonElement>('#app-menu-toggle').focus();
   });

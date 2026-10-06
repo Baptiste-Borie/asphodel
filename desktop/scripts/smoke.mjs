@@ -10,6 +10,7 @@ const userData = await mkdtemp(join(tmpdir(), 'asphodel-smoke-'));
 let electron;
 const errors = [];
 const artUrl = 'https://cards.scryfall.io/normal/front/a/b/desktop-smoke.png';
+const backArtUrl = 'https://cards.scryfall.io/normal/back/a/b/desktop-smoke-back.png';
 async function assertArtworkLoads(page, url) {
   await page.evaluate(url => new Promise((resolve, reject) => {
     const image = new Image();
@@ -34,11 +35,18 @@ try {
   await electron.evaluate(({ session }) => {
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGPQ9HH8DwADDgG2h6gVAgAAAABJRU5ErkJggg==', 'base64');
     session.fromPartition('asphodel-art-downloads').protocol.handle('https', request =>
-      request.url.includes('/desktop-smoke.png')
+      /\/desktop-smoke(?:-back)?\.png/.test(request.url)
         ? new Response(png, { headers: { 'content-type': 'image/png' } })
         : new Response('Network disabled in artwork test', { status: 503 }));
   });
   await assertArtworkLoads(page, `${artUrl}?first-launch`);
+  const preparation = { id: 'desktop-smoke-offline', name: 'Offline double-faced deck', urls: [artUrl, backArtUrl], unavailable: 0 };
+  const artworkPlan = await page.evaluate(value => window.asphodelDesktop.planArtwork(value), preparation);
+  assert.equal(artworkPlan.cached, 1);
+  assert.equal(artworkPlan.missing, 1);
+  await page.evaluate(value => window.asphodelDesktop.prepareArtwork(value), preparation);
+  await page.waitForFunction(async () => (await window.asphodelDesktop.getArtworkState()).job?.status === 'completed');
+  await assertArtworkLoads(page, `${backArtUrl}?prepared-face`);
   const list = await page.evaluate(async () => (await fetch('/decks')).json());
   assert.ok(list.decks.length > 0, 'bundled library loads on first launch');
   const id = list.decks[0].id;
@@ -104,6 +112,9 @@ try {
   // A new query avoids the renderer HTTP cache; only our persistent disk cache
   // can satisfy the request after restart when the downloader is unavailable.
   await assertArtworkLoads(page, `${artUrl}?offline-restart`);
+  await assertArtworkLoads(page, `${backArtUrl}?offline-restart`);
+  const offlineArt = await page.evaluate(() => window.asphodelDesktop.purgeArtwork());
+  assert.equal(offlineArt.decks.find(deck => deck.id === 'desktop-smoke-offline')?.cached, 2, 'protected recto-verso survives cache cleanup');
   assert.equal(await page.evaluate(() => localStorage.getItem('desktop-smoke')), 'survives restart');
   assert.equal(await page.evaluate(async id => (await (await fetch(`/decks/${id}`)).json()).name, id), 'Desktop persistent deck');
   const restoredProject = await page.evaluate(async projectId => {
@@ -225,7 +236,7 @@ try {
   assert.deepEqual(errors, []);
   // Closing mid-game exercises the shutdown hook, rather than only an idle quit.
   await electron.close(); electron = undefined;
-  console.log('Desktop smoke passed: startup, offline artwork, local game, shared undo/redo, native pile/cancellation/restart, manual locked zones, notes/full inspection, immediate close, backups/recovery and active-game shutdown.');
+  console.log('Desktop smoke passed: startup, managed recto-verso preparation/offline restart/protected cleanup, local game, shared undo/redo, native pile/cancellation/restart, manual locked zones, notes/full inspection, immediate close, backups/recovery and active-game shutdown.');
 } finally {
   if (electron) await electron.close();
   await rm(userData, { recursive: true, force: true });

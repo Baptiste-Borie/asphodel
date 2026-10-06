@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
 export function byteSafeArtworkHeaders(headers = {}) {
@@ -33,10 +33,11 @@ export function artKey(value) {
 
 export class ArtCache {
   pending = new Map();
-  constructor(directory, seedDirectory, fetchImage = globalThis.fetch) {
+  constructor(directory, seedDirectory, fetchImage = globalThis.fetch, hooks = {}) {
     this.directory = directory;
     this.seedDirectory = seedDirectory;
     this.fetchImage = fetchImage;
+    this.hooks = hooks;
   }
   async get(url) {
     const key = artKey(url);
@@ -55,17 +56,28 @@ export class ArtCache {
   }
   async load(url, key) {
     for (const directory of [this.directory, this.seedDirectory].filter(Boolean)) {
-      try { return await readFile(join(directory, key)); }
+      try { const data = await readFile(join(directory, key)); if(data.length){this.hooks.read?.(key);return data;} }
       catch (error) { if (error.code !== 'ENOENT') throw error; }
     }
     const response = await this.fetchImage(url, { signal: AbortSignal.timeout(20_000), redirect: 'error' });
     if (!response.ok) throw new Error(`Artwork download failed (${response.status})`);
-    const data = Buffer.from(await response.arrayBuffer());
-    if (data.length > 5_000_000 || !/^image\/(jpeg|png)/.test(response.headers.get('content-type') ?? '')) throw new Error('Invalid artwork response');
+    if (!/^image\/(jpeg|png)(?:;|$)/.test(response.headers.get('content-type') ?? '') || Number(response.headers.get('content-length')) > 5_000_000) throw new Error('Invalid artwork response');
+    const reader = response.body?.getReader(), chunks = []; let size = 0;
+    if (!reader) throw new Error('Empty artwork response');
+    try {
+      while (true) { const { done, value } = await reader.read(); if (done) break; size += value.length;
+        if (size > 5_000_000) { await reader.cancel(); throw new Error('Artwork exceeds 5 MB'); } chunks.push(Buffer.from(value)); }
+    } finally { reader.releaseLock(); }
+    if (!size) throw new Error('Empty artwork response');
+    const data = Buffer.concat(chunks);
+    if (this.hooks.store) await this.hooks.store(key, data, () => this.write(key, data));
+    else await this.write(key, data);
+    return data;
+  }
+  async write(key, data) {
     await mkdir(this.directory, { recursive: true });
     const temporary = join(this.directory, `${key}.tmp`);
-    await writeFile(temporary, data);
-    await rename(temporary, join(this.directory, key));
-    return data;
+    try { await writeFile(temporary, data); await rename(temporary, join(this.directory, key)); }
+    catch (error) { await unlink(temporary).catch(() => {}); throw error; }
   }
 }
