@@ -1,3 +1,4 @@
+import { ProjectHistory, historyShortcut } from './project-history';
 import { exportDeckText, deckTextFilename } from './deck-export';
 import sampleCards from './cards.json';
 import { apiRequest, ApiError } from '../api/api-client';
@@ -202,6 +203,45 @@ export function initDeckLabView(root: HTMLElement) {
   catch {
     journalStorage = { length: 0, key: () => null, getItem: () => null, setItem: () => { throw new Error('Stockage local indisponible.'); }, removeItem: () => {} } as unknown as globalThis.Storage;
   }
+  const histories = new WeakMap<Sheet, ProjectHistory>();
+  function historyFor(sheet: Sheet): ProjectHistory {
+    let history = histories.get(sheet);
+    if (!history) { history = new ProjectHistory(sheet, journalStorage); histories.set(sheet, history); }
+    return history;
+  }
+  const historyButtons = '<div class="lab-history"><button type="button" data-history="undo" aria-label="Annuler">↶ Annuler</button><button type="button" data-history="redo" aria-label="Rétablir">↷ Rétablir</button></div>';
+  function updateHistoryControls() {
+    const state = active ? historyFor(active).state : undefined;
+    root.querySelectorAll<HTMLButtonElement>('[data-history]').forEach(button => {
+      const undo = button.dataset.history === 'undo';
+      button.disabled = !(undo ? state?.canUndo : state?.canRedo);
+      const label = undo ? state?.undoLabel : state?.redoLabel;
+      button.title = `${undo ? 'Annuler' : 'Rétablir'}${label ? ' : ' + label : ''} (${undo ? 'Ctrl+Z' : 'Ctrl+Maj+Z / Ctrl+Y'})`;
+    });
+  }
+  function editSheet(label: string, mutate: () => void) {
+    if (!active) return;
+    const sheet = active, history = historyFor(sheet);
+    table?.checkpoint(); history.begin(label);
+    try { mutate(); renderBuilder(); history.commit(); scheduleAutoSave(sheet); }
+    catch (error) { history.cancel(); renderBuilder(); scheduleAutoSave(sheet); toast(error instanceof Error ? error.message : 'Modification impossible.'); }
+    updateHistoryControls();
+  }
+  function performHistory(direction: 'undo' | 'redo') {
+    if (!active || (view !== 'builder' && view !== 'table')) return;
+    if (table?.cancelGesture()) { toast('Geste annulé.'); return; }
+    const label = historyFor(active)[direction]();
+    if (!label) return;
+    renderBuilder(); scheduleAutoSave(); updateHistoryControls();
+    toast(`${direction === 'undo' ? 'Annulé' : 'Rétabli'} : ${label}.`);
+  }
+  document.addEventListener('keydown', event => {
+    if (root.hidden || !active || (view !== 'builder' && view !== 'table')) return;
+    const target = event.target as HTMLElement | null;
+    const editingText = !!target?.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])');
+    const direction = historyShortcut(event, editingText, !!document.querySelector('dialog[open]'));
+    if (direction) { event.preventDefault(); performHistory(direction); }
+  });
   const persistence = new ProjectPersistence(journalStorage, async (project, id) => {
     const result = await apiRequest<DeckDetailView>(id ? `/decks/${id}/project` : '/decks/projects', {
       method: id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(project),
@@ -375,6 +415,7 @@ export function initDeckLabView(root: HTMLElement) {
     if (next === 'table' && !active) { next = 'builder'; toast('Open a deck, then choose Table V2.'); }
     scrollPositions[view] = window.scrollY;
     const previous = view;
+    if (previous === 'table' && next !== 'table') table?.checkpoint();
     view = next;
     get('.lab-search').hidden = view !== 'search'; get('.lab-builder').hidden = view !== 'builder';
     root.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
@@ -394,7 +435,7 @@ export function initDeckLabView(root: HTMLElement) {
     const sortButton = (!g.commander && !g.maybeboard && g.entries.length > 0)
       ? `<button data-triage="${gi}" aria-label="Sort ${esc(g.name)}" title="Keep or set aside, one card at a time">⇄</button>`
       : '';
-    const stack = g.entries.map((e, ei) => `<div class="lab-stack-card" draggable="true" data-drag-group="${gi}" data-drag-entry="${ei}"><button class="lab-inspect-card" data-inspect="${esc(e.card.name)}" aria-label="Inspect ${esc(e.card.name)}">${image(e.card)}</button><select data-move="${gi}:${ei}" aria-label="Move or cut ${esc(e.card.name)}"><option value="">•••</option>${active!.groups.map((dest, di) => di !== gi ? `<option value="${di}">Move to ${esc(dest.name)}</option>` : '').join('')}<option value="cut">Cut card</option></select></div>`).join('') || '<p class="lab-category-empty">Room for a new idea.<br>Search or drag a card in.</p>';
+    const stack = g.entries.map((e, ei) => `<div class="lab-stack-card" draggable="true" data-drag-group="${gi}" data-drag-entry="${ei}"><button class="lab-inspect-card" data-inspect="${esc(e.card.name)}" aria-label="Inspect ${esc(e.card.name)}">${image(e.card)}</button><label class="lab-card-quantity">×<input type="number" min="1" max="999" step="1" value="${e.quantity}" data-quantity="${gi}:${ei}" aria-label="Quantité de ${esc(e.card.name)}"></label><select data-move="${gi}:${ei}" aria-label="Move or cut ${esc(e.card.name)}"><option value="">•••</option>${active!.groups.map((dest, di) => di !== gi ? `<option value="${di}">Move to ${esc(dest.name)}</option>` : '').join('')}<option value="cut">Cut card</option></select></div>`).join('') || '<p class="lab-category-empty">Room for a new idea.<br>Search or drag a card in.</p>';
     const classes = ['lab-category', g.commander && 'lab-category--commander', g.maybeboard && 'lab-category--maybeboard'].filter(Boolean).join(' ');
     return `<section class="${classes}"><header>${header}<span>${countLabel}</span>${sortButton}<button data-reorder="${gi}" aria-label="Move ${esc(g.name)} category left" ${lockedFirst ? 'disabled' : ''}>←</button></header><div class="lab-category-add"><input type="text" data-add-search="${gi}" placeholder="Add a card…" autocomplete="off" aria-label="Add a card to ${esc(g.name)}" /><div class="lab-add-results" data-add-results="${gi}" hidden></div></div><div class="lab-stack" data-drop-group="${gi}">${stack}</div></section>`;
   }
@@ -407,17 +448,18 @@ export function initDeckLabView(root: HTMLElement) {
   }
   function renderTable() {
     if (!active) return;
-    if (table && tableSheet === active) { table.refresh(); setSaveStatus(persistence.status(active)); return; }
+    if (table && tableSheet === active) { table.refresh(); setSaveStatus(persistence.status(active)); updateHistoryControls(); return; }
     table?.dispose();
     tableSheet = active;
     const sheet = active;
     table = mountDeckTable(get('.lab-table'), sheet, {
+      history: historyFor(sheet),
       changed: () => scheduleAutoSave(sheet),
       inspect: card => { knownCards.set(card.name, card); openInspect(card.name); },
       legacy: () => switchView('builder'),
       library: () => { active = undefined; switchView('builder'); },
     });
-    setSaveStatus(persistence.status(sheet));
+    setSaveStatus(persistence.status(sheet)); updateHistoryControls();
   }
   function renderBuilder() {
     if (view === 'table' && active) { renderTable(); return; }
@@ -443,9 +485,9 @@ export function initDeckLabView(root: HTMLElement) {
       : commanderCount > 2 ? `<p class="lab-builder-warning" role="status">The Commander category has <strong>${commanderCount}</strong> cards — most decks run just one (two with Partner).</p>` : '';
     const warning = total !== 100 ? `<p class="lab-builder-warning" role="status">This sheet has <strong>${total}</strong> card${total === 1 ? '' : 's'} — a Commander deck needs exactly 100.</p>` : '';
     const saveStatus = '<span class="lab-save-status" data-save-status role="status"></span><button data-action="retry-save" hidden>Réessayer</button>';
-    const deckActions = '<button data-action="export-deck">Exporter</button><button data-action="rename-deck">Rename</button><button data-action="delete-deck">Delete</button>';
+    const deckActions = historyButtons + '<button data-action="export-deck">Exporter</button><button data-action="rename-deck">Rename</button><button data-action="delete-deck">Delete</button>';
     get('.lab-builder').innerHTML = `${commanderWarning}${warning}<div class="lab-deck-heading"><div><button class="lab-back" data-action="close-sheet" aria-label="Back to all decks">← All decks</button><p class="lab-eyebrow">COMMANDER / CANDIDATE SHEET</p><h2>${esc(active.name)}${saveStatus}</h2><p><strong>${total}</strong> candidate cards <span> / 100 final deck target</span></p></div><div><select class="lab-sheet-picker" aria-label="Open deck sheet">${sheets.map((s,i) => `<option value="${i}" ${s === active ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><button data-action="new">+ New sheet</button><button data-action="selection">+ From Selection</button>${deckActions}</div></div><div class="lab-builder-tools"><span>Manual categories <span class="lab-muted">· drag a card, use its menu, or search a category to add one</span></span><form class="lab-new-category"><input aria-label="New category name" placeholder="Name your category" required maxlength="60" /><button>+ New category</button></form></div><div class="lab-categories">${active.groups.map(categoryHtml).join('')}</div><details class="lab-cuts"><summary>Cuts · ${active.cuts.length} <span>Keep discarded ideas nearby</span></summary>${active.cuts.map((c,i) => `<button data-restore="${i}">↶ ${esc(c.name)}</button>`).join('') || '<p>No cuts yet. Cut a card using its menu to keep it here.</p>'}</details><section class="lab-stats"><div><p class="lab-eyebrow">DECK STATISTICS</p><h2>The shape of your sheet.</h2><p class="lab-muted">All candidates · cuts excluded<br>Card types may overlap.</p><div class="lab-type-counts">${['Creature','Instant','Sorcery','Artifact','Enchantment','Planeswalker','Land'].map(type => `<div><span>${type}</span><strong>${entries.filter(e => e.card.type_line.includes(type)).reduce((n,e) => n+e.quantity,0)}</strong></div>`).join('')}</div></div><div><div class="lab-curve-heading"><h3>Mana curve</h3><span>${spells} nonland spells</span></div><div class="lab-curve">${curve.map((n,i) => `<div><span>${n}</span><i style="height:${n / Math.max(...curve,1) * 150}px"></i><label>${i === 7 ? '7+' : i}</label></div>`).join('')}</div><p class="lab-average">${spells ? (nonlands.reduce((n,e) => n+e.card.cmc*e.quantity,0)/spells).toFixed(2) : '—'} <span>Average mana value · nonlands</span></p></div></section>`;
-    setSaveStatus(persistence.status(active));
+    setSaveStatus(persistence.status(active)); updateHistoryControls();
   }
   /** Debounced per-category "search the catalog, click to add" — lets you build a category without detouring through Search/Selection. */
   function scheduleAddSearch(gi: number, value: string) { clearTimeout(addSearchDebounce); addSearchDebounce = setTimeout(() => void runAddSearch(gi, value), 250); }
@@ -479,10 +521,10 @@ export function initDeckLabView(root: HTMLElement) {
       toast(`${cardName} is already in the deck.`);
       return;
     }
-    const existing = group.entries.find(e => e.card.name === cardName);
-    if (existing) existing.quantity += 1; else group.entries.push({ card, quantity: 1 });
-    renderBuilder();
-    scheduleAutoSave();
+    editSheet('Ajouter ' + cardName, () => {
+      const existing = group.entries.find(e => e.card.name === cardName);
+      if (existing) existing.quantity += 1; else group.entries.push({ card, quantity: 1 });
+    });
     toast(`${cardName} added to ${group.name}.`);
   }
   function setSaveStatus(status: 'pending' | 'saved' | 'error') {
@@ -496,7 +538,7 @@ export function initDeckLabView(root: HTMLElement) {
   }
   function scheduleAutoSave(sheet = active) {
     if (!sheet) return;
-    try { persistence.changed(sheet); if (active === sheet) setSaveStatus(persistence.status(sheet)); }
+    try { historyFor(sheet).sync(); persistence.changed(sheet); if (active === sheet) { setSaveStatus(persistence.status(sheet)); updateHistoryControls(); } }
     catch (error) { setSaveStatus('error'); toast(error instanceof Error ? error.message : 'Projet non enregistré.'); }
   }
   /** Opens the inspect dialog immediately with whatever card data is on hand, then — for a card whose
@@ -577,23 +619,23 @@ export function initDeckLabView(root: HTMLElement) {
    *  category being sorted is emptied since every one of its cards was redistributed into a bucket. */
   function applyTriage() {
     if (!triage || !active) return;
-    const source = active.groups[triage.groupIndex];
-    if (source) source.entries = [];
-    for (const cat of TRIAGE_CATEGORIES) {
-      const bucketEntries = triage.buckets[cat.key];
-      if (bucketEntries.length === 0) continue;
-      let dest = active.groups.find(g => g.name === cat.label && !g.commander && !g.maybeboard);
-      if (!dest) { dest = { name: cat.label, entries: [] }; active.groups.push(dest); }
-      for (const entry of bucketEntries) {
-        const existing = dest.entries.find(e => e.card.name === entry.card.name);
-        if (existing) existing.quantity += entry.quantity; else dest.entries.push(entry);
+    const decisions = triage;
+    editSheet('Appliquer le tri', () => {
+      const source = active!.groups[decisions.groupIndex];
+      if (source) source.entries = [];
+      for (const cat of TRIAGE_CATEGORIES) {
+        const bucketEntries = decisions.buckets[cat.key];
+        if (bucketEntries.length === 0) continue;
+        let dest = active!.groups.find(g => g.name === cat.label && !g.commander && !g.maybeboard);
+        if (!dest) { dest = { name: cat.label, entries: [] }; active!.groups.push(dest); }
+        for (const entry of bucketEntries) {
+          const existing = dest.entries.find(e => e.card.name === entry.card.name);
+          if (existing) existing.quantity += entry.quantity; else dest.entries.push(entry);
+        }
       }
-    }
+    });
     triage = undefined;
-    triageDialog.classList.remove('lab-triage--recap');
-    triageDialog.close();
-    renderBuilder();
-    scheduleAutoSave();
+    triageDialog.classList.remove('lab-triage--recap'); triageDialog.close();
   }
   function cancelTriage() { triage = undefined; triageDialog.classList.remove('lab-triage--recap'); triageDialog.close(); }
   root.addEventListener('click', event => {
@@ -622,8 +664,9 @@ export function initDeckLabView(root: HTMLElement) {
     }
     if (b.dataset.triage && active) startTriage(Number(b.dataset.triage));
     if (b.dataset.triagePick) decideTriage(b.dataset.triagePick as TriageCategoryKey);
-    if (b.dataset.reorder && active) { const i = Number(b.dataset.reorder); [active.groups[i-1],active.groups[i]] = [active.groups[i]!,active.groups[i-1]!]; renderBuilder(); scheduleAutoSave(); }
-    if (b.dataset.restore && active) { const c = active.cuts.splice(Number(b.dataset.restore),1)[0]!; defaultGroup(active).entries.push({card:c,quantity:1}); renderBuilder(); scheduleAutoSave(); }
+    if (b.dataset.history) performHistory(b.dataset.history as 'undo' | 'redo');
+    if (b.dataset.reorder && active) editSheet('Réordonner les catégories', () => { const i = Number(b.dataset.reorder); [active!.groups[i-1],active!.groups[i]] = [active!.groups[i]!,active!.groups[i-1]!]; });
+    if (b.dataset.restore && active) editSheet('Restaurer une carte écartée', () => { const c = active!.cuts.splice(Number(b.dataset.restore),1)[0]!; defaultGroup(active!).entries.push({card:c,quantity:1}); });
     if (b.dataset.addCardName) addCardToGroup(Number(b.dataset.addCardGroup), b.dataset.addCardName);
     if (b.dataset.openDeck) {
       const [kind, key] = b.dataset.openDeck.split(':');
@@ -649,7 +692,7 @@ export function initDeckLabView(root: HTMLElement) {
         if (!active) break;
         const name = window.prompt('New deck name', active.name)?.trim();
         if (!name || name === active.name) break;
-        active.name = name; scheduleAutoSave(); renderBuilder();
+        editSheet('Renommer le deck', () => { active!.name = name; });
         break;
       }
       case 'delete-deck': {
@@ -670,6 +713,7 @@ export function initDeckLabView(root: HTMLElement) {
     }
   });
   root.addEventListener('dragstart', event => {
+    if ((event.target as HTMLElement).closest('input,select')) { event.preventDefault(); return; }
     const card = (event.target as HTMLElement).closest<HTMLElement>('[data-drag-group]');
     if (!card || !event.dataTransfer) return;
     event.dataTransfer.effectAllowed = 'move';
@@ -694,18 +738,20 @@ export function initDeckLabView(root: HTMLElement) {
     if (fromGroup === undefined || fromEntry === undefined || fromGroup === toGroup) return;
     const source = active.groups[fromGroup]; const dest = active.groups[toGroup];
     if (!source || !dest) return;
-    const entry = source.entries.splice(fromEntry, 1)[0]; if (!entry) return;
-    const existing = dest.entries.find(e => e.card.name === entry.card.name);
-    if (existing) existing.quantity += entry.quantity; else dest.entries.push(entry);
-    renderBuilder();
-    scheduleAutoSave();
+    if (!source.entries[fromEntry]) return;
+    editSheet('Déplacer une carte de catégorie', () => {
+      const entry = source.entries.splice(fromEntry, 1)[0]!;
+      const existing = dest.entries.find(e => e.card.name === entry.card.name);
+      if (existing) existing.quantity += entry.quantity; else dest.entries.push(entry);
+    });
   });
   function transfer(isNew: boolean) {
     const existing = new Set(active!.groups.flatMap(g => g.entries.map(e => e.card.name)));
     const added = [...knownCards.values()].filter(c => selection.has(c.name) && !existing.has(c.name));
-    defaultGroup(active!).entries.push(...added.map(card => ({card,quantity:1})));
+    if (!isNew) editSheet('Ajouter la sélection au deck', () => { defaultGroup(active!).entries.push(...added.map(card => ({card,quantity:1}))); });
+    else defaultGroup(active!).entries.push(...added.map(card => ({card,quantity:1})));
     drawer.close(); switchView('builder');
-    if (!isNew) { scheduleAutoSave(); toast('Selection added to ' + active!.name); return; }
+    if (!isNew) { toast('Selection added to ' + active!.name); return; }
     selection.clear(); persistSelection(); renderPool();
     scheduleAutoSave();
     toast('Deck créé. Enregistrement en cours.');
@@ -718,14 +764,8 @@ export function initDeckLabView(root: HTMLElement) {
       const input = form.querySelector('input')!;
       const name = input.value.trim();
       if (name) {
-        if (name.toLowerCase() === MAYBEBOARD_NAME.toLowerCase()) {
-          if (active.groups.some(g => g.maybeboard)) { toast('A Maybeboard category already exists.'); return; }
-          active.groups.push(maybeGroup());
-        } else {
-          active.groups.push({ name, entries: [] });
-        }
-        input.value = '';
-        renderBuilder(); scheduleAutoSave();
+        if (name.toLowerCase() === MAYBEBOARD_NAME.toLowerCase() && active.groups.some(g => g.maybeboard)) { toast('A Maybeboard category already exists.'); return; }
+        editSheet('Créer une catégorie', () => { active!.groups.push(name.toLowerCase() === MAYBEBOARD_NAME.toLowerCase() ? maybeGroup() : { name, entries: [] }); });
       }
     }
     if (form.matches('.lab-transfer')) { if (!selection.size) { toast('Add cards to Selection first.'); return; } active = {name: form.querySelector('input')!.value.trim() || `Untitled exploration ${sheets.length+1}`, groups:[commanderGroup(),{name:'Unsorted',entries:[]}],cuts:[]}; sheets.push(active); transfer(true); form.reset(); }
@@ -734,8 +774,13 @@ export function initDeckLabView(root: HTMLElement) {
     const el = event.target as HTMLInputElement;
     if (el.matches('select[data-search-field]')) void renderSearch();
     if (el.matches('.lab-sheet-picker')) { active = sheets[Number(el.value)]; renderBuilder(); }
-    if (el.dataset.rename && active) { el.value = el.value.trim() || 'Untitled category'; active.groups[Number(el.dataset.rename)]!.name = el.value; renderBuilder(); scheduleAutoSave(); }
-    if (el.dataset.move && el.value && active) { const [g,i] = el.dataset.move.split(':').map(Number); const entry = active.groups[g!]!.entries.splice(i!,1)[0]!; if (el.value === 'cut') { for (let n=0;n<entry.quantity;n++) active.cuts.push(entry.card); } else active.groups[Number(el.value)]!.entries.push(entry); renderBuilder(); scheduleAutoSave(); }
+    if (el.dataset.rename && active) editSheet('Renommer une catégorie', () => { active!.groups[Number(el.dataset.rename)]!.name = el.value.trim() || 'Untitled category'; });
+    if (el.dataset.move && el.value && active) editSheet(el.value === 'cut' ? 'Écarter une carte' : 'Déplacer une carte de catégorie', () => { const [g,i] = el.dataset.move!.split(':').map(Number); const entry = active!.groups[g!]!.entries.splice(i!,1)[0]!; if (el.value === 'cut') { for (let n=0;n<entry.quantity;n++) active!.cuts.push(entry.card); } else active!.groups[Number(el.value)]!.entries.push(entry); });
+    if (el.dataset.quantity && active) {
+      const [g,i] = el.dataset.quantity.split(':').map(Number), entry = active.groups[g!]!.entries[i!]!, quantity = Number(el.value);
+      if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 999) { el.value = String(entry.quantity); toast('Choisis une quantité entre 1 et 999.'); }
+      else editSheet('Modifier une quantité', () => { entry.quantity = quantity; });
+    }
     if (el.dataset.triageMove && el.value && triage) { const [fromKey, i] = el.dataset.triageMove.split(':'); moveTriageBucket(fromKey as TriageCategoryKey, Number(i), el.value as TriageCategoryKey); }
   });
   drawer.addEventListener('close', () => drawerInvoker?.focus());

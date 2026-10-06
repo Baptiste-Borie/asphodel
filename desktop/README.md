@@ -1,4 +1,4 @@
-# Asphodel Desktop 0.1.3
+# Asphodel Desktop 0.1.4
 
 Desktop wrapper around the existing TypeScript/Vite frontend, Node backend and pinned Forge bridge. No stack migration. Launch Asphodel, choose a saved deck, play locally, close the application. The packaged app includes Chromium/Node, Java and Forge's resources; no terminal, Node installation, Java installation or remote server is needed to run it.
 
@@ -10,17 +10,17 @@ Close Asphodel, then from the repository root:
 npm --prefix desktop run install:local
 ```
 
-This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.3-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
+This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.4-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
 
 Afterwards, open **Asphodel** from Ubuntu's application menu and pin it to your dock if desired. The package installs the app in `/opt/Asphodel`, the desktop entry `Asphodel.desktop`, the existing icon and the `asphodel` command. This launch uses the installed app, independent of the checkout, and needs no local server command. The normal desktop settings, fullscreen preference and Quitter button remain available.
 
 To update after a new patch/pull, close Asphodel and run the same command again. Decks, cached images, drafts and display settings remain in the existing `~/.config/Asphodel` profile; the package contains no home-directory files. Package removal (`sudo apt-get remove asphodel-desktop`) leaves this profile in place. Backup/restore is available in settings; abrupt-crash recovery still depends on a persisted draft.
 
-To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.3-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
+To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.4-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
 
 ## Automated Linux packages
 
-The Desktop workflow now runs for relevant changes on `main`, matching pull requests, manual dispatch, and `v*` tags. A release tag must equal the desktop version (for example `v0.1.3`); both package files must agree. A newer run on the same ref cancels an obsolete build.
+The Desktop workflow now runs for relevant changes on `main`, matching pull requests, manual dispatch, and `v*` tags. A release tag must equal the desktop version (for example `v0.1.4`); both package files must agree. A newer run on the same ref cancels an obsolete build.
 
 CI runs the existing desktop/window/artwork/runtime checks, builds versioned AppImage and Debian packages, and checks that the `.deb` contains the launcher, icon, frontend, backend dependencies, seed library, Java and Forge. Successful packages appear in the workflow's **Artifacts**, under `Asphodel-Desktop-Linux-<commit>`. Building does not automatically publish a release or install an updater.
 
@@ -116,3 +116,18 @@ Decks/cards/projects are restored in a single SQLite transaction and deck ids/ti
 **Exporter** in Builder V1, or **Table tools → Exporter le deck** in V2, opens a selectable text preview with copy and save-to-`.txt` actions. Default output uses `Commander` and `Mainboard`, aggregates a card appearing in several categories and excludes candidates/cuts. It round-trips through Asphodel's text importer. Optional `Maybeboard` output is intended for destinations that recognize that section; Asphodel's current plain-text importer supports only Commander/Mainboard. Printing metadata is retained by the full archive; text export contains names and quantities.
 
 No new database migration is required. Rebuild/install with `npm --prefix desktop run install:local` after applying the patch.
+
+
+## Builder undo/redo (patch 05)
+
+**Annuler / Rétablir** are available in both Builder V1 and Table V2. Use Ctrl/Cmd+Z to undo, Ctrl/Cmd+Shift+Z or Ctrl+Y to redo. Text inputs, selects, editable content and open modal dialogs retain their own keyboard behavior. Buttons show the next action in their tooltip and disable when no action is available.
+
+Each open deck has one history shared across the two builders and retained when switching decks. It covers additions, candidates, cuts/restores, quantities, category changes/order, deck names, triage, batch inclusion/exclusion and table card/zone edits. Quantity fields accept integers from 1 to 999. A drag with many pointer movements records one action on release; Escape, pointer cancellation, lost capture or window blur restores the start of an unfinished gesture. Undo during a gesture cancels that gesture first. Closing/saving during a gesture checkpoints its current position before flushing persistence.
+
+Undo restores entry/group/zone identities, printing/face metadata and geometry together with deck membership. Camera pan/zoom and selection changes are outside history, so undo does not move the viewport. Default zone identities are established once when opening a sheet, before recording V1 actions. No automatic rearrangement of existing cards is introduced.
+
+History keeps up to 100 actions per deck, evicting older actions beyond an estimated 32 MiB of snapshot/card JSON. Repeated card metadata is shared between snapshots; the current state is always retained. A new edit after undo discards the redo branch; a no-op edit or a view switch does not. History is kept only for the current app session: restarting or restoring a backup starts a fresh history. Deck deletion is still a separately confirmed action.
+
+The resulting state after undo/redo uses the normal recovery journal, SQLite save and native close handshake. A save acknowledgement for an earlier edit cannot overwrite a newer undo. Portable backups retain the resulting deck/table state, not the undo stack. There is no database or Forge migration in this patch.
+
+The frontend tests cover immutable snapshots, batched gestures, cancellation, independent histories, memory limits, metadata/identity retention and undo during an in-flight save. The desktop smoke adds native category undo/redo, keyboard zone undo/redo, shared V1/V2 history and exact zone identities before immediate close/restart. Native smoke still requires an Electron-capable display and the built Forge runtime.

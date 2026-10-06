@@ -69,3 +69,10 @@ body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .header-actions 
   #deck-lab-view .dt-heading>button,.dt-heading summary { font-size:11px;padding:6px; }
   .dt-selection { bottom:84px;right:8px; }.dt-tools { left:8px; }.dt-create .dt-zone-form { position:fixed;left:12px;right:12px;top:48px;width:auto; }
 }
+.dt-history { display: flex; gap: 4px; }
+#deck-lab-view .dt-history button { padding: 4px 8px; font-size: 18px; line-height: 1; }
+.dt-history button:disabled { opacity: .35; cursor: default; }
+.dt-quantity { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+#deck-lab-view .dt-quantity input { width: 58px; padding: 4px 5px; font-size: 11px; }
+@media(max-width:1100px) { .dt-heading [data-dt-count] { display: none; } }
+@media(max-width:600px) { .dt-selection { flex-wrap: wrap; max-width: calc(100vw - 16px); } }

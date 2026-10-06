@@ -52,10 +52,28 @@ try {
   await page.getByRole('button', { name: 'New empty sheet', exact: true }).click();
   await page.getByLabel('New category name', { exact: true }).fill('Preserved empty role');
   await page.getByLabel('New category name', { exact: true }).press('Enter');
+  await page.getByRole('button', { name: 'Annuler', exact: true }).click();
+  assert.equal(await page.locator('[data-rename]').evaluateAll(inputs => inputs.some(input => input.value === 'Preserved empty role')), false);
+  await page.getByRole('button', { name: 'Rétablir', exact: true }).click();
+  assert.equal(await page.locator('[data-rename]').evaluateAll(inputs => inputs.some(input => input.value === 'Preserved empty role')), true);
   await page.getByRole('button', { name: 'Table V2', exact: true }).click();
   await page.locator('.dt-create summary').click();
   await page.getByLabel('New zone name', { exact: true }).fill('Preserved empty zone');
   await page.getByLabel('New zone name', { exact: true }).press('Enter');
+  const zoneId = await page.locator('.dt-zone input').evaluateAll(inputs => inputs.find(input => input.value === 'Preserved empty zone')?.closest('[data-dt-zone]')?.dataset.dtZone);
+  assert.ok(zoneId, 'new zone has a stable identity');
+  await page.locator('.dt-canvas').press('Control+z');
+  assert.equal(await page.locator(`[data-dt-zone="${zoneId}"]`).count(), 0);
+  await page.locator('.dt-canvas').press('Control+Shift+z');
+  assert.equal(await page.locator(`[data-dt-zone="${zoneId}"]`).count(), 1);
+  // One history is shared by both builders, including actions absent from V1's UI.
+  await page.getByLabel('Table tools', { exact: true }).click();
+  await page.getByRole('button', { name: 'Builder V1', exact: true }).click();
+  await page.getByRole('button', { name: 'Annuler', exact: true }).click();
+  await page.getByRole('button', { name: 'Table V2', exact: true }).click();
+  assert.equal(await page.locator(`[data-dt-zone="${zoneId}"]`).count(), 0);
+  await page.getByRole('button', { name: 'Rétablir', exact: true }).click();
+  assert.equal(await page.locator(`[data-dt-zone="${zoneId}"]`).count(), 1);
   const expectedProject = await page.evaluate(() => {
     document.querySelector('.dt-canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 120, clientX: 400, clientY: 300, bubbles: true, cancelable: true }));
     const key = Object.keys(localStorage).find(key => key.startsWith('asphodel.builder-draft.v1.'));
@@ -149,7 +167,7 @@ try {
   assert.deepEqual(errors, []);
   // Closing mid-game exercises the shutdown hook, rather than only an idle quit.
   await electron.close(); electron = undefined;
-  console.log('Desktop smoke passed: startup, artwork decode/offline restart, real local game, persistent decks/localStorage, immediate builder close, unified empty table, recovery and active-game shutdown.');
+  console.log('Desktop smoke passed: startup, artwork decode/offline restart, real local game, persistent decks/localStorage, shared builder undo/redo and zone identities, immediate builder close, unified empty table, recovery and active-game shutdown.');
 } finally {
   if (electron) await electron.close();
   await rm(userData, { recursive: true, force: true });

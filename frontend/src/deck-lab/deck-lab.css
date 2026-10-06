@@ -241,3 +241,7 @@ body:has(#deck-lab-view:not([hidden])) .header-actions .primary-button { backgro
 .lab-export :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 #deck-lab-view .lab-export p { margin: 12px 0; }
+.lab-history { display: inline-flex; gap: 6px; margin-right: 10px; }
+.lab-history button:disabled { opacity: .4; cursor: default; }
+.lab-card-quantity { position: absolute; left: 4px; top: 34px; display: flex; align-items: center; gap: 3px; padding: 0 5px; border-radius: 3px; color: #d0d0d3; background: #19191deb; }
+#deck-lab-view .lab-card-quantity input { width: 54px; height: 24px; padding: 2px 3px; background: transparent; border: 0; font-size: 12px; }
