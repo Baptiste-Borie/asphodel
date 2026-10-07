@@ -1,4 +1,4 @@
-# Asphodel Desktop 0.1.11
+# Asphodel Desktop 0.1.12
 
 Desktop wrapper around the existing TypeScript/Vite frontend, Node backend and pinned Forge bridge. No stack migration. Launch Asphodel, choose a saved deck, play locally, close the application. The packaged app includes Chromium/Node, Java and Forge's resources; no terminal, Node installation, Java installation or remote server is needed to run it.
 
@@ -10,13 +10,13 @@ Close Asphodel, then from the repository root:
 npm --prefix desktop run install:local
 ```
 
-This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.11-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
+This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.12-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
 
 Afterwards, open **Asphodel** from Ubuntu's application menu and pin it to your dock if desired. The package installs the app in `/opt/Asphodel`, the desktop entry `Asphodel.desktop`, the existing icon and the `asphodel` command. This launch uses the installed app, independent of the checkout, and needs no local server command. The normal desktop settings, fullscreen preference and Quitter button remain available.
 
 To update after a new patch/pull, close Asphodel and run the same command again. Decks, cached images, drafts and display settings remain in the existing `~/.config/Asphodel` profile; the package contains no home-directory files. Package removal (`sudo apt-get remove asphodel-desktop`) leaves this profile in place. Backup/restore is available in settings; abrupt-crash recovery still depends on a persisted draft.
 
-To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.11-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
+To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.12-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
 
 ## Automated Linux packages
 
@@ -193,7 +193,7 @@ Validation uses synthetic snapshots for real gzip validation and SQLite index/se
 
 Rebuild/install with `npm --prefix desktop run install:local` after applying this patch. Then check/install from settings, wait for **Catalogue prêt**, relaunch and choose one small extension to test offline image preparation.
 
-## Manual multiple roles (patch 10.1, version 0.1.11)
+## Manual multiple roles (patch 10.1, version 0.1.10)
 
 Use **Tags** on the table selection, or **Modifier les tags** in the card inspector. A multi-card selection supports mixed checkboxes: check to add a role to every selected card, uncheck to remove it. The built-in manual template (Ramp, Pioche, Interaction, Protection, Récursion, Fin de partie) is editable; create, rename or delete tags, write their definitions and set optional personal quantity targets. **Enregistrer** commits the whole dialog as one undoable action; cancel or Escape leaves the deck untouched. Manage the deck's definitions and targets from **Tags et cibles** in V1 or **Gérer les tags** in the table tools / Analyse.
 
@@ -214,3 +214,18 @@ Data gaps use **À vérifier**, not a confident legal/illegal verdict. Pre-game 
 No project-format or user SQLite migration, dependency additions, automatic networking or persisted metadata replacement. Local verification facts are session-only and per deck: after restarting, saved facts are immediately usable and explicit verification can be repeated. Existing tags and backups keep their exact format.
 
 References for special cases: [Doctor Who mechanics](https://magic.wizards.com/en/news/feature/magic-the-gathering-doctor-who-mechanics), [Eldraine release notes](https://magic.wizards.com/en/news/feature/throne-eldraine-release-notes-2019-09-20), [LOTR release notes](https://media.wizards.com/2023/downloads/LTR_Release_Notes/EN_MTGLTR_ReleaseNotes_20230508.pdf), [Modern Horizons 2 release notes](https://media.wizards.com/2021/downloads/MH2_Release_Notes/EN_MTGMH2_FAQ_06022021.pdf).
+
+
+## Mana demand and sources (patch 10.3, version 0.1.12)
+
+**Analyse** in Table V2 and the V1 statistics area now compare printed spell-cost symbols with potential mana sources. The six rows distinguish W/U/B/R/G and required colorless C. Library demand and commander demand are separate; quantities count, candidates and cuts do not. Mandatory pips are distinct from hybrid, two-brid and Phyrexian options. Generic mana, variables and snow are reported separately. Flexible choices overlap and are never arbitrarily split between colors. A missing cost is unknown; an explicitly empty printed cost creates no pips and does not imply normal castability.
+
+Source columns count cards, not mana units: direct lands, other direct permanent sources and recognizable conditional/restricted sources. A dual land appears in both color rows but remains one land; Sol Ring contributes one potential colorless permanent source, not two mana sources. Basic land types supply their intrinsic colors; Wastes needs its explicit production text. Commander-color production (Command Tower wording) uses the designated commanders' combined identity, and stays unknown when it requires an unresolved pregame choice. Land arrival is shown separately as always tapped, conditional or not determined. Other permanent producers must first be cast/played and may have summoning sickness; no turn-by-turn availability is asserted.
+
+**Sources et conditions** lists each recognized or unresolved source with its restrictions and a saved-card inspector button. Additional activation costs, sacrifice/life costs and recognized usage restrictions are conditional, not unrestricted fixing. Rituals and indirect nonpermanent access are excluded from permanent source totals. Fetchlands, token creation, triggered/dynamic production, complex filters and incomplete texts remain review items without invented colors. All multiple-faced cards are excluded from quantified demand/production until face/layout metadata can model their actual options; front-face land count is shown without adding a back land as a second card. Snow production and alternate casting costs are not simulated. Missing direct sources yield an advisory, not a legality verdict or a recommended ratio.
+
+The existing explicit **Vérifier avec le catalogue local** button updates both Commander checks and this mana analysis. The bounded facts response now includes optional `manaCost` from the existing index payload. Old responses without that field fall back to saved costs; explicit null stays unknown. No search-index schema change/rebuild, project or SQLite migration, dependency, automatic network request or persisted deck/art replacement is introduced. Catalog progress/results refresh analysis alone, keeping ongoing card gestures intact. Facts remain session-only; failed checks retain the last complete snapshot.
+
+Validation covers symbol parsing, quantity/membership, partner colors, direct and conditional production, snow basics/Wastes, tapped/check/shock lands, malformed costs, quoted abilities, multi-face exclusions, read-only catalog overrides, inspector links and actual V1/V2 DOM events. Frontend, backend and emitted desktop backend builds are checked. Native Electron rendering/launch still requires validation on the user's PC.
+
+References: [Scryfall card fields](https://github.com/scryfall/api-types/blob/main/src/objects/Card/CardFields.ts), [Zendikar Rising mechanics](https://magic.wizards.com/en/news/feature/zendikar-rising-mechanics-2020-09-01), and the Comprehensive Rules linked above. Probabilistic starting hands remain the next roadmap milestone.

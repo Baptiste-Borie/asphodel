@@ -36,7 +36,8 @@ export class CommanderCatalog {
           if (!expected.has(key) || answered.has(key) || typeof c.name !== 'string' || typeof c.typeLine !== 'string' || !Array.isArray(c.colorIdentity)
             || !c.colorIdentity.every(v => typeof v === 'string') || typeof c.oracleId !== 'string' || (c.oracleText !== null && typeof c.oracleText !== 'string')
             || (c.power !== null && typeof c.power !== 'string') || (c.toughness !== null && typeof c.toughness !== 'string')
-            || (c.commanderLegal !== undefined && typeof c.commanderLegal !== 'string')) throw new Error('Données de catalogue invalides.');
+            || (c.commanderLegal !== undefined && typeof c.commanderLegal !== 'string')
+            || (c.manaCost !== undefined && c.manaCost !== null && typeof c.manaCost !== 'string')) throw new Error('Données de catalogue invalides.');
           answered.add(key); facts.set(key, c);
         }
         for (const name of result.missing) { if (typeof name !== 'string') throw new Error('Réponse de catalogue incohérente.'); const key = commanderName(name); if (!expected.has(key) || answered.has(key)) throw new Error('Réponse de catalogue incohérente.'); answered.add(key); missing.push(name); }

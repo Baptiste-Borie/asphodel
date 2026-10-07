@@ -25,7 +25,7 @@ test('Commander lookup is exact, offline, bounded, parameterized and preserves c
     const result = await app.inject({ method: 'POST', url: '/cards/search/commander-facts', payload: { names: ['Aang', ' katara ', 'Absent', "' OR 1=1 --"] } });
     assert.equal(result.statusCode, 200); const data = result.json();
     assert.deepEqual(data.cards.map((c: { name: string }) => c.name), ['Aang', 'Katara']); assert.equal(data.cards[0].commanderLegal, 'legal');
-    assert.equal(data.cards[0].oracleId, 'Aang'); assert.deepEqual(data.cards[0].colorIdentity, ['G']); assert.equal(data.cards[0].image, undefined);
+    assert.equal(data.cards[0].oracleId, 'Aang'); assert.deepEqual(data.cards[0].colorIdentity, ['G']); assert.equal(data.cards[0].image, undefined); assert.equal(data.cards[0].manaCost, null);
     assert.deepEqual(data.missing, ['Absent', "' OR 1=1 --"]); assert.ok(data.snapshotDate);
     for (const names of [[], Array.from({ length: 121 }, () => 'Aang'), [''], ['x'.repeat(201)], ['   ']]) assert.equal((await app.inject({ method: 'POST', url: '/cards/search/commander-facts', payload: { names } })).statusCode, 400);
     await assert.rejects(f.service.commanderFacts(['  ']), /invalide/);
@@ -46,6 +46,24 @@ async function setup() {
   await writeFile(bulkPath,gzipSync(fixture.map(c=>JSON.stringify(c)).join('\n')));
   return {dir,bulkPath,indexPath,service:new DeckLabSearch({bulkPath,indexPath})};
 }
+test('mana facts reuse the existing payload/index, preserve empty versus absent costs and keep face costs explicit', async () => {
+  const f = await setup();
+  try {
+    await writeFile(f.bulkPath, gzipSync([
+      card('cost', 'Cost', 'tla', { mana_cost: '{2}{G}{G}' }),
+      card('empty', 'No printed cost', 'tla', { mana_cost: '' }),
+      card('unknown', 'Missing cost', 'tla'),
+      card('faces', 'Front // Back', 'tla', { mana_cost: undefined, card_faces: [{ name: 'Front', mana_cost: '{G}' }, { name: 'Back', mana_cost: '{U}' }] }),
+    ].map(c => JSON.stringify(c)).join('\n')));
+    await f.service.search({}); await f.service.close();
+    const reopened = new DeckLabSearch({ bulkPath: f.bulkPath, indexPath: f.indexPath });
+    try {
+      const result = await reopened.commanderFacts(['Cost', 'No printed cost', 'Missing cost', 'Front // Back']);
+      assert.deepEqual(result.cards.map(c => c.manaCost), ['{2}{G}{G}', '', null, '{G} // {U}']);
+      assert.ok(result.cards.every(c => !('image' in c))); assert.equal(result.cards[0]!.oracleText, 'Put a counter on target land.');
+    } finally { await reopened.close(); }
+  } finally { await f.service.close(); await rm(f.dir, { recursive: true, force: true }); }
+});
 test('set union, always deduplicated by card, pagination, other printings and two-face search', async () => {
   const f = await setup();
   try {

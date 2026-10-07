@@ -30,13 +30,14 @@ test('a failed second batch retains the previous completed result, error is clea
   fail = false; await c.refresh(s, () => {}); assert.equal(c.state(s).error, ''); assert.equal(c.state(s).facts.size, 121);
 });
 test('catalog changes, unrequested cards, incomplete data and malformed metadata reject the entire refresh', async () => {
-  for (const kind of ['changed', 'extra', 'missing', 'malformed']) {
+  for (const kind of ['changed', 'extra', 'missing', 'malformed', 'bad-cost']) {
     let calls = 0; const s = sheet(121), c = new CommanderCatalog(async names => {
       const r = response(names); calls++;
       if (kind === 'changed' && calls === 2) r.snapshotDate = '2026-10-08T00:00:00.000Z';
       if (kind === 'extra') r.cards.push(facts('Unrequested'));
       if (kind === 'missing') r.cards.pop();
       if (kind === 'malformed') r.cards[0]!.power = undefined as unknown as null;
+      if (kind === 'bad-cost') r.cards[0]!.manaCost = 42 as unknown as string;
       return r;
     });
     await c.refresh(s, () => {}); assert.equal(c.state(s).facts.size, 0); assert.ok(c.state(s).error); assert.equal(c.state(s).busy, false);

@@ -105,7 +105,7 @@ export class DeckLabSearch {
       if (!row) { result.missing.push(requestedName); continue; }
       const c = JSON.parse(row.payload) as LabCard;
       result.cards.push({ requestedName, name: c.name, oracleId: row.oracle_id, typeLine: c.type_line, oracleText: c.oracle_text,
-        colorIdentity: c.color_identity, ...(c.commander_legal === undefined ? {} : { commanderLegal: c.commander_legal }), power: c.power, toughness: c.toughness });
+        colorIdentity: c.color_identity, ...(c.commander_legal === undefined ? {} : { commanderLegal: c.commander_legal }), power: c.power, toughness: c.toughness, manaCost: c.mana_cost });
     }
     return result;
   }
