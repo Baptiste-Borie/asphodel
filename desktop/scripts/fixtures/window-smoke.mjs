@@ -8,6 +8,7 @@ import { isTrustedDesktopFrame, DisplayPreferences } from '../../src/display-pre
 import { desktopWindowOptions, installWindowControls } from '../../src/window-controls.mjs';
 import { assetPath } from '../../src/paths.mjs';
 import { ArtCache } from '../../src/art-cache.mjs';
+import { CatalogLibrary, installCatalogCommands } from '../../src/catalog-library.mjs';
 import { ArtworkLibrary, installArtworkCommands } from '../../src/artwork-library.mjs';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'asphodel', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
@@ -33,6 +34,9 @@ void app.whenReady().then(async () => {
   const window = new BrowserWindow({ width: 1280, height: 800, show: false, ...desktopWindowOptions(preferences) });
   installWindowControls(window, preferences);
   const artwork = new ArtworkLibrary(new ArtCache(join(app.getPath('userData'), 'card-art')), join(app.getPath('userData'), 'artwork-library.json'));
+  const catalog = new CatalogLibrary({data:join(app.getPath('userData'),'data'),prepare:()=>{throw new Error('Not used in display smoke');}});
+  await catalog.ready;
+  installCatalogCommands({ipcMain,window,library:catalog,restart:()=>app.quit()});
   await artwork.ready;
   installArtworkCommands({ ipcMain, window, library: artwork });
   ipcMain.handle('asphodel:restored-storage', event => {

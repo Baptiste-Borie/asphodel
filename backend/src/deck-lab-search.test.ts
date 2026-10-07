@@ -75,6 +75,8 @@ test('routes bound request size/page size and serve the catalog', async () => {
     const response = await app.inject({method:'POST',url:'/cards/search',payload:{sets:['tla','tle']}});
     assert.equal(response.statusCode,200); assert.equal(response.json().total,4);
     assert.equal((await app.inject('/cards/search/catalog')).json().sets.length,3);
+    assert.equal((await app.inject('/cards/search/artwork/tla')).json().id,'extension-tla');
+    assert.equal((await app.inject('/cards/search/artwork/BAD')).statusCode,400);
   } finally { await app.close(); await rm(f.dir,{recursive:true,force:true}); }
 });
 test('missing snapshot produces an actionable service-unavailable error', async () => {

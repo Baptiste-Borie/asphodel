@@ -10,17 +10,17 @@ Close Asphodel, then from the repository root:
 npm --prefix desktop run install:local
 ```
 
-This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.8-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
+This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.9-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
 
 Afterwards, open **Asphodel** from Ubuntu's application menu and pin it to your dock if desired. The package installs the app in `/opt/Asphodel`, the desktop entry `Asphodel.desktop`, the existing icon and the `asphodel` command. This launch uses the installed app, independent of the checkout, and needs no local server command. The normal desktop settings, fullscreen preference and Quitter button remain available.
 
 To update after a new patch/pull, close Asphodel and run the same command again. Decks, cached images, drafts and display settings remain in the existing `~/.config/Asphodel` profile; the package contains no home-directory files. Package removal (`sudo apt-get remove asphodel-desktop`) leaves this profile in place. Backup/restore is available in settings; abrupt-crash recovery still depends on a persisted draft.
 
-To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.8-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
+To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.9-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
 
 ## Automated Linux packages
 
-The Desktop workflow now runs for relevant changes on `main`, matching pull requests, manual dispatch, and `v*` tags. A release tag must equal the desktop version (for example `v0.1.8`); both package files must agree. A newer run on the same ref cancels an obsolete build.
+The Desktop workflow now runs for relevant changes on `main`, matching pull requests, manual dispatch, and `v*` tags. A release tag must equal the desktop version (for example `v0.1.9`); both package files must agree. A newer run on the same ref cancels an obsolete build.
 
 CI runs the existing desktop/window/artwork/runtime checks, builds versioned AppImage and Debian packages, and checks that the `.deb` contains the launcher, icon, frontend, backend dependencies, seed library, Java and Forge. Successful packages appear in the workflow's **Artifacts**, under `Asphodel-Desktop-Linux-<commit>`. Building does not automatically publish a release or install an updater.
 
@@ -175,3 +175,20 @@ Cached images are stored atomically in the existing `card-art` directory. Retent
 This patch prepares **images already described by the deck**. It does not install the full card catalog, download every printing or add extension updates. Those catalog operations remain a separate milestone. Rebuild/install with `npm --prefix desktop run install:local`.
 
 Validation includes quota/retention, recto-verso restart, pause/cancel/resume, partial retries, shared foreground downloads, invalid responses and damaged metadata. The native desktop smoke additionally prepares both faces through the actual preload, restarts with downloads disabled and checks protected cleanup. Running that smoke still requires an Electron-capable display and the built Forge runtime.
+
+
+## Catalog installation, updates and extension artwork (patch 09)
+
+In **Paramètres → Catalogue et extensions**, **Vérifier les mises à jour** explicitly requests the Oracle Cards and Default Cards JSONL metadata. The screen shows the active snapshot date, last check/error, catalog and staging space, available disk space, compressed download bytes, verification and indexing progress. No catalog network request starts merely by opening settings or launching the app. Desktop card resolution now reports a missing catalog instead of silently starting an unmanaged bulk download. The existing web provider retains its previous behavior.
+
+**Installer le catalogue / Préparer la mise à jour** downloads a version into a new directory. The two gzip JSONL files are streamed to `.part` files, with bounded sizes, idle timeout and a checked ETag/Range resume. A server returning a full response instead of a range safely restarts that file. Pause, cancellation and quitting interrupt both the download and its verification worker. Completed bytes survive a pause/restart; invalid gzip/schema never reaches installation. An unavailable server or full disk leaves a visible, retryable pause and preserves the active catalog.
+
+A separate utility process validates both compressed files and builds the derived SQLite search index. The currently running backend continues reading its old catalog throughout. Only a complete candidate switches `userData/data/catalog-current.json` through an atomic rename. **Relancer pour utiliser ce catalogue** uses the normal builder save/close handshake before relaunching; choosing to stay after a failed save cancels that relaunch. The next process receives the new bulk/index paths before loading the backend. No deck database or project migration is required, and deck printing choices, notes, quantities and cached artwork are not rewritten.
+
+Versions live in `userData/data/catalogs/<generation>/`, with `catalog-info.json`; the resumable operation is in `catalog-download.json`. A separate previous manifest and previous files provide recovery if the current pointer is unreadable or incomplete. **Libérer les versions anciennes** removes only unreferenced generation directories, preserving the active, latest, previous and pending versions. Legacy bulk files remain supported and are retained. The cache limit from patch 08 governs artwork, not bulk files or indexes; catalog storage is shown separately. Full library archives still omit these PC-specific files.
+
+After activating a catalog, choose its extension and **Préparer les images de cette extension**. The list and image URLs come from the installed local index: every printing in the selected extension, with distinct face images and URL deduplication, not just the one representative printing used in normal search. The preview shows existing/missing images and an approximate size before an explicit start. The existing patch-08 queue supplies progress, pause/resume/cancel, protection and quota. Prepared extensions appear in the same retention list as prepared decks. Catalog installation itself downloads no images. Repeating a preparation after an update adds missing art; opening the extension selector never silently downloads a set.
+
+Validation uses synthetic snapshots for real gzip validation and SQLite index/search, isolated old/new catalogs, partial HTTP resume, ignored ranges, failed validation/activation, cancellation, restart recovery, cleanup protection and trusted IPC. The native desktop smoke installs a small synthetic catalog through the actual utility process, restarts offline, enumerates both faces of an extension and proves a failed check keeps search usable. Native Electron checks and live Scryfall downloads require an appropriate desktop/network environment.
+
+Rebuild/install with `npm --prefix desktop run install:local` after applying this patch. Then check/install from settings, wait for **Catalogue prêt**, relaunch and choose one small extension to test offline image preparation.

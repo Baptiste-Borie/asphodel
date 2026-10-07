@@ -27,7 +27,7 @@ export class DeckLabSearch {
   private database: DatabaseSync | undefined;
   private loading: Promise<void> | undefined;
   private catalog: LabCatalog | undefined;
-  constructor(private readonly options: {bulkPath?: string; indexPath?: string} = {}) {}
+  constructor(private readonly options: {bulkPath?: string; indexPath?: string; onProgress?: (cards: number) => void} = {}) {}
 
   private async ensureReady(): Promise<void> {
     if (!this.loading) this.loading = this.load().catch(error => { this.database?.close(); this.database = undefined; this.loading = undefined; throw error; });
@@ -82,7 +82,7 @@ export class DeckLabSearch {
         sets.set(card.set,card.set_name); languages.add(card.lang);
         for (const word of (card.type_line ?? '').replace(/—|\/\//g,' ').split(/\s+/)) if (word) types.add(word);
         printings++;
-        if (printings % 1000 === 0) await setImmediate();
+        if (printings % 1000 === 0) { this.options.onProgress?.(printings); await setImmediate(); }
       }
       db.exec('CREATE INDEX cards_set ON cards(set_code); CREATE INDEX cards_oracle ON cards(oracle_id); CREATE INDEX cards_name ON cards(name_search);');
       this.catalog = {sets:[...sets].map(([value,label])=>({value,label})).sort((a,b)=>a.label.localeCompare(b.label)),types:[...types].sort(),languages:[...languages].sort(),printings,snapshotDate:source.mtime.toISOString()};
@@ -114,6 +114,29 @@ export class DeckLabSearch {
       }),
     }));
     return {cards,total,nextOffset:offset+rows.length<total ? offset+rows.length : null,catalogPrintings:this.catalog!.printings,snapshotDate:this.catalog!.snapshotDate};
+  }
+  async artworkForSet(set: string) {
+    if (!/^[a-z0-9]{1,20}$/.test(set)) throw new AppError('Extension invalide.', 400, 'INVALID_SET');
+    await this.ensureReady();
+    const label = this.catalog!.sets.find(s => s.value === set)?.label;
+    if (!label) throw new AppError('Cette extension ne figure pas dans le catalogue installé.', 404, 'SET_NOT_FOUND');
+    const rows = this.database!.prepare('SELECT payload FROM cards WHERE set_code = ? ORDER BY id').all(set) as {payload: string}[];
+    const urls = new Set<string>(); let unavailable = 0;
+    for (const row of rows) {
+      const card = JSON.parse(row.payload) as LabCard;
+      const images = [card.image, ...card.faces?.map(f => f.image) ?? []].filter(Boolean);
+      let missing = !images.length;
+      for (const raw of images) {
+        try {
+          const url = new URL(raw);
+          if (url.protocol !== 'https:' || url.hostname !== 'cards.scryfall.io' || url.port || url.username || url.password || !/\.(jpg|png)$/.test(url.pathname)) throw new Error();
+          urls.add(url.origin + url.pathname);
+        } catch { missing = true; }
+      }
+      if (missing) unavailable++;
+    }
+    if (urls.size > 40000) throw new AppError('Cette extension contient trop d’illustrations pour une préparation.', 413, 'SET_TOO_LARGE');
+    return { id: `extension-${set}`, name: `Extension ${label}`.slice(0, 120), urls: [...urls], unavailable };
   }
   async close() { try { await this.loading; } finally { this.database?.close(); this.database=undefined; this.loading=undefined; } }
 }

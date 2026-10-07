@@ -110,3 +110,9 @@ test('oversized/empty/non-image responses never enter the cache and interrupted 
     for(const response of [new Response('',{headers:{'content-type':'image/png'}}),new Response('html',{headers:{'content-type':'text/html'}})]){const cache=new ArtCache(f.directory,null,async()=>response);await assert.rejects(cache.get(url('invalid')));}
   } finally {await f.cleanup();}
 });
+test('extension-size preparations accept more than 4000 distinct images while keeping a bounded maximum',async()=>{
+ const f=await fixture();try{
+  const images=Array.from({length:4001},(_,i)=>url('set-'+i));const plan=await f.manager.plan(request(images,'extension-tla'));assert.equal(plan.total,4001);assert.equal(plan.missing,4001);
+  assert.throws(()=>artworkRequest(request(Array.from({length:40001},()=>url('same')))),/invalide/);
+ }finally{await f.cleanup();}
+});

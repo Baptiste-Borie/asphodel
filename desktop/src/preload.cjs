@@ -2,6 +2,12 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 // Expose only app commands, never ipcRenderer or arbitrary channel/path access.
 contextBridge.exposeInMainWorld('asphodelDesktop', {
+  getCatalogState: () => ipcRenderer.invoke('asphodel:catalog-state'),
+  checkCatalog: () => ipcRenderer.invoke('asphodel:catalog-check'),
+  installCatalog: () => ipcRenderer.invoke('asphodel:catalog-install'),
+  controlCatalog: action => ipcRenderer.invoke('asphodel:catalog-control', action),
+  restartForCatalog: () => ipcRenderer.invoke('asphodel:catalog-restart'),
+  cleanupCatalog: () => ipcRenderer.invoke('asphodel:catalog-cleanup'),
   getArtworkState: () => ipcRenderer.invoke('asphodel:art-state'),
   planArtwork: request => ipcRenderer.invoke('asphodel:art-plan', request),
   prepareArtwork: request => ipcRenderer.invoke('asphodel:art-prepare', request),

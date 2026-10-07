@@ -12,7 +12,7 @@ const errorText = error => error.code === 'ENOSPC' ? 'Le disque est plein. Libè
 export function artworkRequest(value) {
   if (!value || typeof value.id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(value.id)
     || typeof value.name !== 'string' || !value.name.trim() || value.name.length > 120
-    || !Array.isArray(value.urls) || value.urls.length > 4000 || !Number.isSafeInteger(value.unavailable) || value.unavailable < 0 || value.unavailable > 21000) throw new Error('Préparation d’images invalide.');
+    || !Array.isArray(value.urls) || value.urls.length > 40000 || !Number.isSafeInteger(value.unavailable) || value.unavailable < 0 || value.unavailable > 40000) throw new Error('Préparation d’images invalide.');
   const urls = new Map();
   for (const raw of value.urls) {
     if (typeof raw !== 'string' || raw.length > 4000) throw new Error('Adresse d’illustration invalide.');

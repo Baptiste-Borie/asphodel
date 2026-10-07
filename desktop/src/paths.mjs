@@ -1,6 +1,7 @@
 import { constants } from 'node:fs';
 import { access, copyFile, mkdir } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
+import { selectCatalog } from './catalog-paths.mjs';
 
 export const APP_ORIGIN = 'asphodel://app';
 export const API_PREFIXES = ['/health', '/decks', '/playtests', '/cards', '/voice'];
@@ -31,11 +32,12 @@ export async function prepareUserData(runtime, userData) {
     const source = join(runtime, 'backend/data', name);
     if (await access(source).then(() => true, () => false)) await seedFile(source, join(data, name));
   }
+  const catalog = await selectCatalog(data);
   return {
     DB_FILE_NAME: `file:${join(data, 'asphodel.sqlite')}`,
-    SCRYFALL_BULK_PATH: join(data, 'scryfall-oracle-cards.jsonl.gz'),
-    SCRYFALL_PRINTING_BULK_PATH: join(data, 'scryfall-default-cards.jsonl.gz'),
-    ASPHODEL_SEARCH_INDEX: join(data, 'deck-lab-search.sqlite'),
+    SCRYFALL_BULK_PATH: catalog.paths.oracle,
+    SCRYFALL_PRINTING_BULK_PATH: catalog.paths.printing,
+    ASPHODEL_SEARCH_INDEX: catalog.paths.index,
     ASPHODEL_REPORTS_ROOT: join(userData, 'playtest-reports'),
     WHISPER_MODEL_PATH: join(userData, 'whisper-models'),
     ASPHODEL_FORGE_JAR: join(runtime, 'forge-bridge/app/target/asphodel-forge-bridge.jar'),

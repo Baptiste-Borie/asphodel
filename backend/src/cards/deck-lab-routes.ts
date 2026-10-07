@@ -4,6 +4,7 @@ import { DeckLabSearch } from './deck-lab-search.js';
 export function registerDeckLabRoutes(app: FastifyInstance, service = new DeckLabSearch()) {
   app.addHook('onClose',()=>service.close());
   app.get('/cards/search/catalog',()=>service.getCatalog());
+  app.get<{Params: {set: string}}>('/cards/search/artwork/:set', {schema:{params:{type:'object',required:['set'],properties:{set:{type:'string',pattern:'^[a-z0-9]{1,20}$'}}}}}, request => service.artworkForSet(request.params.set));
   const shortText = {type:'string',maxLength:250};
   app.post<{Body: LabSearchQuery}>('/cards/search', {schema:{body:{
     type:'object',additionalProperties:false,properties:{

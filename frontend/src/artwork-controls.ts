@@ -1,5 +1,5 @@
 import type { BuilderProject } from '../../shared/builder-project.mjs';
-import type { ArtworkState, ArtworkPlan } from '../../shared/artwork.mjs';
+import type { ArtworkState, ArtworkPlan, ArtworkRequest } from '../../shared/artwork.mjs';
 import { collectDeckArtwork } from './deck-lab/deck-artwork';
 import './artwork-controls.css';
 
@@ -15,14 +15,21 @@ function jobHTML(state:ArtworkState|null) {
 
 /** A preparation uses a frozen deck snapshot; browsing alone starts no download. */
 export function openDeckArtwork(project:BuilderProject) {
+  openPreparation(project.name, include => collectDeckArtwork(project, include), true);
+}
+export function openExtensionArtwork(value:ArtworkRequest) {
+  const request = structuredClone(value);
+  openPreparation(request.name, () => request, false);
+}
+function openPreparation(name:string, source:(includeIdeas:boolean)=>ArtworkRequest, includeIdeas:boolean) {
   const desktop=window.asphodelDesktop;if(!desktop?.planArtwork)return;
   const previous=document.querySelector<HTMLDialogElement>('.artwork-dialog');previous?.close();previous?.remove();
   const dialog=document.createElement('dialog');dialog.className='artwork-dialog';dialog.setAttribute('aria-labelledby','artwork-title');
-  dialog.innerHTML=`<header><div><p>HORS LIGNE</p><h2 id="artwork-title">Préparer ${esc(project.name)}</h2></div><button type="button" data-art-close aria-label="Fermer la préparation hors ligne">×</button></header><section><label><input type="checkbox" data-art-ideas> Inclure les candidats et cartes écartées</label><p data-art-plan>Vérification des images déjà présentes…</p><p class="artwork-hint">Seule l’illustration choisie et ses faces sont préparées. L’estimation utilise environ 100 Ko par image ; la taille réelle peut varier.</p><button type="button" data-art-start disabled>Préparer ces images</button><p class="artwork-hint">Les images de cette préparation seront protégées du nettoyage automatique.</p></section><section><div data-art-job></div><div class="artwork-actions"><button type="button" data-art-control="pause">Pause</button><button type="button" data-art-control="resume">Reprendre les images manquantes</button><button type="button" data-art-control="cancel">Annuler le téléchargement</button></div><p>Fermer cette fenêtre laisse le téléchargement continuer. Quitter Asphodel le met en pause ; les images terminées sont conservées.</p></section><p data-art-feedback role="status"></p><footer><button type="button" data-art-close>Terminé</button></footer>`;
+  dialog.innerHTML=`<header><div><p>HORS LIGNE</p><h2 id="artwork-title">Préparer ${esc(name)}</h2></div><button type="button" data-art-close aria-label="Fermer la préparation hors ligne">×</button></header><section>${includeIdeas?'<label><input type="checkbox" data-art-ideas> Inclure les candidats et cartes écartées</label>':''}<p data-art-plan>Vérification des images déjà présentes…</p><p class="artwork-hint">${includeIdeas?'Seule l’illustration choisie et ses faces sont préparées.':'Les illustrations de toutes les impressions de cette extension présentes dans le catalogue sont préparées, avec leurs faces.'} L’estimation utilise environ 100 Ko par image ; la taille réelle peut varier.</p><button type="button" data-art-start disabled>Préparer ces images</button><p class="artwork-hint">Les images de cette préparation seront protégées du nettoyage automatique.</p></section><section><div data-art-job></div><div class="artwork-actions"><button type="button" data-art-control="pause">Pause</button><button type="button" data-art-control="resume">Reprendre les images manquantes</button><button type="button" data-art-control="cancel">Annuler le téléchargement</button></div><p>Fermer cette fenêtre laisse le téléchargement continuer. Quitter Asphodel le met en pause ; les images terminées sont conservées.</p></section><p data-art-feedback role="status"></p><footer><button type="button" data-art-close>Terminé</button></footer>`;
   document.body.append(dialog);
   const get=<T extends HTMLElement>(s:string)=>dialog.querySelector<T>(s)!;
   let timer:ReturnType<typeof setInterval>|undefined,state:ArtworkState|null=null,plan:ArtworkPlan|null=null,busy=false,polling=false,version=0;
-  const request=()=>collectDeckArtwork(project,get<HTMLInputElement>('[data-art-ideas]').checked);
+  const request=()=>source(dialog.querySelector<HTMLInputElement>('[data-art-ideas]')?.checked??false);
   function render() {
     if(plan)get('[data-art-plan]').textContent=`${plan.cached} / ${plan.total} illustrations déjà présentes · ${plan.missing} à télécharger · environ ${size(plan.estimatedBytes)}${plan.unavailable?` · ${plan.unavailable} carte(s) sans image prise en charge`:''}`;
     get('[data-art-job]').innerHTML=jobHTML(state);
@@ -31,7 +38,7 @@ export function openDeckArtwork(project:BuilderProject) {
     get<HTMLButtonElement>('[data-art-control=pause]').disabled=busy||job?.status!=='downloading';
     get<HTMLButtonElement>('[data-art-control=resume]').disabled=busy||!job||!!job.active||job.status==='downloading'||job.status==='completed';
     get<HTMLButtonElement>('[data-art-control=cancel]').disabled=busy||!job||job.status==='completed'||job.status==='canceled';
-    if(state?.recoveryError)get('[data-art-feedback]').textContent=state.recoveryError;
+    if(state?.recoveryError&&!busy)get('[data-art-feedback]').textContent=state.recoveryError;
   }
   async function refresh() {
     if(polling||!dialog.open)return;polling=true;const current=++version;
@@ -48,7 +55,7 @@ export function openDeckArtwork(project:BuilderProject) {
   dialog.querySelectorAll<HTMLButtonElement>('[data-art-close]').forEach(b=>b.addEventListener('click',()=>dialog.close()));
   get('[data-art-start]').addEventListener('click',()=>void action(()=>desktop.prepareArtwork(request())));
   dialog.querySelectorAll<HTMLButtonElement>('[data-art-control]').forEach(b=>b.addEventListener('click',()=>void action(()=>desktop.controlArtwork(b.dataset.artControl as 'pause'|'resume'|'cancel'))));
-  get('[data-art-ideas]').addEventListener('change',()=>{version++;plan=null;render();void refresh();});
+  dialog.querySelector('[data-art-ideas]')?.addEventListener('change',()=>{version++;plan=null;render();void refresh();});
   dialog.addEventListener('close',()=>{version++;clearInterval(timer);dialog.remove();});
   dialog.showModal();void refresh();timer=setInterval(()=>void refresh(),1000);
 }
@@ -77,7 +84,7 @@ export function mountArtworkSettings(root:HTMLElement) {
       const keep=row.querySelector<HTMLInputElement>('input')!;if(document.activeElement!==keep||!busy)keep.checked=deck.keep;keep.disabled=busy;
       row.querySelector<HTMLButtonElement>('button')!.disabled=busy||!!job?.active&&job.id===deck.id||job?.status==='downloading'&&job.id===deck.id;
     }
-    if(state.recoveryError)get('[data-art-settings-feedback]').textContent=state.recoveryError+' Réinitialiser conserve les fichiers d’images et une copie des anciens réglages.';
+    if(state.recoveryError&&!busy)get('[data-art-settings-feedback]').textContent=state.recoveryError+' Réinitialiser conserve les fichiers d’images et une copie des anciens réglages.';
   }
   async function refresh() {alive=true;if(!timer)timer=setInterval(()=>void poll(),1000);await poll();}
   async function poll() {if(!alive||polling||!desktop?.getArtworkState)return;polling=true;try{const next=await desktop.getArtworkState();if(alive){state=next;render();}}catch(error){if(alive)get('[data-art-settings-feedback]').textContent=friendly(error);}finally{polling=false;}}

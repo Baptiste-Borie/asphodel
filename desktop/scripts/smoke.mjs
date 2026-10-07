@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { _electron } from 'playwright';
 
@@ -47,6 +48,25 @@ try {
   await page.evaluate(value => window.asphodelDesktop.prepareArtwork(value), preparation);
   await page.waitForFunction(async () => (await window.asphodelDesktop.getArtworkState()).job?.status === 'completed');
   await assertArtworkLoads(page, `${backArtUrl}?prepared-face`);
+  // Download/verify/index through the production utility process and actual IPC.
+  // The synthetic snapshot avoids live Scryfall traffic and stays small enough for CI.
+  const catalogCards = [{ id: 'catalog-smoke-card', oracle_id: 'catalog-smoke-oracle', name: 'Catalog smoke double-faced',
+    set: 'test', set_name: 'Offline smoke extension', collector_number: '1', lang: 'en', rarity: 'rare', cmc: 3,
+    type_line: 'Creature', color_identity: ['G'], card_faces: [{ name: 'Front', image_uris: { normal: artUrl } }, { name: 'Back', image_uris: { normal: backArtUrl } }] }];
+  const compressedCatalog = gzipSync(catalogCards.map(card => JSON.stringify(card)).join('\n') + '\n');
+  await electron.evaluate(({ session }, bytes) => {
+    const compressed = Buffer.from(bytes);
+    session.fromPartition('asphodel-catalog-downloads').protocol.handle('https', request => {
+      if (request.url.startsWith('https://api.scryfall.com/bulk-data/')) {
+        const type = new URL(request.url).pathname.split('/').at(-1);
+        return Response.json({ type, jsonl_download_uri: `https://data.scryfall.io/${type}.jsonl.gz`, compressed_size: compressed.length, updated_at: '2026-10-06T10:00:00Z' });
+      }
+      return new Response(compressed, { headers: { etag: '"smoke-catalog"', 'content-length': String(compressed.length) } });
+    });
+  }, [...compressedCatalog]);
+  await page.evaluate(() => window.asphodelDesktop.checkCatalog());
+  await page.evaluate(() => window.asphodelDesktop.installCatalog());
+  await page.waitForFunction(async () => (await window.asphodelDesktop.getCatalogState()).needsRestart, null, { timeout: 45_000 });
   const list = await page.evaluate(async () => (await fetch('/decks')).json());
   assert.ok(list.decks.length > 0, 'bundled library loads on first launch');
   const id = list.decks[0].id;
@@ -115,6 +135,17 @@ try {
   await assertArtworkLoads(page, `${backArtUrl}?offline-restart`);
   const offlineArt = await page.evaluate(() => window.asphodelDesktop.purgeArtwork());
   assert.equal(offlineArt.decks.find(deck => deck.id === 'desktop-smoke-offline')?.cached, 2, 'protected recto-verso survives cache cleanup');
+  await electron.evaluate(({ session }) => session.fromPartition('asphodel-catalog-downloads').protocol.handle('https', () => new Response('Offline', { status: 503 })));
+  const installedCatalog = await page.evaluate(async () => (await fetch('/cards/search/catalog')).json());
+  assert.equal(installedCatalog.printings, 1);
+  const extensionArt = await page.evaluate(async () => (await fetch('/cards/search/artwork/test')).json());
+  assert.deepEqual(new Set(extensionArt.urls), new Set([artUrl, backArtUrl]));
+  assert.equal((await page.evaluate(request => window.asphodelDesktop.planArtwork(request), extensionArt)).missing, 0);
+  const failedUpdate = await page.evaluate(async () => {
+    try { await window.asphodelDesktop.checkCatalog(); return false; } catch { return true; }
+  });
+  assert.equal(failedUpdate, true);
+  assert.equal(await page.evaluate(async () => (await (await fetch('/cards/search/catalog')).json()).printings), 1, 'failed update preserves offline search');
   assert.equal(await page.evaluate(() => localStorage.getItem('desktop-smoke')), 'survives restart');
   assert.equal(await page.evaluate(async id => (await (await fetch(`/decks/${id}`)).json()).name, id), 'Desktop persistent deck');
   const restoredProject = await page.evaluate(async projectId => {
@@ -236,7 +267,7 @@ try {
   assert.deepEqual(errors, []);
   // Closing mid-game exercises the shutdown hook, rather than only an idle quit.
   await electron.close(); electron = undefined;
-  console.log('Desktop smoke passed: startup, managed recto-verso preparation/offline restart/protected cleanup, local game, shared undo/redo, native pile/cancellation/restart, manual locked zones, notes/full inspection, immediate close, backups/recovery and active-game shutdown.');
+  console.log('Desktop smoke passed: startup, managed recto-verso preparation/offline restart/protected cleanup, catalog staging/index/restart/extension/failed update, local game, shared undo/redo, native pile/cancellation/restart, manual locked zones, notes/full inspection, immediate close, backups/recovery and active-game shutdown.');
 } finally {
   if (electron) await electron.close();
   await rm(userData, { recursive: true, force: true });

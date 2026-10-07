@@ -60,6 +60,7 @@ export interface ScryfallCardProviderOptions {
   fetch?: typeof globalThis.fetch;
   refreshIntervalMs?: number;
   userAgent?: string;
+  allowDownload?: boolean;
 }
 
 const backendRoot = fileURLToPath(new URL("../../", import.meta.url));
@@ -195,11 +196,13 @@ export class ScryfallCardProvider implements CardProvider {
   private readonly fetchImplementation: typeof globalThis.fetch;
   private readonly refreshIntervalMs: number;
   private readonly userAgent: string;
+  private readonly allowDownload: boolean;
   private indexPromise: Promise<Map<string, ResolvedCard>> | undefined;
   private printingIndexPromise: Promise<Map<string, ResolvedCard>> | undefined;
   private tokenIndexPromise: Promise<Map<string, ResolvedCard>> | undefined;
 
   constructor(options: ScryfallCardProviderOptions = {}) {
+    this.allowDownload = options.allowDownload ?? true;
     this.bulkPath = options.bulkPath ?? defaultBulkPath;
     this.printingBulkPath = options.printingBulkPath ?? defaultPrintingBulkPath;
     this.fetchImplementation = options.fetch ?? globalThis.fetch;
@@ -319,6 +322,10 @@ export class ScryfallCardProvider implements CardProvider {
       Date.now() - existingFile.mtimeMs < this.refreshIntervalMs;
 
     if (isFresh) return;
+    if (!this.allowDownload) {
+      if (existingFile) return;
+      throw new CardProviderUnavailableError("Installe le catalogue depuis Paramètres → Catalogue et extensions.");
+    }
 
     try {
       await this.downloadBulkFile(path, bulkType);

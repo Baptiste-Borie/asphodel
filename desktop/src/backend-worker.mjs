@@ -31,7 +31,7 @@ try {
   database = await createDatabase();
   server = await buildApp({
     database,
-    cardProvider: new LibraryCardProvider(database.db, new ScryfallCardProvider({ refreshIntervalMs: Infinity })),
+    cardProvider: new LibraryCardProvider(database.db, new ScryfallCardProvider({ refreshIntervalMs: Infinity, allowDownload: false })),
   });
   // The ephemeral loopback listener is private to the desktop protocol handler.
   server.addHook('onRequest', async (request, reply) => {

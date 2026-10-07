@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { APP_ORIGIN, assetPath, isApiPath, prepareUserData } from './paths.mjs';
 import { ArtCache, installArtworkHeaderGuard } from './art-cache.mjs';
 import { ArtworkLibrary, installArtworkCommands } from './artwork-library.mjs';
+import { CatalogLibrary, installCatalogCommands } from './catalog-library.mjs';
 import { DisplayPreferences } from './display-preferences.mjs';
 import { desktopWindowOptions, installWindowControls } from './window-controls.mjs';
 import { installCloseGuard } from './close-guard.mjs';
@@ -25,6 +26,8 @@ let quitting = false;
 let displayPreferences;
 let libraryBackups;
 let artworkLibrary;
+let catalogLibrary;
+let restartRequested = false;
 const token = randomBytes(32).toString('hex');
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2', '.json': 'application/json' };
 const csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://cards.scryfall.io data: blob:; font-src 'self' data:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'";
@@ -56,6 +59,27 @@ function startBackend(env) {
         app.quit();
       }
     });
+  });
+}
+
+function prepareCatalogWorker(directory, progress, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(Object.assign(new Error('Vérification interrompue.'), { name: 'AbortError' })); return; }
+    const worker = utilityProcess.fork(join(here, 'catalog-worker.mjs'), [directory], { env: { ...process.env, ASPHODEL_RUNTIME: runtime }, stdio: 'pipe', serviceName: 'Asphodel catalogue' });
+    let done = false;
+    const finish = (error, catalog) => {
+      if (done) return; done = true; signal.removeEventListener('abort', cancel);
+      worker.kill(); if (error) reject(error); else resolve(catalog);
+    };
+    const cancel = () => finish(Object.assign(new Error('Vérification interrompue.'), { name: 'AbortError' }));
+    signal.addEventListener('abort', cancel, { once: true });
+    worker.stderr?.on('data', data => void log(String(data)));
+    worker.on('message', value => {
+      if (value.type === 'progress') progress(value.phase, value.cards);
+      if (value.type === 'complete') finish(null, value.catalog);
+      if (value.type === 'failure') finish(Object.assign(new Error(value.message), { code: value.code }));
+    });
+    worker.once('exit', code => { if (!done) finish(new Error(`La préparation du catalogue s’est arrêtée (${code}). Reprends pour réessayer.`)); });
   });
 }
 
@@ -136,7 +160,7 @@ function createWindow() {
     void log(error.stack ?? String(error));
   });
   installArtworkCommands({ipcMain,window,library:artworkLibrary});
-  installCloseGuard({ app, ipcMain, window, canClose: () => !libraryBackups?.busy,
+  const closeGuard = installCloseGuard({ app, ipcMain, window, canClose: () => !libraryBackups?.busy,
     onError: error => void log(error.stack ?? String(error)),
     confirmFailure: async () => {
       const { response } = await dialog.showMessageBox(window, {
@@ -149,6 +173,8 @@ function createWindow() {
     },
     shutdown: async () => {
       quitting = true;
+      await catalogLibrary?.close().catch(error=>void log(error.stack??String(error)));
+      if (restartRequested) app.relaunch();
       await artworkLibrary?.close().catch(error=>void log(error.stack??String(error)));
       session.defaultSession.flushStorageData();
       if (!backend) { app.exit(); return; }
@@ -168,6 +194,12 @@ function createWindow() {
     if (new URL(url).origin !== new URL(APP_ORIGIN).origin || !url.startsWith(`${APP_ORIGIN}/`)) event.preventDefault();
   });
   window.on('closed', () => { window = undefined; });
+  installCatalogCommands({ ipcMain, window, library: catalogLibrary, restart: async () => {
+    if (!(await catalogLibrary.state()).needsRestart) throw new Error('Aucune nouvelle version à activer.');
+    restartRequested = true;
+    await closeGuard.request();
+    if (!quitting) restartRequested = false;
+  }});
   return window;
 }
 
@@ -243,6 +275,9 @@ else {
       displayPreferences = new DisplayPreferences(join(app.getPath('userData'), 'display-preferences.json'), error => void log(error.message));
       Menu.setApplicationMenu(null);
       await installProtocol();
+      const downloads = session.fromPartition('asphodel-catalog-downloads', { cache: false });
+      catalogLibrary = new CatalogLibrary({ data: join(app.getPath('userData'), 'data'), fetch: (url, options) => downloads.fetch(url, options), prepare: prepareCatalogWorker, onError: error => void log(error.stack ?? String(error)) });
+      await catalogLibrary.ready;
       const currentWindow = createWindow();
       await currentWindow.loadFile(join(here, 'splash.html'));
       console.log('[Asphodel] Démarrage du moteur local…');
