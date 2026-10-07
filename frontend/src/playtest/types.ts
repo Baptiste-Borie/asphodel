@@ -210,6 +210,7 @@ export interface ForgeGameResult {
 export type WebPlaytestStatus = "starting" | "running" | "waiting_for_human" | "completed" | "ended_by_human" | "failed";
 
 export interface WebPlaytestStateDTO {
+  failure?: import('../../../shared/playtest-failure.mjs').PlaytestFailure;
   sessionId: string;
   status: WebPlaytestStatus;
   humanDeckName: string;

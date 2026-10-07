@@ -11,6 +11,7 @@ import { digitalPlayerOrder, type DigitalView } from "./digital-layout.js";
 import { VisualTransitions } from "./visual-transitions.js";
 import { apiRequest } from "../api/api-client.js";
 import { endPlaytest, getActivePlaytest, getPlaytestReport, getPlaytestState, startPlaytest, submitPlaytestChoice } from "../api/playtest-api.js";
+import { appendPlaytestDiagnostic } from './playtest-failure-view';
 import { element } from "../dom.js";
 import { collectVisibleCardNames, commandZoneCards, formatHudPhase, opponentPlayer, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
 import { createCardPreviewPanel } from "./card-preview.js";
@@ -1262,11 +1263,13 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       const reason = document.createElement("p");
       reason.textContent = `Terminal reason: ${state.result.terminalReason}`;
       endSection.append(winnerLine, turns, reason);
-    } else if (state.error) {
+    }
+    if (state.error) {
       const error = document.createElement("p");
       error.className = "page-feedback";
-      error.textContent = `The playtest failed: ${state.error}`;
+      error.textContent = `La partie a échoué : ${state.error}`;
       endSection.append(error);
+      appendPlaytestDiagnostic(endSection, state);
     }
 
     try {

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { it } from "node:test";
 import type { AgentMatchTransport } from "./agent/agent-runner.js";
 import type { AgentChoice, AsphodelAgent } from "./agent/baseline-agent.js";
+import { ForgeBridgeError } from './forge/forge-bridge-client.js';
 import {
   PlaytestSessionError,
   PlaytestSessionManager,
@@ -108,6 +109,22 @@ function scriptedTransport(steps: (() => ForgeExternalMatchSnapshot)[]): { clien
     },
   };
 }
+it('failed launch retains Forge diagnostics, stops the bridge and permits a new trial without exposing hidden state', async () => {
+  let stops = 0;
+  const { client } = scriptedTransport([]);
+  client.startMatch = async () => { throw new ForgeBridgeError('INTERNAL_ERROR', 'The Forge bridge could not process the request.', 'java.lang.NullPointerException', 'start_external_match'); };
+  const manager = new PlaytestSessionManager({ createBridge: () => ({ start: async () => {}, stop: async () => { stops++; }, getFailureDiagnostic: () => 'Forge bridge request failed: missing resource' }), createClient: () => client });
+  const request = { humanDeck: { type: 'fixture' as const }, asphodelDeck: { type: 'fixture' as const }, seed: 123 };
+  const first = await manager.start(request); await new Promise(r => setImmediate(r));
+  const failed = manager.getState(first.sessionId); assert.equal(failed.status, 'failed'); assert.equal(failed.failure?.code, 'INTERNAL_ERROR'); assert.equal(failed.failure?.requestType, 'start_external_match'); assert.equal(failed.failure?.seed, 123); assert.equal(failed.failure?.bridgeMessage, 'Forge bridge request failed: missing resource'); assert.equal(failed.observation, null); assert.equal(stops, 1);
+  failed.failure!.details.push('tampered'); assert.deepEqual(manager.getState(first.sessionId).failure!.details, ['java.lang.NullPointerException']);
+  const second = await manager.start(request); assert.notEqual(second.sessionId, first.sessionId); await new Promise(r => setImmediate(r)); assert.equal(stops, 2);
+});
+it('failed bridge setup cleans up without publishing a broken session', async () => {
+  let stops = 0;
+  const manager = new PlaytestSessionManager({ createBridge: () => ({ start: async () => {}, stop: async () => { stops++; } }), createClient: () => { throw new Error('setup failed'); } });
+  await assert.rejects(manager.start({ humanDeck: { type: 'fixture' }, asphodelDeck: { type: 'fixture' } }), /setup failed/); assert.equal(stops, 1); assert.equal(manager.getActiveState(), null);
+});
 
 async function withTempReports<T>(fn: (reportsRoot: string) => Promise<T>): Promise<T> {
   const dir = await mkdtemp(join(tmpdir(), "asphodel-playtest-session-"));

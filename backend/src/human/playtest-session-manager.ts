@@ -20,11 +20,14 @@ import { writePlaytestReport, type PlaytestReportResult, type RecordedPhysicalDe
 import { ManualPhysicalCardProvider } from "../physical/physical-card-provider.js";
 import { deckCompositionFrom, PhysicalLedger } from "../physical/physical-ledger.js";
 import { redactPendingPhysicalIdentity } from "../physical/physical-observation-redaction.js";
+import { describePlaytestFailure, diagnosticText } from './playtest-failure.js';
+import type { PlaytestFailure } from '../../../shared/playtest-failure.mjs';
 
 /** The only two things the manager needs from a running bridge process — real or faked in tests. */
 export interface PlaytestBridge {
   start(): Promise<unknown>;
   stop(): Promise<unknown>;
+  getFailureDiagnostic?(): string | undefined;
 }
 
 export interface PlaytestSessionManagerDeps {
@@ -129,6 +132,7 @@ export interface WebPlaytestStateDTO {
   endedByHuman: boolean;
   result: ForgeGameResult | null;
   error: string | null;
+  failure?: PlaytestFailure;
 }
 
 export type PlaytestSessionErrorCode = "PLAYTEST_ALREADY_RUNNING" | "SESSION_NOT_FOUND" | "NOT_WAITING_FOR_HUMAN" | "REPORT_NOT_READY" | "UNSUPPORTED_PLAYTEST_CONFIGURATION";
@@ -144,6 +148,7 @@ export class PlaytestSessionError extends Error {
 }
 
 interface Session {
+  failure?: PlaytestFailure;
   id: string;
   humanDeckName: string;
   /** One entry per Asphodel seat, in player order (see WebPlaytestStateDTO.asphodelDeckNames). */
@@ -247,8 +252,9 @@ export class PlaytestSessionManager {
     const agentDecks = secondAgentDeck ? [agentDeck, secondAgentDeck] : [agentDeck];
 
     const bridge = this.createBridge();
-    await bridge.start();
-    const client = this.createClient(bridge);
+    let client: AgentMatchTransport;
+    try { await bridge.start(); client = this.createClient(bridge); }
+    catch (error) { await bridge.stop().catch(() => {}); throw error; }
 
     const session: Session = {
       id: randomUUID(), humanDeckName: humanDeck.name, agentDeckNames: agentDecks.map(deck => deck.name),
@@ -371,7 +377,8 @@ export class PlaytestSessionManager {
       session.phase = run.endedByHuman ? "ended_by_human" : "completed";
     } catch (error) {
       session.phase = "failed";
-      session.errorMessage = error instanceof Error ? error.message : String(error);
+      session.failure = describePlaytestFailure(error, session.seed);
+      session.errorMessage = session.failure.message;
     } finally {
       await session.bridge.stop().catch(() => { /* best-effort shutdown */ });
     }
@@ -438,6 +445,8 @@ export class PlaytestSessionManager {
       endedByHuman: session.phase === "ended_by_human",
       result: session.result,
       error: session.errorMessage,
+      ...(session.failure ? { failure: { ...session.failure, details: [...session.failure.details],
+        ...(session.failure.code === 'INTERNAL_ERROR' && session.bridge.getFailureDiagnostic?.() ? { bridgeMessage: diagnosticText(session.bridge.getFailureDiagnostic()!) } : {}) } } : {}),
     };
   }
 

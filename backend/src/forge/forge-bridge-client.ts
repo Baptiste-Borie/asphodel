@@ -29,6 +29,7 @@ export interface ForgeBridgeClientOptions {
 }
 
 interface PendingRequest {
+  type: string;
   resolve: (value: unknown) => void;
   reject: (reason: Error) => void;
   timer: NodeJS.Timeout;
@@ -39,6 +40,7 @@ export class ForgeBridgeError extends Error {
     public readonly code: string,
     message: string,
     public readonly details?: unknown,
+    public readonly requestType?: string,
   ) {
     super(message);
     this.name = "ForgeBridgeError";
@@ -63,6 +65,8 @@ export class ForgeBridgeClient {
   private process: ChildProcessWithoutNullStreams | undefined;
   private stdout: Interface | undefined;
   private stderr: Interface | undefined;
+  private failureLines: string[] = [];
+  getFailureDiagnostic(): string | undefined { return this.failureLines.length ? this.failureLines.join('\n').slice(0, 2000) : undefined; }
 
   constructor(options: ForgeBridgeClientOptions = {}) {
     this.javaPath = options.javaPath ?? process.env.ASPHODEL_JAVA_PATH ?? "java";
@@ -94,10 +98,14 @@ export class ForgeBridgeClient {
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.process = child;
+    this.failureLines = [];
     this.stdout = createInterface({ input: child.stdout });
     this.stderr = createInterface({ input: child.stderr });
     this.stdout.on("line", (line) => this.handleResponseLine(line));
-    this.stderr.on("line", (line) => this.onStderr(line));
+    this.stderr.on("line", (line) => {
+      if (line.startsWith('Forge bridge request failed: ')) { this.failureLines.push(line.slice(0, 500)); this.failureLines = this.failureLines.slice(-4); }
+      this.onStderr(line);
+    });
     child.stdin.on("error", (error) => {
       if (this.process === child) {
         child.kill("SIGTERM");
@@ -159,6 +167,7 @@ export class ForgeBridgeClient {
       }, this.requestTimeoutMs);
 
       this.pending.set(requestId, {
+        type: request.type,
         resolve: (value) =>
           resolve(value as ForgeResultMap[Request["type"]]),
         reject,
@@ -241,6 +250,7 @@ export class ForgeBridgeClient {
           response.error.code,
           response.error.message,
           response.error.details,
+          pending.type,
         ),
       );
     }

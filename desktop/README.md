@@ -1,4 +1,4 @@
-# Asphodel Desktop 0.1.12
+# Asphodel Desktop 0.1.13
 
 Desktop wrapper around the existing TypeScript/Vite frontend, Node backend and pinned Forge bridge. No stack migration. Launch Asphodel, choose a saved deck, play locally, close the application. The packaged app includes Chromium/Node, Java and Forge's resources; no terminal, Node installation, Java installation or remote server is needed to run it.
 
@@ -10,13 +10,13 @@ Close Asphodel, then from the repository root:
 npm --prefix desktop run install:local
 ```
 
-This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.12-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
+This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.13-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
 
 Afterwards, open **Asphodel** from Ubuntu's application menu and pin it to your dock if desired. The package installs the app in `/opt/Asphodel`, the desktop entry `Asphodel.desktop`, the existing icon and the `asphodel` command. This launch uses the installed app, independent of the checkout, and needs no local server command. The normal desktop settings, fullscreen preference and Quitter button remain available.
 
 To update after a new patch/pull, close Asphodel and run the same command again. Decks, cached images, drafts and display settings remain in the existing `~/.config/Asphodel` profile; the package contains no home-directory files. Package removal (`sudo apt-get remove asphodel-desktop`) leaves this profile in place. Backup/restore is available in settings; abrupt-crash recovery still depends on a persisted draft.
 
-To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.12-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
+To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.13-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
 
 ## Automated Linux packages
 
@@ -229,3 +229,18 @@ The existing explicit **Vérifier avec le catalogue local** button updates both 
 Validation covers symbol parsing, quantity/membership, partner colors, direct and conditional production, snow basics/Wastes, tapped/check/shock lands, malformed costs, quoted abilities, multi-face exclusions, read-only catalog overrides, inspector links and actual V1/V2 DOM events. Frontend, backend and emitted desktop backend builds are checked. Native Electron rendering/launch still requires validation on the user's PC.
 
 References: [Scryfall card fields](https://github.com/scryfall/api-types/blob/main/src/objects/Card/CardFields.ts), [Zendikar Rising mechanics](https://magic.wizards.com/en/news/feature/zendikar-rising-mechanics-2020-09-01), and the Comprehensive Rules linked above. Probabilistic starting hands remain the next roadmap milestone.
+
+
+## Opening hands and playtest failure diagnostics (patch 10.4, version 0.1.13)
+
+**Mains de départ** is available in Table V2 and Builder V1. It opens an isolated snapshot of the deck's included mainboard: quantities and chosen printing/face metadata remain intact, while commanders, candidates and cuts stay out of the library. Trials do not write projects, trigger catalog lookups, alter history or call Forge. The displayed commander list remains separate. Close and reopen to use later edits. Tiny unfinished libraries are allowed with an explicit warning; empty libraries, invalid quantities or more than 5,000 cards are rejected before allocating copies.
+
+The trial uses a seeded xorshift32 sequence and Fisher-Yates shuffle with rejection sampling for bounded indexes. The same seed, rule mode, snapshot order and action sequence reproduce the same hands. **Nouvelle main** reshuffles the full original snapshot without a mulligan penalty; **Rejouer cette graine** restarts the sequence. This is a deterministic manual experiment, not a statistical probability estimator or an engine game seed.
+
+Choose **Multijoueur** (first mulligan free) or **Duel** (no free mulligan). Each London mulligan reshuffles the whole original library and offers up to seven cards. Keeping requires selecting the correct number of bottom cards; their click order is their order beneath the undrawn library. The zero-card keep is supported and no further mulligan is offered at that limit. Draw is disabled until keeping, then reveals the actual next card until exhaustion. Only saved Oracle text/manual tags and front-face land counts are shown: no mana/effect/turn/tutor simulation, special pregame card rules, automatic keep decision or probability is claimed. References: [London mulligan](https://magic.wizards.com/en/news/announcements/london-mulligan-2019-06-03), Comprehensive Rules 103.5 and 103.5c.
+
+A failed playtest now preserves a bounded **Diagnostic du playtest**: session, selected deck names, mode, seed, error code, failing bridge request, exception detail and up to four recent explicit `Forge bridge request failed:` stderr lines when available (including cleanup faults, not all necessarily the primary fault). General stderr, request payloads and observations/hidden game state are never dumped. Runner/aggregate wrappers are traversed with bounds to recover the original Forge fault instead of a secondary cancellation failure. Old failure states still render with unavailable details noted. **Copier le diagnostic** uses the clipboard on an explicit click and falls back to selecting a read-only textarea. Existing New Playtest remains available; failed sessions stop their bridge, and synchronous bridge/client setup also cleans up before rejecting.
+
+This is a diagnostic improvement for the reported generic `The Forge bridge could not process the request` failure. The specific installed-app crash has NOT been reproduced or claimed fixed: the user's deck, current Forge runtime and its concrete exception are required to confirm its cause. No Java source/JAR change, engine rules change, migration or dependency is introduced. Reinstall normally; if the error recurs, copy the new diagnostic for a focused engine fix.
+
+Validation includes pure shuffle/mulligan conservation and replay, ordered bottoming, exhaustion, immutable art/roles, bounded allocation, real child stdio with a scripted bridge, failed-session restart/cleanup, wrapped/cyclic errors, restricted diagnostics and actual builder dialog events. Native Electron rendering and real Forge playtests remain to validate on the PC.
