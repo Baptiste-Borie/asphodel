@@ -9,6 +9,7 @@ import { createGunzip } from 'node:zlib';
 import { AppError } from '../app-errors.js';
 import { compileLabQuery } from './deck-lab-query.js';
 import type { LabCard, LabCatalog, LabSearchQuery, LabSearchResult } from '../../../shared/deck-lab.js';
+import type { CommanderCatalogResult } from '../../../shared/commander.mjs';
 
 interface BulkFace { name?: string; mana_cost?: string; oracle_text?: string; image_uris?: {normal?: string}; colors?: string[] }
 interface BulkCard {
@@ -74,7 +75,7 @@ export class DeckLabSearch {
           set_name:card.set_name,set:card.set,collector_number:card.collector_number,rarity:card.rarity,
           lang:card.lang,color_identity:card.color_identity ?? [],image:card.image_uris?.normal ?? faces[0]?.image_uris?.normal ?? '',
           related:[...new Set([...(card.all_parts ?? []).map(p=>p.name),...faces.map(f=>f.name ?? '')])].filter(n=>n && n!==card.name),
-          commander_legal:card.legalities?.commander ?? 'not_legal',
+          commander_legal:card.legalities?.commander ?? 'unknown',
           faces:flippable ? faces.map(f=>({name:f.name ?? card.name,image:f.image_uris!.normal!})) : undefined,
         };
         insert.run(card.id,card.oracle_id ?? card.id,normalize(card.name),normalize(oracle),normalize(card.type_line ?? ''),card.set,card.rarity,card.lang,
@@ -94,6 +95,20 @@ export class DeckLabSearch {
     finally { lines.close(); stream.destroy(); unzip.destroy(); }
   }
   async getCatalog(): Promise<LabCatalog> { await this.ensureReady(); return this.catalog!; }
+  async commanderFacts(names: string[]): Promise<CommanderCatalogResult> {
+    if (!Array.isArray(names) || names.length < 1 || names.length > 120 || names.some(n => typeof n !== 'string' || !n.trim() || n.length > 200)) throw new AppError('Liste de cartes invalide.', 400, 'INVALID_COMMANDER_LOOKUP');
+    await this.ensureReady();
+    const lookup = this.database!.prepare("SELECT oracle_id, payload FROM cards WHERE name_search = ? ORDER BY (language = 'en') DESC, id LIMIT 1");
+    const result: CommanderCatalogResult = { cards: [], missing: [], snapshotDate: this.catalog!.snapshotDate, catalogPrintings: this.catalog!.printings };
+    for (const requestedName of [...new Set(names)]) {
+      const row = lookup.get(normalize(requestedName.trim())) as { oracle_id: string; payload: string } | undefined;
+      if (!row) { result.missing.push(requestedName); continue; }
+      const c = JSON.parse(row.payload) as LabCard;
+      result.cards.push({ requestedName, name: c.name, oracleId: row.oracle_id, typeLine: c.type_line, oracleText: c.oracle_text,
+        colorIdentity: c.color_identity, ...(c.commander_legal === undefined ? {} : { commanderLegal: c.commander_legal }), power: c.power, toughness: c.toughness });
+    }
+    return result;
+  }
   async search(query: LabSearchQuery): Promise<LabSearchResult> {
     const filter = compileLabQuery(query);
     await this.ensureReady();

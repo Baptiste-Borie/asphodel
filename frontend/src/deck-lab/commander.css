@@ -1,0 +1,9 @@
+.lab-commander-analysis { margin:20px 0;padding:18px 0;border-top:1px solid var(--lab-border,#393a42); }
+.lab-commander-analysis>header { display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:space-between;margin:0 0 10px; }.lab-commander-analysis h4 { margin:0;font-size:15px; }
+.lab-commander-analysis p { font-size:12px;line-height:1.6;color:var(--lab-muted,#b6b3bb); }
+.lab-commander-status { font-size:11px;padding:3px 7px;border:1px solid currentColor;border-radius:4px; }
+[data-commander-status=ok],[data-check-status=ok] { color:#afc5a4; }[data-commander-status=error],[data-check-status=error] { color:#e4a7a4; }[data-commander-status=unknown],[data-check-status=unknown] { color:#d4bf88; }
+.lab-commander-checks>details { padding:10px 0;border-bottom:1px solid var(--lab-border,#393a42); }.lab-commander-checks summary { display:list-item;cursor:pointer;font-size:12px; }.lab-commander-checks summary>strong { float:right;font-size:11px; }.lab-commander-checks ul { padding-left:18px;font-size:12px;line-height:1.6; }.lab-commander-checks li { margin:10px 0; }
+.lab-commander-cards { display:flex;flex-wrap:wrap;gap:5px;margin-top:5px; }#deck-lab-view .lab-commander-cards button { padding:3px 7px;font-size:11px;text-align:left;overflow-wrap:anywhere;max-width:100%; }
+.lab-commander-analysis>[data-action=verify-commander] { margin-top:16px; }.lab-commander-scope { margin-top:12px;font-size:11px; }.lab-commander-scope summary { cursor:pointer;color:var(--lab-muted,#b6b3bb); }.lab-commander-analysis .lab-commander-error { color:#e4a7a4; }
+.dt-analysis .lab-commander-analysis>header { display:block; }.dt-analysis .lab-commander-analysis h4 { margin-bottom:10px; }.dt-analysis .lab-commander-status { display:inline-block;max-width:100%; }

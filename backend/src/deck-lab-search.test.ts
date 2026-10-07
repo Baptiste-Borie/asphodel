@@ -19,6 +19,27 @@ const fixture = [
   card('6','Two faces','tle',{oracle_text:undefined,image_uris:undefined,card_faces:[{name:'Front',oracle_text:'Flying',image_uris:{normal:'https://cards.scryfall.io/front.jpg'}},{name:'Back',oracle_text:'Earthbend 4'}]}),
   card('7','Double sided','neo',{oracle_text:undefined,image_uris:undefined,card_faces:[{name:'Front',oracle_text:'Flying',image_uris:{normal:'https://cards.scryfall.io/dbl-front.jpg'}},{name:'Back',oracle_text:'Night',image_uris:{normal:'https://cards.scryfall.io/dbl-back.jpg'}}]}),
 ];
+test('Commander lookup is exact, offline, bounded, parameterized and preserves chosen decks by returning rule facts only', async () => {
+  const f = await setup(), app = Fastify(); registerDeckLabRoutes(app, f.service);
+  try {
+    const result = await app.inject({ method: 'POST', url: '/cards/search/commander-facts', payload: { names: ['Aang', ' katara ', 'Absent', "' OR 1=1 --"] } });
+    assert.equal(result.statusCode, 200); const data = result.json();
+    assert.deepEqual(data.cards.map((c: { name: string }) => c.name), ['Aang', 'Katara']); assert.equal(data.cards[0].commanderLegal, 'legal');
+    assert.equal(data.cards[0].oracleId, 'Aang'); assert.deepEqual(data.cards[0].colorIdentity, ['G']); assert.equal(data.cards[0].image, undefined);
+    assert.deepEqual(data.missing, ['Absent', "' OR 1=1 --"]); assert.ok(data.snapshotDate);
+    for (const names of [[], Array.from({ length: 121 }, () => 'Aang'), [''], ['x'.repeat(201)], ['   ']]) assert.equal((await app.inject({ method: 'POST', url: '/cards/search/commander-facts', payload: { names } })).statusCode, 400);
+    await assert.rejects(f.service.commanderFacts(['  ']), /invalide/);
+    assert.equal((await f.service.search({ name: 'Aang' })).cards[0]!.image, 'https://cards.scryfall.io/test.jpg');
+  } finally { await app.close(); await rm(f.dir, { recursive: true, force: true }); }
+});
+test('a catalog without legality metadata reports unknown rather than inventing a non-legal verdict', async () => {
+  const f = await setup();
+  try {
+    await writeFile(f.bulkPath, gzipSync(JSON.stringify(card('incomplete', 'Incomplete', 'tla', { legalities: undefined })) + '\n'));
+    assert.equal((await f.service.commanderFacts(['Incomplete'])).cards[0]!.commanderLegal, 'unknown');
+    assert.equal((await f.service.search({ name: 'Incomplete' })).cards[0]!.commander_legal, 'unknown');
+  } finally { await f.service.close(); await rm(f.dir, { recursive: true, force: true }); }
+});
 async function setup() {
   const dir = await mkdtemp(join(tmpdir(),'deck-lab-'));
   const bulkPath = join(dir,'cards.gz'); const indexPath = join(dir,'search.sqlite');

@@ -15,6 +15,9 @@ import { loadDrafts, prepareProject, ProjectPersistence, sheetFromProject } from
 import { openDeckArtwork } from '../artwork-controls';
 import { openTagEditor } from './tag-editor';
 import { tagBadges, roleSummary } from './deck-tags';
+import { CommanderCatalog } from './commander-catalog';
+import { commanderSummary } from './commander-view';
+import './commander.css';
 
 type Card = LabCard;
 /** `maybeboard` groups (born from the triage feature, or manually named "Maybeboard") hold cards
@@ -122,6 +125,7 @@ export function initDeckLabView(root: HTMLElement) {
   let table: ReturnType<typeof mountDeckTable> | undefined;
   let tableSheet: Sheet | undefined;
   const sheets: Sheet[] = [];
+  const commanderCatalog = new CommanderCatalog();
   let drawerInvoker: HTMLElement | null = null;
   const sample = (): Sheet => {
     const sections: [string, number, number][] = [['Unsorted', 0, 10], ['Early development', 10, 18], ['Keep the cards coming', 18, 23], ['Protect the board', 23, 28], ['Counters & company', 28, 45], ['Closing the game', 45, 48], ['Lands', 48, 55], ['Second pass', 55, 71], ['Try next', 71, 86], ['Other possibilities', 86, 101]];
@@ -475,6 +479,7 @@ export function initDeckLabView(root: HTMLElement) {
       legacy: () => switchView('builder'),
       library: () => { active = undefined; switchView('builder'); },
       tags: names => editTags(names),
+      commanderAnalysis: () => commanderSummary(sheet, commanderCatalog.state(sheet)),
     });
     setSaveStatus(persistence.status(sheet)); updateHistoryControls();
   }
@@ -503,7 +508,7 @@ export function initDeckLabView(root: HTMLElement) {
     const warning = total !== 100 ? `<p class="lab-builder-warning" role="status">This sheet has <strong>${total}</strong> card${total === 1 ? '' : 's'} — a Commander deck needs exactly 100.</p>` : '';
     const saveStatus = '<span class="lab-save-status" data-save-status role="status"></span><button data-action="retry-save" hidden>Réessayer</button>';
     const deckActions = historyButtons + (window.asphodelDesktop ? '<button data-action="prepare-artwork">Préparer hors ligne</button>' : '') + '<button data-action="export-deck">Exporter</button><button data-action="rename-deck">Rename</button><button data-action="delete-deck">Delete</button>';
-    get('.lab-builder').innerHTML = `${commanderWarning}${warning}<div class="lab-deck-heading"><div><button class="lab-back" data-action="close-sheet" aria-label="Back to all decks">← All decks</button><p class="lab-eyebrow">COMMANDER / CANDIDATE SHEET</p><h2>${esc(active.name)}${saveStatus}</h2><p><strong>${total}</strong> candidate cards <span> / 100 final deck target</span></p></div><div><select class="lab-sheet-picker" aria-label="Open deck sheet">${sheets.map((s,i) => `<option value="${i}" ${s === active ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><button data-action="new">+ New sheet</button><button data-action="selection">+ From Selection</button>${deckActions}</div></div><div class="lab-builder-tools"><button type="button" data-action="manage-tags">Tags et cibles</button><span>Manual categories <span class="lab-muted">· drag a card, use its menu, or search a category to add one</span></span><form class="lab-new-category"><input aria-label="New category name" placeholder="Name your category" required maxlength="60" /><button>+ New category</button></form></div><div class="lab-categories">${active.groups.map(categoryHtml).join('')}</div><details class="lab-cuts"><summary>Cuts · ${active.cuts.length} <span>Keep discarded ideas nearby</span></summary>${active.cuts.map((c,i) => `<button data-restore="${i}">↶ ${esc(c.name)}</button>`).join('') || '<p>No cuts yet. Cut a card using its menu to keep it here.</p>'}</details><section class="lab-stats"><div><p class="lab-eyebrow">DECK STATISTICS</p><h2>The shape of your sheet.</h2><p class="lab-muted">All candidates · cuts excluded<br>Card types may overlap.</p><div class="lab-type-counts">${['Creature','Instant','Sorcery','Artifact','Enchantment','Planeswalker','Land'].map(type => `<div><span>${type}</span><strong>${entries.filter(e => e.card.type_line.includes(type)).reduce((n,e) => n+e.quantity,0)}</strong></div>`).join('')}</div></div><div><div class="lab-curve-heading"><h3>Mana curve</h3><span>${spells} nonland spells</span></div><div class="lab-curve">${curve.map((n,i) => `<div><span>${n}</span><i style="height:${n / Math.max(...curve,1) * 150}px"></i><label>${i === 7 ? '7+' : i}</label></div>`).join('')}</div><p class="lab-average">${spells ? (nonlands.reduce((n,e) => n+e.card.cmc*e.quantity,0)/spells).toFixed(2) : '—'} <span>Average mana value · nonlands</span></p></div></section>${roleSummary(active)}`;
+    get('.lab-builder').innerHTML = `${commanderWarning}${warning}<div class="lab-deck-heading"><div><button class="lab-back" data-action="close-sheet" aria-label="Back to all decks">← All decks</button><p class="lab-eyebrow">COMMANDER / CANDIDATE SHEET</p><h2>${esc(active.name)}${saveStatus}</h2><p><strong>${total}</strong> candidate cards <span> / 100 final deck target</span></p></div><div><select class="lab-sheet-picker" aria-label="Open deck sheet">${sheets.map((s,i) => `<option value="${i}" ${s === active ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><button data-action="new">+ New sheet</button><button data-action="selection">+ From Selection</button>${deckActions}</div></div><div class="lab-builder-tools"><button type="button" data-action="manage-tags">Tags et cibles</button><span>Manual categories <span class="lab-muted">· drag a card, use its menu, or search a category to add one</span></span><form class="lab-new-category"><input aria-label="New category name" placeholder="Name your category" required maxlength="60" /><button>+ New category</button></form></div><div class="lab-categories">${active.groups.map(categoryHtml).join('')}</div><details class="lab-cuts"><summary>Cuts · ${active.cuts.length} <span>Keep discarded ideas nearby</span></summary>${active.cuts.map((c,i) => `<button data-restore="${i}">↶ ${esc(c.name)}</button>`).join('') || '<p>No cuts yet. Cut a card using its menu to keep it here.</p>'}</details><section class="lab-stats"><div><p class="lab-eyebrow">DECK STATISTICS</p><h2>The shape of your sheet.</h2><p class="lab-muted">All candidates · cuts excluded<br>Card types may overlap.</p><div class="lab-type-counts">${['Creature','Instant','Sorcery','Artifact','Enchantment','Planeswalker','Land'].map(type => `<div><span>${type}</span><strong>${entries.filter(e => e.card.type_line.includes(type)).reduce((n,e) => n+e.quantity,0)}</strong></div>`).join('')}</div></div><div><div class="lab-curve-heading"><h3>Mana curve</h3><span>${spells} nonland spells</span></div><div class="lab-curve">${curve.map((n,i) => `<div><span>${n}</span><i style="height:${n / Math.max(...curve,1) * 150}px"></i><label>${i === 7 ? '7+' : i}</label></div>`).join('')}</div><p class="lab-average">${spells ? (nonlands.reduce((n,e) => n+e.card.cmc*e.quantity,0)/spells).toFixed(2) : '—'} <span>Average mana value · nonlands</span></p></div></section>${commanderSummary(active, commanderCatalog.state(active))}${roleSummary(active)}`;
     setSaveStatus(persistence.status(active)); updateHistoryControls();
   }
   /** Debounced per-category "search the catalog, click to add" — lets you build a category without detouring through Search/Selection. */
@@ -682,6 +687,7 @@ export function initDeckLabView(root: HTMLElement) {
     }
     if (b.dataset.remove) { selection.delete(b.dataset.remove); renderPool(); persistSelection(); }
     if (b.dataset.inspect) openInspect(b.dataset.inspect);
+    if (b.dataset.commanderInspect) openInspect(b.dataset.commanderInspect);
     if (b.classList.contains('lab-flip-card')) { const flipped = b.classList.toggle('is-flipped'); b.setAttribute('aria-pressed', String(flipped)); }
     if (b.dataset.printingImage) {
       const stage = b.closest('.lab-full-card')?.querySelector<HTMLElement>('.lab-card-stage');
@@ -708,6 +714,14 @@ export function initDeckLabView(root: HTMLElement) {
       case 'filters': case 'advanced': { const panel = get(`.lab-${b.dataset.action}`); panel.hidden = !panel.hidden; b.setAttribute('aria-expanded',String(!panel.hidden)); break; }
       case 'sample': active = sample(); sheets.push(active); scheduleAutoSave(); renderBuilder(); break;
       case 'new': active = { name: `Untitled exploration ${sheets.length+1}`, groups: [commanderGroup(), {name:'Unsorted', entries:[]}], cuts:[] }; sheets.push(active); scheduleAutoSave(); switchView('builder'); break;
+      case 'verify-commander': {
+        if (active) { const sheet = active; void commanderCatalog.refresh(sheet, () => {
+          if (active !== sheet) return;
+          if (view === 'table' && tableSheet === sheet) table?.refreshAnalysis();
+          else { const section = root.querySelector('.lab-builder .lab-commander-analysis'); if (section) section.outerHTML = commanderSummary(sheet, commanderCatalog.state(sheet)); }
+        }); }
+        break;
+      }
       case 'manage-tags': editTags(); break;
       case 'export-deck': openExport(); break;
       case 'prepare-artwork': if(active){table?.checkpoint();openDeckArtwork(prepareProject(active,journalStorage));} break;
@@ -920,7 +934,7 @@ export function initDeckLabView(root: HTMLElement) {
 
   let retired = false;
   window.addEventListener('pagehide', () => { if (retired) return; table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); });
-  return { retire() { retired = true; }, async flush() { if (retired) return true; table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); return persistence.flush(); }, activate() {
+  return { retire() { retired = true; commanderCatalog.retire(); }, async flush() { if (retired) return true; table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); return persistence.flush(); }, activate() {
     void loadCatalog();
     void loadSavedDecks();
     if (!activated) { activated = true; void renderSearch(); }

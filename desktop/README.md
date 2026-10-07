@@ -1,4 +1,4 @@
-# Asphodel Desktop 0.1.10
+# Asphodel Desktop 0.1.11
 
 Desktop wrapper around the existing TypeScript/Vite frontend, Node backend and pinned Forge bridge. No stack migration. Launch Asphodel, choose a saved deck, play locally, close the application. The packaged app includes Chromium/Node, Java and Forge's resources; no terminal, Node installation, Java installation or remote server is needed to run it.
 
@@ -10,17 +10,17 @@ Close Asphodel, then from the repository root:
 npm --prefix desktop run install:local
 ```
 
-This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.10-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
+This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.11-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
 
 Afterwards, open **Asphodel** from Ubuntu's application menu and pin it to your dock if desired. The package installs the app in `/opt/Asphodel`, the desktop entry `Asphodel.desktop`, the existing icon and the `asphodel` command. This launch uses the installed app, independent of the checkout, and needs no local server command. The normal desktop settings, fullscreen preference and Quitter button remain available.
 
 To update after a new patch/pull, close Asphodel and run the same command again. Decks, cached images, drafts and display settings remain in the existing `~/.config/Asphodel` profile; the package contains no home-directory files. Package removal (`sudo apt-get remove asphodel-desktop`) leaves this profile in place. Backup/restore is available in settings; abrupt-crash recovery still depends on a persisted draft.
 
-To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.10-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
+To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.11-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
 
 ## Automated Linux packages
 
-The Desktop workflow now runs for relevant changes on `main`, matching pull requests, manual dispatch, and `v*` tags. A release tag must equal the desktop version (for example `v0.1.10`); both package files must agree. A newer run on the same ref cancels an obsolete build.
+The Desktop workflow now runs for relevant changes on `main`, matching pull requests, manual dispatch, and `v*` tags. A release tag must equal the desktop version (for example `v0.1.11`); both package files must agree. A newer run on the same ref cancels an obsolete build.
 
 CI runs the existing desktop/window/artwork/runtime checks, builds versioned AppImage and Debian packages, and checks that the `.deb` contains the launcher, icon, frontend, backend dependencies, seed library, Java and Forge. Successful packages appear in the workflow's **Artifacts**, under `Asphodel-Desktop-Linux-<commit>`. Building does not automatically publish a release or install an updater.
 
@@ -193,10 +193,24 @@ Validation uses synthetic snapshots for real gzip validation and SQLite index/se
 
 Rebuild/install with `npm --prefix desktop run install:local` after applying this patch. Then check/install from settings, wait for **Catalogue prêt**, relaunch and choose one small extension to test offline image preparation.
 
-## Manual multiple roles (patch 10.1, version 0.1.10)
+## Manual multiple roles (patch 10.1, version 0.1.11)
 
 Use **Tags** on the table selection, or **Modifier les tags** in the card inspector. A multi-card selection supports mixed checkboxes: check to add a role to every selected card, uncheck to remove it. The built-in manual template (Ramp, Pioche, Interaction, Protection, Récursion, Fin de partie) is editable; create, rename or delete tags, write their definitions and set optional personal quantity targets. **Enregistrer** commits the whole dialog as one undoable action; cancel or Escape leaves the deck untouched. Manage the deck's definitions and targets from **Tags et cibles** in V1 or **Gérer les tags** in the table tools / Analyse.
 
 Tags are independent of categories, zones and piles. They apply to all copies of a named card inside this deck, retain chosen printing metadata, follow moves and remain attached to candidates or cuts for a later restoration. Analyse and the V1 statistics show counts per role (including commanders and quantities); candidates and cuts are excluded. Roles may overlap without increasing the actual deck size. No automatic assignment or recommended target is imposed. Commander legality, mana-source analysis and starting hands belong to subsequent patches.
 
 The optional `tags` field is added to the existing version-1 project snapshot. No SQLite migration, catalogue rebuild or dependency installation is required. Old projects stay valid, retain their layout and receive no roles until an explicit edit. Tags round-trip through saved projects, local recovery drafts and portable library backups. Each deck has its own definitions; reusable cross-deck templates are a later improvement. Old application versions do not know how to edit this field: back up the library before downgrading rather than saving tagged decks with an earlier version.
+
+## Commander construction checks (patch 10.2, version 0.1.11)
+
+**Analyse** on Table V2, and the V1 statistics area, now report deck size (exactly 100, including commanders), commander eligibility/pairing, color identity, cumulative duplicates with recognized exceptions, and Commander legality statuses. Results are advisory: editing, saving and playing remain available. Every issue explains the reason and links to the saved card inspector. Candidates and cuts never enter these checks. Quantity, membership and undo/redo changes update the diagnosis immediately.
+
+Checks follow the [official Comprehensive Rules effective 2026-09-25](https://media.wizards.com/2026/downloads/MagicCompRules%2020260925.txt), notably 903 and 702.124. Supported commander cases include legendary creatures/Vehicles, Spacecraft with power/toughness data, explicit commander permissions and Grist, the Hunger Tide. Recognized pairs include Partner, reciprocal Partner with, matching Character select / Father & son / Friends forever / Survivors (including old Friends forever wording), Choose a Background and Doctor’s companion. Only the front grants commander eligibility; color identity uses the stored combined identity including both faces and hybrid/Phyrexian costs. Basic land types impose their colors separately. Basic and Snow basic lands, named unlimited-copy clauses (e.g. Rat Colony), and named up-to-number clauses (e.g. nine Nazgûl or seven Seven Dwarves) are recognized.
+
+**Vérifier avec le catalogue local** explicitly reads current rule facts for included card names from the installed search index, in bounded batches of 120. It uses a parameterized exact name lookup, prefers English printings, downloads nothing and does not modify decks, quantities, tags, layout or chosen art. The first explicit lookup may build a missing derived search index from the existing bulk file. Completed results remain available if a later request fails; a retry clears the error. Progress updates only the analysis panel and cannot interrupt a table gesture. A card absent from the catalog retains its saved facts.
+
+Data gaps use **À vérifier**, not a confident legal/illegal verdict. Pre-game chosen colors, unfamiliar construction clauses, unrecognized partner variants, incomplete texts or Spacecraft power/toughness data need a manual review. Oracle ids group identities shared by the local index; rare interchangeable names with different ids are outside the automatic check. Companion restrictions, Commander Draft, Brawl, Duel Commander and custom house rules are not covered. Legality statuses reflect the saved/local snapshot and do not claim live ban-list freshness; update the catalog when needed.
+
+No project-format or user SQLite migration, dependency additions, automatic networking or persisted metadata replacement. Local verification facts are session-only and per deck: after restarting, saved facts are immediately usable and explicit verification can be repeated. Existing tags and backups keep their exact format.
+
+References for special cases: [Doctor Who mechanics](https://magic.wizards.com/en/news/feature/magic-the-gathering-doctor-who-mechanics), [Eldraine release notes](https://magic.wizards.com/en/news/feature/throne-eldraine-release-notes-2019-09-20), [LOTR release notes](https://media.wizards.com/2023/downloads/LTR_Release_Notes/EN_MTGLTR_ReleaseNotes_20230508.pdf), [Modern Horizons 2 release notes](https://media.wizards.com/2021/downloads/MH2_Release_Notes/EN_MTGMH2_FAQ_06022021.pdf).
