@@ -13,7 +13,7 @@ export function prepareProject(sheet: Sheet, storage?: Pick<Storage, 'getItem'>)
   if (!sheet.workspace) sheet.workspace = sheet.backendId ? parseWorkspace(storage?.getItem(`asphodel.deck-table.v1.${sheet.backendId}`) ?? null) : emptyWorkspace();
   for (const group of sheet.groups) group.id ??= crypto.randomUUID();
   for (const row of reconcileWorkspace(sheet, sheet.workspace)) row.entry.id ??= row.placement.id;
-  return parseBuilderProject(JSON.parse(JSON.stringify({ version: 1, projectId: sheet.projectId, name: sheet.name, groups: sheet.groups, cuts: sheet.cuts, workspace: sheet.workspace })));
+  return parseBuilderProject(JSON.parse(JSON.stringify({ version: 1, projectId: sheet.projectId, name: sheet.name, groups: sheet.groups, cuts: sheet.cuts, workspace: sheet.workspace, ...(sheet.tags === undefined ? {} : { tags: sheet.tags }) })));
 }
 export function sheetFromProject(project: BuilderProject, backendId?: number): Sheet {
   return { ...JSON.parse(JSON.stringify(parseBuilderProject(project))), ...(backendId ? { backendId } : {}) };

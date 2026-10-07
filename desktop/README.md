@@ -1,4 +1,4 @@
-# Asphodel Desktop 0.1.8
+# Asphodel Desktop 0.1.10
 
 Desktop wrapper around the existing TypeScript/Vite frontend, Node backend and pinned Forge bridge. No stack migration. Launch Asphodel, choose a saved deck, play locally, close the application. The packaged app includes Chromium/Node, Java and Forge's resources; no terminal, Node installation, Java installation or remote server is needed to run it.
 
@@ -10,17 +10,17 @@ Close Asphodel, then from the repository root:
 npm --prefix desktop run install:local
 ```
 
-This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.9-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
+This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.10-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
 
 Afterwards, open **Asphodel** from Ubuntu's application menu and pin it to your dock if desired. The package installs the app in `/opt/Asphodel`, the desktop entry `Asphodel.desktop`, the existing icon and the `asphodel` command. This launch uses the installed app, independent of the checkout, and needs no local server command. The normal desktop settings, fullscreen preference and Quitter button remain available.
 
 To update after a new patch/pull, close Asphodel and run the same command again. Decks, cached images, drafts and display settings remain in the existing `~/.config/Asphodel` profile; the package contains no home-directory files. Package removal (`sudo apt-get remove asphodel-desktop`) leaves this profile in place. Backup/restore is available in settings; abrupt-crash recovery still depends on a persisted draft.
 
-To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.9-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
+To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.10-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
 
 ## Automated Linux packages
 
-The Desktop workflow now runs for relevant changes on `main`, matching pull requests, manual dispatch, and `v*` tags. A release tag must equal the desktop version (for example `v0.1.9`); both package files must agree. A newer run on the same ref cancels an obsolete build.
+The Desktop workflow now runs for relevant changes on `main`, matching pull requests, manual dispatch, and `v*` tags. A release tag must equal the desktop version (for example `v0.1.10`); both package files must agree. A newer run on the same ref cancels an obsolete build.
 
 CI runs the existing desktop/window/artwork/runtime checks, builds versioned AppImage and Debian packages, and checks that the `.deb` contains the launcher, icon, frontend, backend dependencies, seed library, Java and Forge. Successful packages appear in the workflow's **Artifacts**, under `Asphodel-Desktop-Linux-<commit>`. Building does not automatically publish a release or install an updater.
 
@@ -192,3 +192,11 @@ After activating a catalog, choose its extension and **Préparer les images de c
 Validation uses synthetic snapshots for real gzip validation and SQLite index/search, isolated old/new catalogs, partial HTTP resume, ignored ranges, failed validation/activation, cancellation, restart recovery, cleanup protection and trusted IPC. The native desktop smoke installs a small synthetic catalog through the actual utility process, restarts offline, enumerates both faces of an extension and proves a failed check keeps search usable. Native Electron checks and live Scryfall downloads require an appropriate desktop/network environment.
 
 Rebuild/install with `npm --prefix desktop run install:local` after applying this patch. Then check/install from settings, wait for **Catalogue prêt**, relaunch and choose one small extension to test offline image preparation.
+
+## Manual multiple roles (patch 10.1, version 0.1.10)
+
+Use **Tags** on the table selection, or **Modifier les tags** in the card inspector. A multi-card selection supports mixed checkboxes: check to add a role to every selected card, uncheck to remove it. The built-in manual template (Ramp, Pioche, Interaction, Protection, Récursion, Fin de partie) is editable; create, rename or delete tags, write their definitions and set optional personal quantity targets. **Enregistrer** commits the whole dialog as one undoable action; cancel or Escape leaves the deck untouched. Manage the deck's definitions and targets from **Tags et cibles** in V1 or **Gérer les tags** in the table tools / Analyse.
+
+Tags are independent of categories, zones and piles. They apply to all copies of a named card inside this deck, retain chosen printing metadata, follow moves and remain attached to candidates or cuts for a later restoration. Analyse and the V1 statistics show counts per role (including commanders and quantities); candidates and cuts are excluded. Roles may overlap without increasing the actual deck size. No automatic assignment or recommended target is imposed. Commander legality, mana-source analysis and starting hands belong to subsequent patches.
+
+The optional `tags` field is added to the existing version-1 project snapshot. No SQLite migration, catalogue rebuild or dependency installation is required. Old projects stay valid, retain their layout and receive no roles until an explicit edit. Tags round-trip through saved projects, local recovery drafts and portable library backups. Each deck has its own definitions; reusable cross-deck templates are a later improvement. Old application versions do not know how to edit this field: back up the library before downgrading rather than saving tagged decks with an earlier version.

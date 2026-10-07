@@ -1,4 +1,5 @@
 import type { LabCard } from './deck-lab.js';
+import { validProjectTags, type ProjectTags } from './deck-tags.mjs';
 
 export type ProjectPoint = { x: number; y: number };
 export type ProjectPlacement = ProjectPoint & { id: string; name: string; category: string; section: string; z: number; zoneId?: string; origin?: { category: string; commander: boolean; groupId?: string }; cut?: boolean };
@@ -7,7 +8,7 @@ export type ProjectPile = ProjectPoint & { id: string; name: string; expanded: b
 export type ProjectNote = ProjectPoint & { id: string; text: string; color: 'sand' | 'sage' | 'lavender'; cardId?: string };
 export type ProjectWorkspace = { version: 1; zonesInitialized?: boolean; cards: ProjectPlacement[]; zones: ProjectZone[]; piles?: ProjectPile[]; notes?: ProjectNote[]; camera: ProjectPoint & { zoom: number } };
 export type ProjectGroup = { id?: string; name: string; entries: { id?: string; card: LabCard; quantity: number }[]; commander?: boolean; maybeboard?: boolean };
-export type BuilderProject = { version: 1; projectId: string; name: string; groups: ProjectGroup[]; cuts: LabCard[]; workspace: ProjectWorkspace };
+export type BuilderProject = { version: 1; projectId: string; name: string; groups: ProjectGroup[]; cuts: LabCard[]; workspace: ProjectWorkspace; tags?: ProjectTags };
 const text = (v: unknown, max = 200): v is string => typeof v === 'string' && v.length <= max;
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const identifier = (v: unknown): v is string => text(v, 100) && /^[a-zA-Z0-9_-]+$/.test(v);
@@ -58,6 +59,7 @@ export function parseBuilderProject(value: unknown): BuilderProject {
     || !w.zones.every(z => z && identifier(z.id) && text(z.name, 60) && finite(z.x) && finite(z.y) && finite(z.width) && finite(z.height) && z.width > 0 && z.height > 0)
     || (w.zonesInitialized !== undefined && typeof w.zonesInitialized !== 'boolean') || !validWorkspaceExtras(w)) throw new Error('Projet de construction invalide.');
   const entries = new Set(p.groups.flatMap(g => g.entries.map(e => e.id)));
+  if (p.tags !== undefined && !validProjectTags(p.tags, new Set([...p.groups.flatMap(g => g.entries.map(e => e.card.name)), ...p.cuts.map(c => c.name)]))) throw new Error('Tags de projet invalides.');
   if (w.notes?.some(note => note.cardId !== undefined && !entries.has(note.cardId))) throw new Error('Une note référence une carte absente de la table.');
   if (w.piles?.some(pile => pile.cardIds.some(id => !entries.has(id)))) throw new Error('Une pile référence une carte absente de la table.');
   for (const ids of [p.groups.map(g => g.id), p.groups.flatMap(g => g.entries.map(e => e.id)), w.cards.map(c => c.id), w.zones.map(z => z.id)]) {

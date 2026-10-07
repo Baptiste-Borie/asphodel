@@ -18,7 +18,7 @@ const project = (): BuilderProject => ({ version:1,projectId:'portable-project',
   {id:'lands',name:'Lands',entries:[{id:'forest',card,quantity:37}]},
   {id:'empty',name:'Draw to find',entries:[]},
   {id:'candidates',name:'Candidates',maybeboard:true,entries:[{id:'idea',card:{...card,name:'Idea'},quantity:2}]},
-],cuts:[{...card,name:'Discarded idea'}],workspace:{version:1,zonesInitialized:true,cards:[
+],tags:{definitions:[{id:'draw',name:'Pioche',description:'Renouveler la main',target:9},{id:'sacrifice',name:'Sacrifice',description:'Alimente le moteur'}],cards:[{name:'Aang',tagIds:['draw','sacrifice']},{name:'Idea',tagIds:['draw']},{name:'Discarded idea',tagIds:['sacrifice']}]},cuts:[{...card,name:'Discarded idea'}],workspace:{version:1,zonesInitialized:true,cards:[
   {id:'forest',name:'Forest',category:'Lands',section:'mainboard',x:-340,y:1280,z:9,zoneId:'zone'},
 ],zones:[{id:'zone',name:'Plan for Aang',x:-500,y:800,width:1000,height:900,sizing:'manual',locked:true}],piles:[{id:'mana-pile',name:'Mana to test',x:-340,y:1228,expanded:false,cardIds:['forest']}],notes:[{id:'free-note',text:'Protection for Aang',color:'lavender',x:-800,y:600},{id:'linked-note',text:'Selected art kept offline',color:'sage',x:190,y:20,cardId:'forest'}],camera:{x:270,y:-110,zoom:.27}} });
 function comparable(snapshot: LibrarySnapshot) {
@@ -33,7 +33,7 @@ test('portable backup restores complete projects and legacy decks offline into a
   try {
     const decks=new DeckService(source.db,new FakeCardProvider());
     const p=project();const saved=await decks.saveProject(p);
-    await decks.saveProject({...project(),projectId:'empty-project',name:'Empty project',groups:[{id:'commander',name:'Commander',commander:true,entries:[]}],cuts:[],workspace:{version:1,cards:[],zones:[],camera:{x:0,y:0,zoom:1}}});
+    await decks.saveProject({...project(),tags:undefined,projectId:'empty-project',name:'Empty project',groups:[{id:'commander',name:'Commander',commander:true,entries:[]}],cuts:[],workspace:{version:1,cards:[],zones:[],camera:{x:0,y:0,zoom:1}}});
     const legacy=await decks.createDeck('Legacy deck','Commander\n1 Aang\n\nMainboard\n40 Forest');
     const archive=await new LibraryBackupService(source.db).snapshot();
     // Validate the on-disk format, including a pending draft and unmigrated table layout.

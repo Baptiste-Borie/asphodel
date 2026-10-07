@@ -11,6 +11,32 @@ import { parseBuilderProject, type BuilderProject } from '../../shared/builder-p
 const project = (): BuilderProject => ({version:1,projectId:'test-project',name:'Empty exploration',groups:[{id:'commander',name:'Commander',commander:true,entries:[]},{id:'empty-role',name:'Ramp',entries:[]}],cuts:[],workspace:{version:1,cards:[],zones:[{id:'zone',name:'To try',x:-40,y:600,width:250,height:314}],camera:{x:-30,y:100,zoom:.35}}});
 const card = {name:'Forest',type_line:'Basic Land',cmc:0,mana_cost:null,oracle_text:null,power:null,toughness:null,loyalty:null,set:'',set_name:'',collector_number:'',rarity:'',lang:'en',color_identity:['G'],image:'',related:[]};
 
+test('multiple manual tags persist through API, SQLite reopen and invalid writes without altering gameplay rows', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'asphodel-tags-')), url = `file:${join(dir, 'library.sqlite')}`;
+  let db = await createDatabase(url), app = await buildApp({ database: db, cardProvider: new FakeCardProvider() });
+  try {
+    const p = project(); p.groups[1]!.entries = [{ id: 'forest', card, quantity: 37 }];
+    p.cuts = [{ ...card, name: 'Cut idea' }];
+    p.tags = { definitions: [{ id: 'ramp', name: 'Ramp', description: 'Ressources de mana', target: 0 }, { id: 'draw', name: 'Pioche', description: 'Renouvelle la main', target: 9 }], cards: [{ name: 'Forest', tagIds: ['ramp', 'draw'] }, { name: 'Cut idea', tagIds: ['draw'] }] };
+    const saved = await app.inject({ method: 'POST', url: '/decks/projects', payload: p });
+    assert.equal(saved.statusCode, 201); const id = saved.json().id;
+    assert.equal(saved.json().totalCards, 37); assert.deepEqual(saved.json().project.tags, p.tags);
+    await app.close(); db.close(); db = await createDatabase(url); app = await buildApp({ database: db, cardProvider: new FakeCardProvider() });
+    const reopened = await app.inject({ method: 'GET', url: `/decks/${id}` });
+    assert.deepEqual(reopened.json().project, p); assert.equal(reopened.json().cards.length, 1); assert.equal(reopened.json().cards[0].quantity, 37);
+    for (const mutate of [
+      (x: BuilderProject) => { x.tags!.cards[0]!.tagIds = ['missing']; },
+      (x: BuilderProject) => { x.tags!.definitions[1]!.name = 'RAMP'; },
+      (x: BuilderProject) => { x.tags!.definitions[0]!.target = 1.5; },
+      (x: BuilderProject) => { x.tags!.cards[0]!.name = 'Absent'; },
+    ]) {
+      const bad = structuredClone(p); mutate(bad);
+      assert.equal((await app.inject({ method: 'PUT', url: `/decks/${id}/project`, payload: bad })).statusCode, 400);
+      assert.deepEqual((await app.inject({ method: 'GET', url: `/decks/${id}` })).json().project, p);
+    }
+  } finally { await app.close(); db.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
 test('empty project creation is idempotent and survives database close/migration/reopen',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'asphodel-project-'));const url=`file:${join(dir,'library.sqlite')}`;let db=await createDatabase(url);
   try {

@@ -68,7 +68,7 @@ test('failed metadata, HTTP errors, invalid gzip and failed activation preserve 
  }finally{await f.cleanup();}
 });
 test('cancel and close interrupt the verification worker, keep the installed snapshot, and never remove a selected generation',async()=>{
- let aborted=false;const f=await fixture({prepare:(_directory,_progress,signal)=>new Promise((_,reject)=>signal.addEventListener('abort',()=>{aborted=true;reject(Object.assign(new Error('aborted'),{name:'AbortError'}));},{once:true}))});
+ let aborted=false;const f=await fixture({prepare:(_directory,_progress,signal)=>new Promise((_,reject)=>{const cancel=()=>{aborted=true;reject(Object.assign(new Error('aborted'),{name:'AbortError'}));};if(signal.aborted)cancel();else signal.addEventListener('abort',cancel,{once:true});})});
  try{await f.library.check();await f.library.start();await until(()=>f.library.job.status==='verifying');const paths=generationPaths(f.data,f.library.job.generation);await f.library.control('cancel');assert.equal(aborted,true);await assert.rejects(stat(paths.directory));assert.equal((await f.library.state()).job.status,'canceled');assert.equal((await selectCatalog(f.data)).generation,null);
   aborted=false;await f.library.start();await until(()=>f.library.job.status==='verifying');await f.library.close();assert.equal(aborted,true);assert.equal((await f.library.state()).job.status,'paused');assert.ok((await stat(generationPaths(f.data,f.library.job.generation).oracle)).size);
  }finally{await f.cleanup();}

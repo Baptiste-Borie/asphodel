@@ -55,6 +55,8 @@ export class ProjectHistory {
     this.sheet.name = p.name;
     this.sheet.groups = p.groups.map(g => ({ ...g, entries: g.entries.map(e => ({ ...e, card: card(e.card) })) }));
     this.sheet.cuts = p.cuts.map(card);
+    if (p.tags === undefined) delete this.sheet.tags;
+    else this.sheet.tags = structuredClone(p.tags);
     // Keep the workspace object used by a mounted table, but replace its contents.
     const w = this.sheet.workspace!;
     const camera = w.camera;
