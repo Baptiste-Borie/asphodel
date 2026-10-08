@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prepareUserData } from '../src/paths.mjs';
+import { EMPTY_FORGE_EDITIONS } from './forge-assets.mjs';
 
 const desktop = fileURLToPath(new URL('../', import.meta.url));
 const runtime = process.env.ASPHODEL_SMOKE_RUNTIME ?? join(desktop, 'runtime');
@@ -47,6 +48,7 @@ async function close() {
   assert.equal(code, 0, 'worker, database and active Forge game close cleanly');
 }
 try {
+  assert.ok((await stat(join(runtime, 'vendor/forge/forge-gui/res', EMPTY_FORGE_EDITIONS))).isDirectory(), 'custom editions must be prepared by the build, before Forge starts');
   let api = await launch();
   await assert.rejects(api('/decks', { headers: { 'x-asphodel-desktop-token': 'wrong-token' } }), /403/);
   const decks = (await api('/decks')).decks;

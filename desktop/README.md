@@ -1,4 +1,4 @@
-# Asphodel Desktop 0.1.13
+# Asphodel Desktop 0.1.14
 
 Desktop wrapper around the existing TypeScript/Vite frontend, Node backend and pinned Forge bridge. No stack migration. Launch Asphodel, choose a saved deck, play locally, close the application. The packaged app includes Chromium/Node, Java and Forge's resources; no terminal, Node installation, Java installation or remote server is needed to run it.
 
@@ -10,13 +10,13 @@ Close Asphodel, then from the repository root:
 npm --prefix desktop run install:local
 ```
 
-This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.13-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
+This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.14-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
 
 Afterwards, open **Asphodel** from Ubuntu's application menu and pin it to your dock if desired. The package installs the app in `/opt/Asphodel`, the desktop entry `Asphodel.desktop`, the existing icon and the `asphodel` command. This launch uses the installed app, independent of the checkout, and needs no local server command. The normal desktop settings, fullscreen preference and Quitter button remain available.
 
 To update after a new patch/pull, close Asphodel and run the same command again. Decks, cached images, drafts and display settings remain in the existing `~/.config/Asphodel` profile; the package contains no home-directory files. Package removal (`sudo apt-get remove asphodel-desktop`) leaves this profile in place. Backup/restore is available in settings; abrupt-crash recovery still depends on a persisted draft.
 
-To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.13-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
+To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.14-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
 
 ## Automated Linux packages
 
@@ -244,3 +244,24 @@ A failed playtest now preserves a bounded **Diagnostic du playtest**: session, s
 This is a diagnostic improvement for the reported generic `The Forge bridge could not process the request` failure. The specific installed-app crash has NOT been reproduced or claimed fixed: the user's deck, current Forge runtime and its concrete exception are required to confirm its cause. No Java source/JAR change, engine rules change, migration or dependency is introduced. Reinstall normally; if the error recurs, copy the new diagnostic for a focused engine fix.
 
 Validation includes pure shuffle/mulligan conservation and replay, ordered bottoming, exhaustion, immutable art/roles, bounded allocation, real child stdio with a scripted bridge, failed-session restart/cleanup, wrapped/cyclic errors, restricted diagnostics and actual builder dialog events. Native Electron rendering and real Forge playtests remain to validate on the PC.
+
+
+## Patch 11 — versions et comparaison (0.1.14)
+
+- **Versions**, accessible dans Builder V1 et Table V2, conserve un instantané nommé du projet : cartes, quantités, commandants, candidats, cuts V1, éditions et faces choisies, tags/cibles, table, piles, zones, notes et caméra.
+- Les instantanés sont indépendants des modifications suivantes, intégrés à SQLite, aux brouillons de récupération et aux sauvegardes exportées. Les anciens projets sans versions restent lisibles ; aucune migration SQL supplémentaire.
+- Comparaison d’une référence avec le travail actuel ou une autre version. Quantités agrégées par nom normalisé et section, commandants distingués, candidats et cuts hors des totaux joués. Un déplacement entre catégories ne devient pas un ajout/retrait. Les changements de tags, de table, de rangement et d’illustration sont signalés séparément.
+- Repères : nombre de cartes jouées, terrains d’après les types enregistrés, valeur de mana moyenne hors terrains, comptes des tags manuels. Pas de verdict de puissance ni de probabilité de victoire.
+- **Essayer ses mains** ouvre un essai isolé de la référence, avec les règles et limites du patch 10.4.
+- **Créer un deck séparé** copie la référence dans une nouvelle identité de projet, sans remplacer l’original ni recopier ses versions. Après enregistrement, ce deck se sélectionne dans Play comme les autres decks de la bibliothèque.
+- **Restaurer la référence** demande une confirmation dans le dialogue et conserve automatiquement le travail précédent dans une version « Avant restauration N », ou réutilise une version strictement identique. Undo/Redo peut annuler/rétablir le contenu restauré, sans supprimer les versions conservées. La restauration charge le cadrage enregistré ; comme ailleurs, Undo ne rembobine pas la caméra.
+- Limites : 20 versions par projet, noms distincts de 1–80 caractères, limite globale existante de 4 millions de caractères JSON (travail + versions). Pas d’élagage automatique des versions. Une restauration sans place pour protéger le travail échoue sans modifier le deck : supprimer explicitement une ancienne version ou créer un deck séparé.
+- L’enregistrement suit l’autosauvegarde habituelle ; refermer le dialogue pour vérifier « Enregistré ». Une suppression confirmée retire la référence, pas le travail actuel. Pas de branchement/fusion ni de comparaison de résultats de parties dans ce patch.
+
+### Correction du lancement Forge installé
+
+Le diagnostic `start_external_match / INTERNAL_ERROR / StorageReaderFolder.ctor() error, Directory can't be created` vient de l’initialisation des éditions. Le bridge fournit à `StaticData` le chemin `res/asphodel-empty-custom-editions` ; Forge épinglé crée un `CardEdition.Reader` pour ce dossier et tente `mkdirs()` s’il manque. Une application installée sous `/opt` ou un AppImage monté ne peut pas créer ce dossier dans ses ressources.
+
+Le build prépare désormais ce répertoire vide avant le packaging ; la vérification du `.deb` refuse son absence avant toute installation privilégiée. Le runtime smoke vérifie aussi sa présence avant de démarrer le worker, puis conserve son test de vraie partie hors ligne. Le JAR et les règles Forge ne changent pas : aucune reconstruction Maven requise. Réinstaller le nouveau paquet, puis réessayer la partie ; conserver le diagnostic si une autre erreur apparaît.
+
+Validation : tests frontend, persistance API/SQLite, export/restauration de sauvegardes et tests desktop ; contrôles DOM des deux builders, des versions, restauration/Undo, copie indépendante et mains d’une référence. Les tests de paquet fabriquent de vrais petits `.deb` et rejettent le dossier manquant. Le runtime Forge complet et Electron natif doivent être vérifiés sur une machine disposant du JAR et des ressources (absents de cet environnement).

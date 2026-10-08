@@ -21,6 +21,8 @@ import './commander.css';
 import { manaSummary } from './mana-view';
 import './mana.css';
 import { openOpeningHands } from './opening-hand-view';
+import { openProjectVersions } from './project-versions-view';
+import { applyVersionState, forkProjectVersion, planVersionRestore } from './project-versions';
 
 type Card = LabCard;
 /** `maybeboard` groups (born from the triage feature, or manually named "Maybeboard") hold cards
@@ -130,6 +132,7 @@ export function initDeckLabView(root: HTMLElement) {
   const sheets: Sheet[] = [];
   const commanderCatalog = new CommanderCatalog();
   let openingHands: HTMLDialogElement | undefined;
+  let versionsDialog: HTMLDialogElement | undefined;
   let drawerInvoker: HTMLElement | null = null;
   const sample = (): Sheet => {
     const sections: [string, number, number][] = [['Unsorted', 0, 10], ['Early development', 10, 18], ['Keep the cards coming', 18, 23], ['Protect the board', 23, 28], ['Counters & company', 28, 45], ['Closing the game', 45, 48], ['Lands', 48, 55], ['Second pass', 55, 71], ['Try next', 71, 86], ['Other possibilities', 86, 101]];
@@ -249,6 +252,31 @@ export function initDeckLabView(root: HTMLElement) {
     openTagEditor(sheet, names, tags => {
       if (active !== sheet) return;
       editSheet('Modifier les tags et les cibles', () => { sheet.tags = tags; });
+    });
+  }
+  function openVersions() {
+    if (!active) return;
+    table?.checkpoint(); versionsDialog?.close();
+    const sheet = active;
+    versionsDialog = openProjectVersions(sheet, {
+      changed: () => scheduleAutoSave(sheet),
+      hands: state => { openingHands?.close(); openingHands = openOpeningHands(structuredClone(state)); },
+      fork: id => {
+        const fork = forkProjectVersion(sheet, id);
+        sheets.push(fork); active = fork; scheduleAutoSave(fork); renderBuilder();
+        toast('Deck séparé créé. L’original est conservé.');
+      },
+      restore: id => {
+        if (active !== sheet) throw new Error('Rouvre les versions depuis le deck actif.');
+        const planned = planVersionRestore(sheet, id), history = historyFor(sheet), previousVersions = sheet.versions;
+        history.begin('Restaurer une version du deck');
+        try {
+          sheet.versions = planned.versions; applyVersionState(sheet, planned.state);
+          prepareProject(sheet); history.commit();
+        } catch(error) { history.cancel(); sheet.versions = previousVersions; throw error; }
+        for (const c of [...sheet.groups.flatMap(g=>g.entries.map(e=>e.card)),...sheet.cuts]) knownCards.set(c.name,c);
+        renderBuilder(); scheduleAutoSave(sheet); return planned.backupName;
+      },
     });
   }
   function performHistory(direction: 'undo' | 'redo') {
@@ -511,7 +539,7 @@ export function initDeckLabView(root: HTMLElement) {
       : commanderCount > 2 ? `<p class="lab-builder-warning" role="status">The Commander category has <strong>${commanderCount}</strong> cards — most decks run just one (two with Partner).</p>` : '';
     const warning = total !== 100 ? `<p class="lab-builder-warning" role="status">This sheet has <strong>${total}</strong> card${total === 1 ? '' : 's'} — a Commander deck needs exactly 100.</p>` : '';
     const saveStatus = '<span class="lab-save-status" data-save-status role="status"></span><button data-action="retry-save" hidden>Réessayer</button>';
-    const deckActions = '<button type="button" data-action="opening-hands">Mains de départ</button>' + historyButtons + (window.asphodelDesktop ? '<button data-action="prepare-artwork">Préparer hors ligne</button>' : '') + '<button data-action="export-deck">Exporter</button><button data-action="rename-deck">Rename</button><button data-action="delete-deck">Delete</button>';
+    const deckActions = '<button type="button" data-action="versions">Versions</button><button type="button" data-action="opening-hands">Mains de départ</button>' + historyButtons + (window.asphodelDesktop ? '<button data-action="prepare-artwork">Préparer hors ligne</button>' : '') + '<button data-action="export-deck">Exporter</button><button data-action="rename-deck">Rename</button><button data-action="delete-deck">Delete</button>';
     get('.lab-builder').innerHTML = `${commanderWarning}${warning}<div class="lab-deck-heading"><div><button class="lab-back" data-action="close-sheet" aria-label="Back to all decks">← All decks</button><p class="lab-eyebrow">COMMANDER / CANDIDATE SHEET</p><h2>${esc(active.name)}${saveStatus}</h2><p><strong>${total}</strong> candidate cards <span> / 100 final deck target</span></p></div><div><select class="lab-sheet-picker" aria-label="Open deck sheet">${sheets.map((s,i) => `<option value="${i}" ${s === active ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><button data-action="new">+ New sheet</button><button data-action="selection">+ From Selection</button>${deckActions}</div></div><div class="lab-builder-tools"><button type="button" data-action="manage-tags">Tags et cibles</button><span>Manual categories <span class="lab-muted">· drag a card, use its menu, or search a category to add one</span></span><form class="lab-new-category"><input aria-label="New category name" placeholder="Name your category" required maxlength="60" /><button>+ New category</button></form></div><div class="lab-categories">${active.groups.map(categoryHtml).join('')}</div><details class="lab-cuts"><summary>Cuts · ${active.cuts.length} <span>Keep discarded ideas nearby</span></summary>${active.cuts.map((c,i) => `<button data-restore="${i}">↶ ${esc(c.name)}</button>`).join('') || '<p>No cuts yet. Cut a card using its menu to keep it here.</p>'}</details><section class="lab-stats"><div><p class="lab-eyebrow">DECK STATISTICS</p><h2>The shape of your sheet.</h2><p class="lab-muted">All candidates · cuts excluded<br>Card types may overlap.</p><div class="lab-type-counts">${['Creature','Instant','Sorcery','Artifact','Enchantment','Planeswalker','Land'].map(type => `<div><span>${type}</span><strong>${entries.filter(e => e.card.type_line.includes(type)).reduce((n,e) => n+e.quantity,0)}</strong></div>`).join('')}</div></div><div><div class="lab-curve-heading"><h3>Mana curve</h3><span>${spells} nonland spells</span></div><div class="lab-curve">${curve.map((n,i) => `<div><span>${n}</span><i style="height:${n / Math.max(...curve,1) * 150}px"></i><label>${i === 7 ? '7+' : i}</label></div>`).join('')}</div><p class="lab-average">${spells ? (nonlands.reduce((n,e) => n+e.card.cmc*e.quantity,0)/spells).toFixed(2) : '—'} <span>Average mana value · nonlands</span></p></div></section>${commanderSummary(active, commanderCatalog.state(active))}${manaSummary(active, commanderCatalog.state(active))}${roleSummary(active)}`;
     setSaveStatus(persistence.status(active)); updateHistoryControls();
   }
@@ -732,6 +760,7 @@ export function initDeckLabView(root: HTMLElement) {
       }
       case 'manage-tags': editTags(); break;
       case 'opening-hands': if (active) { openingHands?.close(); openingHands = openOpeningHands(active); } break;
+      case 'versions': openVersions(); break;
       case 'export-deck': openExport(); break;
       case 'prepare-artwork': if(active){table?.checkpoint();openDeckArtwork(prepareProject(active,journalStorage));} break;
       case 'retry-save': if (active) void persistence.retry(active); break;
@@ -943,7 +972,7 @@ export function initDeckLabView(root: HTMLElement) {
 
   let retired = false;
   window.addEventListener('pagehide', () => { if (retired) return; table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); });
-  return { retire() { retired = true; openingHands?.close(); commanderCatalog.retire(); }, async flush() { if (retired) return true; table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); return persistence.flush(); }, activate() {
+  return { retire() { retired = true; versionsDialog?.close(); openingHands?.close(); commanderCatalog.retire(); }, async flush() { if (retired) return true; table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); return persistence.flush(); }, activate() {
     void loadCatalog();
     void loadSavedDecks();
     if (!activated) { activated = true; void renderSearch(); }

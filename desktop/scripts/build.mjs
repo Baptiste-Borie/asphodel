@@ -3,6 +3,7 @@ import { access, chmod, cp, mkdir, readFile, readdir, realpath, rm, stat, unlink
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { backup, DatabaseSync } from 'node:sqlite';
+import { prepareForgeAssets } from './forge-assets.mjs';
 
 const desktop = fileURLToPath(new URL('../', import.meta.url));
 const root = resolve(desktop, '..');
@@ -50,6 +51,7 @@ await cp(join(root, 'frontend/dist'), join(runtime, 'frontend'), { recursive: tr
 await mkdir(dirname(join(runtime, 'forge-bridge/app/target/asphodel-forge-bridge.jar')), { recursive: true });
 await cp(jar, join(runtime, 'forge-bridge/app/target/asphodel-forge-bridge.jar'));
 await cp(assets, join(runtime, 'vendor/forge/forge-gui/res'), { recursive: true });
+await prepareForgeAssets(join(runtime, 'vendor/forge/forge-gui/res'));
 await mkdir(join(runtime, 'licenses'), { recursive: true });
 await cp(join(root, 'vendor/forge/LICENSE'), join(runtime, 'licenses/Forge-LICENSE'));
 await cp(join(root, 'forge-bridge/NOTICE.md'), join(runtime, 'licenses/Forge-NOTICE.md'));

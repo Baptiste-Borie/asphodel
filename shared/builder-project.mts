@@ -8,7 +8,10 @@ export type ProjectPile = ProjectPoint & { id: string; name: string; expanded: b
 export type ProjectNote = ProjectPoint & { id: string; text: string; color: 'sand' | 'sage' | 'lavender'; cardId?: string };
 export type ProjectWorkspace = { version: 1; zonesInitialized?: boolean; cards: ProjectPlacement[]; zones: ProjectZone[]; piles?: ProjectPile[]; notes?: ProjectNote[]; camera: ProjectPoint & { zoom: number } };
 export type ProjectGroup = { id?: string; name: string; entries: { id?: string; card: LabCard; quantity: number }[]; commander?: boolean; maybeboard?: boolean };
-export type BuilderProject = { version: 1; projectId: string; name: string; groups: ProjectGroup[]; cuts: LabCard[]; workspace: ProjectWorkspace; tags?: ProjectTags };
+export type ProjectSnapshot = { name: string; groups: ProjectGroup[]; cuts: LabCard[]; workspace: ProjectWorkspace; tags?: ProjectTags };
+export type NamedProjectVersion = { id: string; name: string; createdAt: string; state: ProjectSnapshot };
+export type BuilderProject = ProjectSnapshot & { version: 1; projectId: string; versions?: NamedProjectVersion[] };
+export const MAX_PROJECT_VERSIONS = 20;
 const text = (v: unknown, max = 200): v is string => typeof v === 'string' && v.length <= max;
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const identifier = (v: unknown): v is string => text(v, 100) && /^[a-zA-Z0-9_-]+$/.test(v);
@@ -42,6 +45,24 @@ const card = (v: any): boolean => v && text(v.name) && !!v.name.trim() && text(v
 
 /** Validate both API snapshots and recovery journals before rendering or updating SQLite. */
 export function parseBuilderProject(value: unknown): BuilderProject {
+  const p = parseProjectCore(value);
+  if (p.versions !== undefined) {
+    if (!Array.isArray(p.versions) || p.versions.length > MAX_PROJECT_VERSIONS) throw new Error('Versions de projet invalides (20 maximum).');
+    const ids = new Set<string>(), names = new Set<string>();
+    for (const v of p.versions) {
+      const key = typeof v?.name === 'string' ? v.name.trim().normalize('NFKC').toLowerCase() : '';
+      if (!v || !identifier(v.id) || ids.has(v.id) || !text(v.name, 80) || !key || names.has(key)
+        || !text(v.createdAt, 40) || !Number.isFinite(Date.parse(v.createdAt)) || new Date(v.createdAt).toISOString() !== v.createdAt
+        || !v.state || typeof v.state !== 'object' || Array.isArray(v.state)
+        || Object.keys(v.state).some(k => !['name','groups','cuts','workspace','tags'].includes(k))) throw new Error('Versions de projet invalides.');
+      parseProjectCore({ ...v.state, version: 1, projectId: p.projectId });
+      ids.add(v.id); names.add(key);
+    }
+  }
+  return p;
+}
+
+function parseProjectCore(value: unknown): BuilderProject {
   const p = value as BuilderProject;
   const w = p?.workspace;
   if (!p || p.version !== 1 || !identifier(p.projectId) || !text(p.name, 120) || !p.name.trim()

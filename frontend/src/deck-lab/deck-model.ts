@@ -1,9 +1,9 @@
 import type { LabCard } from '../../../shared/deck-lab';
-import type { ProjectGroup, ProjectWorkspace } from '../../../shared/builder-project.mjs';
+import type { ProjectGroup, ProjectWorkspace, NamedProjectVersion } from '../../../shared/builder-project.mjs';
 import type { ProjectTags } from '../../../shared/deck-tags.mjs';
 
 export type Group = ProjectGroup;
-export type Sheet = { name: string; groups: Group[]; cuts: LabCard[]; backendId?: number; projectId?: string; workspace?: ProjectWorkspace; tags?: ProjectTags };
+export type Sheet = { name: string; groups: Group[]; cuts: LabCard[]; backendId?: number; projectId?: string; workspace?: ProjectWorkspace; tags?: ProjectTags; versions?: NamedProjectVersion[] };
 
 /** Business statistics never depend on spatial placement. */
 export function deckStatistics(groups: Group[]) {

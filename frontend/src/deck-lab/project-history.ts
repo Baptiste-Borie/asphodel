@@ -4,7 +4,7 @@ import type { Sheet } from './deck-model';
 import { initializeZones, reconcileWorkspace } from './deck-workspace';
 import { prepareProject, type Storage } from './project-persistence';
 
-type PackedProject = Omit<BuilderProject, 'groups' | 'cuts' | 'workspace'> & {
+type PackedProject = Omit<BuilderProject, 'groups' | 'cuts' | 'workspace' | 'versions'> & {
   groups: (Omit<BuilderProject['groups'][number], 'entries'> & { entries: { id?: string; quantity: number; card: number }[] })[];
   cuts: number[]; workspace: Omit<BuilderProject['workspace'], 'camera'>;
 };
@@ -41,7 +41,8 @@ export class ProjectHistory {
     return id;
   }
   private capture(): string {
-    const p = prepareProject(this.sheet, this.storage);
+    // Named checkpoints outlive construction undo/redo and aren't copied for each drag.
+    const { versions: _versions, ...p } = prepareProject(this.sheet, this.storage);
     const { camera: _camera, ...workspace } = p.workspace;
     const packed: PackedProject = { ...p, workspace,
       groups: p.groups.map(g => ({ ...g, entries: g.entries.map(e => ({ ...e, card: this.intern(e.card) })) })),
