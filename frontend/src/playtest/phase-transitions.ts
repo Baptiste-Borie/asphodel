@@ -1,3 +1,4 @@
+import {presentationTiming,type PresentationTiming} from './presentation-preferences';
 /**
  * V2h "MAJOR PHASE / CHAPTER TRANSITIONS": restrained cinematic text for the handful of genuinely
  * major beats a human tracks a game by — never fired for every Magic phase/step (upkeep, draw,
@@ -45,16 +46,15 @@ export interface PhaseBanner {
 
 // V2h.2 "PACING": a real physical playtest reported turns changing hands too fast to track — the
 // spec's own target for this exact banner is "visible 'ASPHODEL'S TURN' / 'YOUR TURN',
-// approximately 1.5-2.5 seconds of presentation". VISIBLE_MS + FADE_MS lands at ~2.1s.
-const VISIBLE_MS = 1700;
-const FADE_MS = 400;
+// approximately 1.5-2.5 seconds of presentation". The Normal profile keeps the existing ~2.1s banner.
+
 
 /**
  * A short, elegant, non-blocking text banner — fades/moves in, holds, fades out. Gameplay never
  * waits for it (nothing here is awaited by any decision/render path); it is purely decorative on
  * top of whatever already painted.
  */
-export function createPhaseBanner(): PhaseBanner {
+export function createPhaseBanner(options: {timing?:()=>PresentationTiming;enabled?:()=>boolean;reducedMotion?:()=>boolean} = {}): PhaseBanner {
   const element = document.createElement("div");
   element.className = "table-phase-banner";
   element.setAttribute("aria-live", "polite");
@@ -64,6 +64,9 @@ export function createPhaseBanner(): PhaseBanner {
   let removeTimer: ReturnType<typeof setTimeout> | null = null;
 
   function show(transition: MajorPhaseTransition, label: string): void {
+    if(options.enabled && !options.enabled()) {reset();return;}
+    const timing=options.timing?.() ?? presentationTiming();
+    const fade=options.reducedMotion?.() ? 0 : timing.fade;
     if (hideTimer) clearTimeout(hideTimer);
     if (removeTimer) clearTimeout(removeTimer);
     element.dataset.transition = transition;
@@ -74,8 +77,8 @@ export function createPhaseBanner(): PhaseBanner {
     element.classList.add("table-phase-banner--visible");
     hideTimer = setTimeout(() => {
       element.classList.remove("table-phase-banner--visible");
-      removeTimer = setTimeout(() => { element.hidden = true; }, FADE_MS);
-    }, VISIBLE_MS);
+      removeTimer = setTimeout(() => { element.hidden = true; }, fade);
+    }, timing.phase-fade);
   }
 
   function reset(): void {

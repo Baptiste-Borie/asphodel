@@ -1,4 +1,4 @@
-# Asphodel Desktop 0.1.15
+# Asphodel Desktop 0.1.16
 
 Desktop wrapper around the existing TypeScript/Vite frontend, Node backend and pinned Forge bridge. No stack migration. Launch Asphodel, choose a saved deck, play locally, close the application. The packaged app includes Chromium/Node, Java and Forge's resources; no terminal, Node installation, Java installation or remote server is needed to run it.
 
@@ -10,13 +10,13 @@ Close Asphodel, then from the repository root:
 npm --prefix desktop run install:local
 ```
 
-This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.15-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
+This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.16-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
 
 Afterwards, open **Asphodel** from Ubuntu's application menu and pin it to your dock if desired. The package installs the app in `/opt/Asphodel`, the desktop entry `Asphodel.desktop`, the existing icon and the `asphodel` command. This launch uses the installed app, independent of the checkout, and needs no local server command. The normal desktop settings, fullscreen preference and Quitter button remain available.
 
 To update after a new patch/pull, close Asphodel and run the same command again. Decks, cached images, drafts and display settings remain in the existing `~/.config/Asphodel` profile; the package contains no home-directory files. Package removal (`sudo apt-get remove asphodel-desktop`) leaves this profile in place. Backup/restore is available in settings; abrupt-crash recovery still depends on a persisted draft.
 
-To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.15-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
+To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.16-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
 
 ## Automated Linux packages
 
@@ -246,7 +246,7 @@ This is a diagnostic improvement for the reported generic `The Forge bridge coul
 Validation includes pure shuffle/mulligan conservation and replay, ordered bottoming, exhaustion, immutable art/roles, bounded allocation, real child stdio with a scripted bridge, failed-session restart/cleanup, wrapped/cyclic errors, restricted diagnostics and actual builder dialog events. Native Electron rendering and real Forge playtests remain to validate on the PC.
 
 
-## Patch 11 — versions et comparaison (0.1.15)
+## Patch 11 — versions et comparaison (0.1.16)
 
 - **Versions**, accessible dans Builder V1 et Table V2, conserve un instantané nommé du projet : cartes, quantités, commandants, candidats, cuts V1, éditions et faces choisies, tags/cibles, table, piles, zones, notes et caméra.
 - Les instantanés sont indépendants des modifications suivantes, intégrés à SQLite, aux brouillons de récupération et aux sauvegardes exportées. Les anciens projets sans versions restent lisibles ; aucune migration SQL supplémentaire.
@@ -273,10 +273,10 @@ Le premier patch 11 créait le dossier vide lors du build, mais electron-builder
 
 Le fichier marqueur conserve désormais le dossier à travers le packaging. Le test de régression utilise electron-builder 26.15.3 et sa vraie copie `extraResources` : l’ancien dossier vide disparaît, le dossier contenant le marqueur reste présent. Une distribution Electron factice évite de télécharger ou lancer Chromium ; ce test vérifie le packaging, pas une partie Forge. Les tests de vrais petits `.deb` rejettent aussi un paquet dont seul le marqueur manque.
 
-Appliquer ce correctif après le patch 11 déjà appliqué, puis relancer `npm --prefix desktop run install:local`. Version conservée : 0.1.15, puisque la précédente installation avait été interrompue. Pas de reconstruction Java ni de modification des decks.
+Appliquer ce correctif après le patch 11 déjà appliqué, puis relancer `npm --prefix desktop run install:local`. Version conservée : 0.1.16, puisque la précédente installation avait été interrompue. Pas de reconstruction Java ni de modification des decks.
 
 
-## Playtest notebook (patch 12, version 0.1.15)
+## Playtest notebook (patch 12, version 0.1.16)
 
 **Tester ce deck** opens the existing game setup with the current builder deck selected; **Versions → Jouer cette référence** selects a named version without restoring it over the working deck. Pending builder edits must save successfully before handing over. Opponents, seed and digital/physical mode remain selectable; an active game must end before preparing another. The backend resolves the library deck and its historical identity in one read, then stores the exact commander/mainboard list sent to Forge. Candidates and cuts are excluded. Later edits, reference deletion, deck deletion and renames never change the played list.
 
@@ -285,3 +285,15 @@ After completion, voluntary stop or failure, the end screen opens **Bilan de l�
 **Mes essais** filters the notebook by the builder project's stable identity. **Carnet d’essais** in game setup also retrieves trials whose original deck was deleted, and fixture/Archidekt trials. Lists paginate 50 at a time. Trials existing only as old debug report files are not retroactively imported. **Retour à la table avec ces retours** saves feedback and copies it into existing table notes: card notes attach to matching current entries, absent cards receive free notes, and quantities are never changed. Repeating the explicit import updates its notes rather than duplicating them, and the entire operation can be undone/redone. A table remains limited to 500 notes, 4,000 characters each; longer general feedback stays complete in the notebook and becomes an excerpt on the table.
 
 A normal SQLite migration adds `playtest_reviews`, independently of deck deletion. Full library backup/restore includes reviews; old archives without this additive field still restore correctly. A recorded running trial recovered after restart or restoration is marked interrupted rather than pretending its game resumed. Raw diagnostic `summary.md`/`decisions.json` files retain their existing role, with a session suffix preventing two same-minute trials from overwriting one another. Actual game execution and Commander rules continue to use the existing Forge bridge.
+
+## Party presentation (patch 13)
+
+**Rythme des parties** is available before starting a playtest, inside the in-game ⋮ menu, and in desktop **Paramètres**. Choose **Rapide**, **Normal** or **Posé**. Important actions receive approximately 1, 3.5 or 5.5 seconds of reading time respectively; major phase banners, smaller actions and card movements follow the same profile. Normal preserves the existing rhythm. Changing speed applies to subsequent actions; the reading pause already underway finishes normally.
+
+**Réduire les animations des parties** keeps the card identities, captions, board state and reading pauses, while removing movement and fades. The operating system's reduced-motion setting is also respected. Changing this preference cancels active decorative movements and cleans up their temporary cards.
+
+When public actions are being presented, **Rattraper l’affichage** appears on the table and in the menu with the number of pending steps. It interrupts only presentation waits and animations. Every received frame is still painted in order and its event remains in the recent history; no choice is submitted, no turn is passed and the engine is not accelerated. The current human decision appears only after the queue drains. The next batch uses the selected rhythm again. Leaving a game cancels its presentation timers so an old session cannot paint over the next one.
+
+The settings are saved on the stable renderer origin and included in portable library backups. An older backup restores Normal and the default motion preference. If renderer storage is unavailable, the settings still apply to the current session, with an explicit message and retry button. Backup/restore first flushes pending deck and playtest-review edits.
+
+No Forge rebuild, database migration or new dependency is needed. Checks cover corrupt/unavailable storage, persistence, backup replacement, speed changes, all three importance tiers, catch-up during phase/card waits, frame order/deduplication, decision gating and old-session cancellation. The native window and desktop smoke scripts additionally check settings across restart and portable restoration; these scripts require an Electron-capable environment.

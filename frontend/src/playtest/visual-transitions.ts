@@ -1,3 +1,4 @@
+import {presentationTiming,type PresentationTiming} from './presentation-preferences';
 import type { AgentObservation } from './types.js';
 
 export interface CardLocation { playerId: string; zone: string; tapped: boolean | null }
@@ -25,9 +26,12 @@ export function diffLocations(previous: AgentObservation, current: AgentObservat
 /** FLIP-style motion around authoritative paints. No timers, engine waits, or rule mutations.
  * Seat/zone anchors are player-ID based so the transition model is independent of seating. */
 export class VisualTransitions {
+  private readonly options: {timing?:()=>PresentationTiming;reducedMotion?:()=>boolean};
+  constructor(options: {timing?:()=>PresentationTiming;reducedMotion?:()=>boolean} = {}) {this.options=options;}
   private previous: AgentObservation | null = null;
   private animations = new Set<Animation>();
-  reset(): void { this.previous = null; for (const animation of this.animations) animation.cancel(); this.animations.clear(); }
+  cancelAnimations(): void {for (const animation of this.animations) animation.cancel();this.animations.clear();}
+  reset(): void {this.previous=null;this.cancelAnimations();}
   paint(root: HTMLElement, observation: AgentObservation, render: () => void): void {
     const before = new Map<string, { rect: DOMRect; node: HTMLElement }>();
     for (const node of root.querySelectorAll<HTMLElement>('.table-battlefield [data-card-ref], .table-hand [data-card-ref], .physical-scene [data-card-ref], .table-stack [data-card-ref]')) {
@@ -38,11 +42,11 @@ export class VisualTransitions {
     render();
     const hadPrevious = this.previous?.gameRef === observation.gameRef;
     this.previous = observation;
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (this.options.reducedMotion?.() || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const after = new Map(Array.from(root.querySelectorAll<HTMLElement>('.table-battlefield [data-card-ref], .table-hand [data-card-ref], .physical-scene [data-card-ref], .table-stack [data-card-ref]'), node => [node.dataset.cardRef!, node]));
     if (hadPrevious) for (const [ref, node] of after) {
       if (before.has(ref) || changes.some(change => change.cardRef === ref)) continue;
-      const animation = node.animate([{ opacity: .3, translate: '0 16px' }, { opacity: 1, translate: '0 0' }], { duration: 280, easing: 'ease-out' });
+      const animation = node.animate([{ opacity: .3, translate: '0 16px' }, { opacity: 1, translate: '0 0' }], { duration: (this.options.timing?.() ?? presentationTiming()).arrival, easing: 'ease-out' });
       this.animations.add(animation);
       void animation.finished.catch(() => {}).finally(() => this.animations.delete(animation));
     }
@@ -64,7 +68,7 @@ export class VisualTransitions {
       const animation = ghost.animate([
         { transform: 'translate(0,0) scale(1)', opacity: .9 },
         { transform: `translate(${destination.left - origin.left}px,${destination.top - origin.top}px) scale(${destination.width / origin.width})`, opacity: 0 },
-      ], { duration: 420, easing: 'cubic-bezier(.2,.7,.2,1)' });
+      ], { duration: (this.options.timing?.() ?? presentationTiming()).movement, easing: 'cubic-bezier(.2,.7,.2,1)' });
       this.animations.add(animation);
       void animation.finished.catch(() => {}).finally(() => { ghost.remove(); this.animations.delete(animation); });
     }

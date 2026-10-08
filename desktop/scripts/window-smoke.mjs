@@ -28,6 +28,11 @@ try {
   await assertFullscreen(page, true);
   await page.getByRole('button', { name: 'Paramètres', exact: true }).click();
   await page.getByLabel('Mode d’affichage', { exact: true }).selectOption('window');
+  const presentation = page.locator('.desktop-settings');
+  await presentation.getByLabel('Vitesse de présentation', { exact: true }).selectOption('fast');
+  await presentation.getByLabel('Réduire les animations des parties', { exact: true }).check();
+  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('asphodel.play-presentation.v1'))), {version: 1, speed: 'fast', reduceMotion: true});
+
   await assertFullscreen(page, false);
   assert.equal(JSON.parse(await readFile(join(userData, 'display-preferences.json'), 'utf8')).fullscreen, false);
   // Text editing remains available after removing the native Edit menu.
@@ -48,6 +53,11 @@ try {
   await electron.close(); electron = undefined;
   page = await launch();
   await assertFullscreen(page, false);
+  await page.getByRole('button', { name: 'Paramètres', exact: true }).click();
+  assert.equal(await page.locator('.desktop-settings').getByLabel('Vitesse de présentation', { exact: true }).inputValue(), 'fast');
+  assert.equal(await page.locator('.desktop-settings').getByLabel('Réduire les animations des parties', { exact: true }).isChecked(), true);
+  assert.equal(await page.evaluate(() => document.body.classList.contains('play-reduced-motion')), true);
+  await page.keyboard.press('Escape');
   await page.keyboard.press('F11');
   await assertFullscreen(page, true);
   await page.getByRole('button', { name: 'Paramètres', exact: true }).click();
@@ -82,7 +92,7 @@ try {
   } finally { clearTimeout(exitTimer); }
   electron = undefined;
   assert.deepEqual(errors, []);
-  console.log('Window smoke passed: fullscreen default, menu hidden after Alt, settings/F11, restart persistence, text editing, IPC isolation and in-app quit.');
+  console.log('Window smoke passed: fullscreen default, menu hidden after Alt, settings/F11, display/presentation restart persistence, reduced motion, text editing, IPC isolation and in-app quit.');
 } finally {
   if (electron) await electron.close();
   await rm(userData, { recursive: true, force: true });

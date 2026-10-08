@@ -1,0 +1,29 @@
+.presentation-settings { text-align:left; }
+.presentation-settings h3 { margin:0 0 14px;font-size:15px; }
+.presentation-settings label { display:block;margin:12px 0;font-size:13px; }
+.presentation-settings select { width:100%;padding:9px 12px;border:1px solid var(--border,#697365);border-radius:6px;background:var(--surface,#1c2420);color:inherit;font:inherit; }
+.presentation-settings p { font-size:12px;line-height:1.6; }
+.presentation-settings .presentation-motion { display:flex;align-items:center;gap:8px; }
+.presentation-motion input { accent-color:var(--accent,#cfb67e); }
+.presentation-save-status { color:var(--offline,#e8b08e); }
+.playtest-setup>.presentation-settings { max-width:640px;border:1px solid var(--border);border-radius:12px;padding:18px;margin:24px 0; }
+.table-menu-panel>.presentation-settings { border-top:1px solid #ffffff26;padding:16px 0; }
+.table-menu-panel { max-height:calc(100vh - 100px);overflow:auto; }
+.table-playback-control { display:flex;align-items:center;gap:10px;justify-content:center;flex-wrap:wrap; }
+.table-playback-control p { font-size:12px;margin:5px 0;color:var(--text-muted,#d4cebc); }
+.table-playback-control button { padding:7px 11px;border:1px solid #64716a;border-radius:6px;background:#1c2922;color:#e8e5df;cursor:pointer;font:inherit;font-size:12px; }
+.table-playback-control button:disabled { opacity:.5;cursor:default; }
+.table-menu-panel>.table-playback-control { border-top:1px solid #ffffff26;padding:12px 0; }
+body.play-reduced-motion :is(.table-root,.table-card-reveal,.table-phase-banner,.table-hand-menu,.table-mana-overlay,.table-zone-inspector,.table-hover-preview),
+body.play-reduced-motion :is(.table-root,.table-card-reveal,.table-phase-banner,.table-hand-menu,.table-mana-overlay,.table-zone-inspector,.table-hover-preview) * { animation:none!important;transition:none!important; }
+@media(max-width:700px) { .table-playback-control { gap:6px; } }
+
+.table-hud>.table-playback-control { pointer-events:auto; }
+.table-menu-panel { width:min(340px,calc(100vw - 40px));box-sizing:border-box; }
+.desktop-presentation { border-top:1px solid var(--border); }
+.presentation-settings :focus-visible,.table-playback-control button:focus-visible { outline:2px solid var(--accent,#cfb67e);outline-offset:3px; }
+
+/* Keep catch-up and settings reachable above a card reveal while a batch is playing. */
+.table-root[data-playback="playing"] :is(.table-hud,.table-menu-button,.table-menu-panel) { z-index:23; }
+
+.table-root--physical .table-hud>.table-playback-control { grid-column:1 / -1; }

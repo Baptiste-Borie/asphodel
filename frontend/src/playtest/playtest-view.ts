@@ -1,3 +1,6 @@
+import {presentationPreferences,presentationTiming} from './presentation-preferences';
+import {mountPresentationSettings} from './presentation-settings';
+import {PresentationClock} from './presentation-clock';
 import { getReview, mountPlaytestReview, openPlaytestHistory, type ReviewReturn } from './playtest-review-view';
 import { createPhysicalScene } from './physical-scene.js';
 import { DecisionGate } from './decision-gate.js';
@@ -23,7 +26,7 @@ import { cardDisplayName } from "./card-format.js";
 import { combatRelations, combatSelectedCardRefs, type CombatRelation } from "./combat-selection.js";
 import { seatName } from "./player-seat.js";
 import { renderDecision } from "./decision-renderer.js";
-import { FramePlaybackQueue } from "./frame-playback.js";
+import { FramePlaybackQueue, computePlaybackDelayMs } from "./frame-playback.js";
 import { createHandActionMenu } from "./hand-action-menu.js";
 import { buildDockItems, decideCardAction, mapActionsToCards, splitCardActionMapByHand, type CardActionMap } from "./hand-action-mapping.js";
 import { computePreviewAction } from "./preview-action.js";
@@ -249,10 +252,20 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
   const handActionMenu = createHandActionMenu();
   const manaOverlay = createManaPaymentOverlay();
   const zoneInspector = createZoneInspector((name) => cardStore.get(name));
-  const transitions = new VisualTransitions();
-  const phaseBanner = createPhaseBanner();
+  const preferences=presentationPreferences();
+  let presentationClock=new PresentationClock();
+  const systemMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
+  const reducedMotion=()=>preferences.state.reduceMotion || systemMotion.matches || presentationClock.catchingUp;
+  const presentationOptions={timing:()=>presentationTiming(preferences.state.speed),reducedMotion,enabled:()=>!presentationClock.catchingUp};
+  const transitions = new VisualTransitions(presentationOptions);
+  const phaseBanner = createPhaseBanner(presentationOptions);
   let lastPhaseState: { turn: number; phase: string; activePlayerId: string } | null = null;
-  const cardReveal = createCardReveal();
+  const cardReveal = createCardReveal(presentationOptions);
+  let setupPresentation: ReturnType<typeof mountPresentationSettings> | undefined;
+  let gamePresentation: ReturnType<typeof mountPresentationSettings> | undefined;
+  const playbackControls: {root:HTMLElement;status:HTMLElement;button:HTMLButtonElement}[] = [];
+  function updateMotion() {document.body.classList.toggle('play-reduced-motion',reducedMotion());if(reducedMotion()) {transitions.cancelAnimations();cardReveal.cancelAnimations();}}
+  preferences.subscribe(updateMotion);systemMotion.addEventListener('change',updateMotion);updateMotion();
   let lastRevealObservation: AgentObservation | null = null;
   let stackEl: HTMLElement;
   let physicalScene: ReturnType<typeof createPhysicalScene> | null = null;
@@ -321,7 +334,11 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     }
   }
 
+  function cancelPresentation() {presentationClock.catchUp();updateMotion();cardReveal.hide(true);cardReveal.cancelAnimations();transitions.cancelAnimations();phaseBanner.reset();}
+
   function showSetup(): void {
+    cancelPresentation();presentationClock=new PresentationClock();updateMotion();
+    gamePresentation?.dispose();gamePresentation=undefined;playbackControls.length=0;
     endSection.replaceChildren(); endReview=undefined;
     stopPolling();
     sessionId = null;
@@ -419,6 +436,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
   }
 
   function renderSetup(): void {
+    setupPresentation?.dispose();
     setupSection.replaceChildren();
     setupSection.className = "playtest-setup";
 
@@ -500,6 +518,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
       };
       void startGame(request, startButton, feedback);
     });
+    const presentationSettings=document.createElement('section');setupPresentation=mountPresentationSettings(presentationSettings,preferences);setupSection.append(presentationSettings);
     setupSection.append(startButton);
     const history=document.createElement('button');history.type='button';history.className='secondary-button';history.textContent='Carnet d’essais';history.onclick=()=>{openPlaytestHistory(undefined,returnToTable);};setupSection.append(history);
 
@@ -542,6 +561,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
    * ignored once `asphodelDeckNames` is known.
    */
   function buildGameScreen(humanDeckName: string | null, asphodelDeckNames: string[] | null, fallbackOpponentCount = 1): void {
+    cancelPresentation();presentationClock=new PresentationClock();updateMotion();gamePresentation?.dispose();playbackControls.length=0;
     const opponentCount = asphodelDeckNames ? asphodelDeckNames.length : fallbackOpponentCount;
     transitions.reset();
     physicalScene = currentPlayMode === "physical" ? createPhysicalScene(zoneInspector.open) : null;
@@ -603,7 +623,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     hudPhaseEl.className = "table-hud-line table-hud-phase";
     const modeLabel = document.createElement('p'); modeLabel.className = 'table-play-mode';
     modeLabel.textContent = currentPlayMode === 'physical' ? 'Physical Companion' : 'Digital';
-    hud.append(modeLabel, hudTurnEl, hudPhaseEl);
+    hud.append(modeLabel, hudTurnEl, hudPhaseEl,createPlaybackControl());
 
     /*
      * Milestone 2 "CLICK THE VIEWPORT, REAL RELAYOUT": no more small per-viewport Focus button — the
@@ -683,7 +703,8 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     endButton.className = "danger-button table-menu-end-button";
     endButton.textContent = "End Playtest";
     endButton.addEventListener("click", () => { menuPanel.hidden = true; void endGame(); });
-    menuPanel.append(menuDeckInfo, endButton);
+    const presentationSettings=document.createElement('section');gamePresentation=mountPresentationSettings(presentationSettings,preferences);
+    menuPanel.append(menuDeckInfo,presentationSettings,createPlaybackControl(),endButton);
     menuButton.addEventListener("click", (event) => { event.stopPropagation(); menuPanel.hidden = !menuPanel.hidden; });
     document.addEventListener("click", () => { menuPanel.hidden = true; });
     menuPanel.addEventListener("click", (event) => event.stopPropagation());
@@ -1011,16 +1032,36 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     voicePanel?.refresh();
   }
 
+  function updatePlaybackControls() {
+    const count=frameQueue.pendingCount();
+    for(const controls of playbackControls) {
+      controls.root.hidden=count===0;
+      controls.status.textContent=`Actions en cours · ${count} étape${count>1?'s':''} à voir`;
+      controls.button.disabled=count===0 || presentationClock.catchingUp;
+    }
+  }
+  function createPlaybackControl() {
+    const root=document.createElement('div');root.className='table-playback-control';root.hidden=true;
+    const status=document.createElement('p');
+    const button=document.createElement('button');button.type='button';button.textContent='Rattraper l’affichage';
+    button.title='Afficher dans l’ordre les actions déjà reçues, sans leurs pauses de présentation.';
+    button.onclick=()=>{if(frameQueue.isIdle())return;cancelPresentation();updatePlaybackControls();};
+    root.append(status,button);playbackControls.push({root,status,button});return root;
+  }
+
   /** Feeds any newly-arrived frames into the queue and (re)starts playback — safe to call every poll; a call while already playing is a harmless no-op re-entry that keeps draining the same shared queue. */
   function pumpFrames(): void {
     const queue = frameQueue;
     const pumpingSession = sessionId;
     const current = () => queue === frameQueue && sessionId === pumpingSession && !gameSection.hidden;
-    const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+    const clock=presentationClock;
+    const pause = (ms: number) => clock.wait(ms);
     let beats: ReturnType<typeof presentationBeats> = { spells: [], arrivals: [], unshownArrivals: [] };
     void frameQueue.pump({
       isCurrent: current,
-      beforeFrame: currentPlayMode === 'physical' ? async frame => {
+      delay:pause,
+      getDelay:(frame,remaining)=>clock.catchingUp ? 0 : computePlaybackDelayMs(frame,remaining,preferences.state.speed),
+      beforeFrame: async frame => {
         gameSection.dataset.playback = 'playing';
         gameSection.classList.remove('physical-input-required');
         decisionDock.replaceChildren();
@@ -1028,14 +1069,16 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
         inspectionActions = undefined;
         previewPanel.setActionable(null, null);
         handActionMenu.close();
+        if (currentPlayMode !== 'physical') return;
         beats = presentationBeats(lastRevealObservation, frame.observation);
         const transition = detectMajorPhaseTransition(lastPhaseState, frame.observation.game, frame.observation.selfPlayerId);
         if (transition) {
           renderHud(frame.observation);
-          await pause(2100);
+          await pause(presentationTiming(preferences.state.speed).phase);
         }
-      } : undefined,
+      },
       onFrame: (frame) => {
+        updatePlaybackControls();
         gameSection.dataset.playback = 'playing';
         livePlayerTargets = [];
         gameSection.classList.remove('physical-input-required');
@@ -1046,16 +1089,19 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
         const reveals = [...beats.spells, ...beats.unshownArrivals];
         for (const card of reveals) {
           if (!current()) return;
+          if(clock.catchingUp) break;
           await cardReveal.present(card, card.name ? cardStore.get(card.name) : null, frame.event?.text ?? `${card.name} · enters the battlefield`);
         }
         for (const card of beats.arrivals) {
           if (!current()) return;
+          if(clock.catchingUp) break;
           await cardReveal.settle(card, card.name ? cardStore.get(card.name) : null, gameSection);
         }
-        if (reveals.length || beats.arrivals.length) await pause(200);
+        if (reveals.length || beats.arrivals.length) await pause(presentationTiming(preferences.state.speed).breath);
         else await pause(duration);
       } : undefined,
       onIdle: () => {
+        clock.finish();updateMotion();updatePlaybackControls();
         gameSection.dataset.playback = 'idle';
         if (latestState) revealLiveState(latestState);
       },
@@ -1075,7 +1121,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
       gameSection.dataset.connection = 'connected';
       currentPlayMode = state.playMode; // V2g: static for a session's lifetime, but always kept in sync with the backend's own DTO rather than trusted-once.
       if (state.humanDeckName && state.asphodelDeckNames.length) setDeckInfo(state.humanDeckName, state.asphodelDeckNames);
-      frameQueue.enqueue(state.frames);
+      frameQueue.enqueue(state.frames);updatePlaybackControls();
 
       const observationsInPlay = [state.observation, ...state.frames.map((f) => f.observation)]
         .filter((o): o is AgentObservation => o !== null);
@@ -1094,8 +1140,8 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
 
       if (TERMINAL_STATUSES.has(state.status) && frameQueue.isIdle()) {
         stopPolling();
+        cancelPresentation();showEndScreen();
         await renderEnd(state);
-        showEndScreen();
       }
     } catch (error) {
       stopPolling();
@@ -1221,7 +1267,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
   }
 
   async function submitChoice(choice: Parameters<typeof submitPlaytestChoice>[1]): Promise<void> {
-    if (currentPlayMode === 'physical' && !frameQueue.isIdle()) return;
+    if (!frameQueue.isIdle()) return;
     if (!sessionId || submitting) return;
     if (!decisionGate.consume(choice.decisionId)) return;
     submitting = true;
@@ -1248,8 +1294,8 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     stopPolling();
     try {
       const state = await endPlaytest(sessionId);
+      cancelPresentation();showEndScreen();
       await renderEnd(state);
-      showEndScreen();
     } catch (error) {
       decisionDock.textContent = error instanceof Error ? error.message : "Could not end the playtest.";
       pollTimer = setInterval(() => void poll(), POLL_INTERVAL_MS);

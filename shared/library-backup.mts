@@ -31,7 +31,7 @@ const normalize = (v: string) => v.trim().normalize('NFKC').toLowerCase();
 const unique = (values: unknown[]) => new Set(values).size === values.length;
 
 export function isBackupStorageKey(key: string): boolean {
-  return key === 'asphodel.deck-lab.selection.v1' || key === 'asphodel.voice.approvedVocabulary.v1'
+  return key === 'asphodel.play-presentation.v1' || key === 'asphodel.deck-lab.selection.v1' || key === 'asphodel.voice.approvedVocabulary.v1'
     || /^asphodel\.deck-table\.v1\.\d+$/.test(key) || /^asphodel\.builder-draft\.v1\.[a-zA-Z0-9_-]+$/.test(key);
 }
 export function parseBackupStorage(value: unknown): Record<string, string> {

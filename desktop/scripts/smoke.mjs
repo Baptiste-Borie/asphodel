@@ -177,13 +177,17 @@ try {
   }, archivePath);
   await page.evaluate(() => localStorage.setItem('asphodel.voice.approvedVocabulary.v1', JSON.stringify({ version: 1, vocabulary: ['portable vocabulary'] })));
   await page.getByRole('button', { name: 'Paramètres', exact: true }).click();
+  await page.locator('.desktop-settings').getByLabel('Vitesse de présentation', { exact: true }).selectOption('deliberate');
+  await page.locator('.desktop-settings').getByLabel('Réduire les animations des parties', { exact: true }).check();
   await page.getByRole('button', { name: 'Sauvegarder ma bibliothèque', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('[data-backup-status]')?.textContent.startsWith('Bibliothèque sauvegardée'));
   const portable = JSON.parse(await readFile(archivePath, 'utf8'));
   assert.equal(portable.format, 'asphodel-library');
+  assert.deepEqual(JSON.parse(portable.storage['asphodel.play-presentation.v1']), {version: 1, speed: 'deliberate', reduceMotion: true});
   assert.deepEqual(portable.library.projects.find(p => p.projectId === expectedProject.projectId).state.workspace, expectedProject.workspace);
   await page.evaluate(async id => {
     localStorage.setItem('asphodel.voice.approvedVocabulary.v1', 'changed after backup');
+    localStorage.setItem('asphodel.play-presentation.v1', JSON.stringify({version: 1, speed: 'fast', reduceMotion: false}));
     const result = await fetch(`/decks/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Changed after backup' }) });
     if (!result.ok) throw new Error('Smoke rename failed');
   }, id);
@@ -195,6 +199,7 @@ try {
     return (await (await fetch(`/decks/${id}`)).json()).name === 'Desktop persistent deck';
   }, id);
   assert.equal(await page.evaluate(() => localStorage.getItem('asphodel.voice.approvedVocabulary.v1')), portable.storage['asphodel.voice.approvedVocabulary.v1']);
+  assert.equal(await page.evaluate(() => localStorage.getItem('asphodel.play-presentation.v1')), portable.storage['asphodel.play-presentation.v1']);
   assert.equal(await page.evaluate(() => localStorage.getItem('desktop-smoke')), 'survives restart');
   const rescueNames = await readdir(join(userData, 'backups'));
   assert.equal(rescueNames.length, 1);

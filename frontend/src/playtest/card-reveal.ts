@@ -1,3 +1,4 @@
+import {presentationTiming,type PresentationTiming} from './presentation-preferences';
 import { createTableCard } from "./card-view.js";
 import type { AgentCardObservation, CardPresentation } from "./types.js";
 
@@ -12,7 +13,8 @@ import type { AgentCardObservation, CardPresentation } from "./types.js";
 export interface CardReveal {
   element: HTMLElement;
   show(card: AgentCardObservation, presentation: CardPresentation | null | undefined): void;
-  hide(): void;
+  hide(immediate?:boolean): void;
+  cancelAnimations(): void;
   present(card: AgentCardObservation, presentation: CardPresentation | null | undefined, caption: string): Promise<void>;
   settle(card: AgentCardObservation, presentation: CardPresentation | null | undefined, root: HTMLElement): Promise<void>;
 }
@@ -20,10 +22,9 @@ export interface CardReveal {
 // V2h.2 "PACING": bumped alongside frame-playback.ts's own retuning — a newly-arrived permanent is
 // part of the same "spell cast" comprehension window (~3-4s total, see OPPONENT_ACTION_DELAY_MS),
 // so its own big reveal now holds noticeably longer before settling into the condensed board.
-const REVEAL_MS = 1400;
-const FADE_MS = 300;
 
-export function createCardReveal(): CardReveal {
+
+export function createCardReveal(options:{timing?:()=>PresentationTiming;reducedMotion?:()=>boolean;enabled?:()=>boolean} = {}): CardReveal {
   const element = document.createElement("div");
   element.className = "table-card-reveal";
   element.hidden = true;
@@ -34,20 +35,24 @@ export function createCardReveal(): CardReveal {
   let removeTimer: ReturnType<typeof setTimeout> | null = null;
   let complete: (() => void) | null = null;
 
-  function hide(): void {
+  const animations=new Set<Animation>();
+  function cancelAnimations() {for(const animation of animations) animation.cancel();animations.clear();}
+  function hide(immediate=false): void {
     if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
     if (removeTimer) clearTimeout(removeTimer);
     complete?.(); complete = null;
     element.classList.remove("table-card-reveal--visible");
-    removeTimer = setTimeout(() => { element.hidden = true; element.replaceChildren(); }, FADE_MS);
+    const remove=()=>{element.hidden=true;element.replaceChildren();};
+    if(immediate || options.reducedMotion?.()) remove();else removeTimer=setTimeout(remove,Math.min(300,(options.timing?.() ?? presentationTiming()).fade));
   }
 
-  element.addEventListener("click", hide);
+  element.addEventListener("click",()=>hide());
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && !element.hidden) { event.preventDefault(); hide(); }
   });
 
   function show(card: AgentCardObservation, presentation: CardPresentation | null | undefined): void {
+    if(options.enabled && !options.enabled()) {hide(true);return;}
     if (hideTimer) clearTimeout(hideTimer);
     if (removeTimer) clearTimeout(removeTimer);
     const cardElement = createTableCard({ ...card, tapped: false }, presentation, { className: "table-card-reveal-card" });
@@ -56,11 +61,12 @@ export function createCardReveal(): CardReveal {
     element.classList.remove("table-card-reveal--visible");
     void element.offsetWidth; // force the "before" frame to actually paint before animating in.
     element.classList.add("table-card-reveal--visible");
-    hideTimer = setTimeout(hide, REVEAL_MS);
+    hideTimer = setTimeout(hide,(options.timing?.() ?? presentationTiming()).reveal);
   }
 
-  return { element, show, hide,
+  return { element, show, hide, cancelAnimations,
     present(card, presentation, caption) {
+      if(options.enabled && !options.enabled()) return Promise.resolve();
       hide();
       show(card, presentation);
       if (hideTimer) clearTimeout(hideTimer);
@@ -69,11 +75,11 @@ export function createCardReveal(): CardReveal {
       const label = document.createElement('p'); label.className = 'table-reveal-caption'; label.textContent = caption;
       const skip = document.createElement('button'); skip.type = 'button'; skip.className = 'table-reveal-skip'; skip.textContent = 'Continue · Esc';
       content.append(label, skip); element.append(content);
-      return new Promise<void>(resolve => { complete = resolve; hideTimer = setTimeout(hide, 3500); });
+      return new Promise<void>(resolve => { complete = resolve; hideTimer = setTimeout(hide, (options.timing?.() ?? presentationTiming()).high); });
     },
     async settle(card, presentation, root) {
       const target = Array.from(root.querySelectorAll<HTMLElement>('.physical-scene [data-card-ref]')).find(node => node.dataset.cardRef === card.cardRef);
-      if (!target || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      if (!target || options.reducedMotion?.() || (options.enabled && !options.enabled()) || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
       const rect = target.getBoundingClientRect();
       if (!rect.width || rect.right < 0 || rect.left > innerWidth) return;
       const ghost = createTableCard({ ...card, tapped: false }, presentation);
@@ -85,8 +91,9 @@ export function createCardReveal(): CardReveal {
       const animation = ghost.animate([
         { transform: 'translate(0,0) scale(1)', opacity: 1 },
         { transform: `translate(${rect.left - from.left}px,${rect.top - from.top}px) scale(${rect.width / width})`, opacity: 0 },
-      ], { duration: 650, easing: 'cubic-bezier(.25,.7,.25,1)' });
-      await animation.finished.catch(() => {}); ghost.remove();
+      ], { duration: (options.timing?.() ?? presentationTiming()).settle, easing: 'cubic-bezier(.25,.7,.25,1)' });
+      animations.add(animation);
+      try {await animation.finished.catch(() => {});} finally {animations.delete(animation);ghost.remove();}
     },
   };
 }

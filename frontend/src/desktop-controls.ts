@@ -1,3 +1,5 @@
+import {mountPresentationSettings} from './playtest/presentation-settings';
+import {flushPlaytestReviews} from './playtest/playtest-review-view';
 import './desktop-controls.css';
 import type { ArtworkRequest, ArtworkPlan, ArtworkState } from '../../shared/artwork.mjs';
 import type { CatalogState } from '../../shared/catalog.mjs';
@@ -59,9 +61,10 @@ export function initDesktopControls(closeMenu: () => void, builder: { flush(): P
       <p><kbd>F11</kbd> permet de basculer à tout moment. <kbd>Échap</kbd> ferme les paramètres.</p>
       <p data-desktop-status role="status" aria-live="polite" hidden></p>
     </section>
+    <section class="desktop-presentation" data-presentation-settings></section>
     <section class="desktop-backups"><h3>Bibliothèque et sauvegardes</h3>
       <p>Conserve tes decks, tables, candidats, cartes écartées, sélection et brouillons dans un fichier à emporter sur un autre PC.</p>
-      <p>Les images, le catalogue et les parties restent sur ce PC. Les illustrations seront rechargées au besoin.</p>
+      <p>Les bilans d’essais et les réglages de présentation sont inclus. Les images, le catalogue et les parties en cours restent sur ce PC. Les illustrations seront rechargées au besoin.</p>
       <div class="desktop-backup-actions"><button type="button" data-backup-save class="primary-button">Sauvegarder ma bibliothèque</button>
         <button type="button" data-backup-choose class="secondary-button">Choisir une sauvegarde…</button></div>
       <div data-backup-preview hidden><p data-backup-summary></p><ul data-backup-decks></ul>
@@ -74,6 +77,7 @@ export function initDesktopControls(closeMenu: () => void, builder: { flush(): P
     <footer><button type="button" data-desktop-data class="secondary-button">Ouvrir mes données</button>
       <button type="button" data-desktop-close class="primary-button">Terminé</button></footer>`;
   document.body.append(dialog);
+  mountPresentationSettings(element<HTMLElement>('[data-presentation-settings]',dialog));
   const catalog = mountCatalogSettings(element<HTMLElement>('[data-catalog-settings]',dialog));
   const artwork = mountArtworkSettings(element<HTMLElement>('[data-artwork-settings]',dialog));
   const mode = element<HTMLSelectElement>('#desktop-display-mode', dialog);
@@ -135,7 +139,7 @@ export function initDesktopControls(closeMenu: () => void, builder: { flush(): P
   async function operation(action: () => Promise<void>) {
     if (working) return;
     working = true;
-    const controls = [...dialog.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('button, select')];
+    const controls = [...dialog.querySelectorAll<HTMLButtonElement | HTMLSelectElement | HTMLInputElement>('button, select, input')];
     const disabled = controls.map(c => c.disabled);
     controls.forEach(c => { c.disabled = true; });
     backupFeedback('Préparation…');
@@ -144,7 +148,7 @@ export function initDesktopControls(closeMenu: () => void, builder: { flush(): P
     finally { working = false; controls.forEach((c,i) => { c.disabled = disabled[i]; }); }
   }
   element<HTMLButtonElement>('[data-backup-save]', dialog).addEventListener('click', () => void operation(async () => {
-    if (!await builder.flush()) throw new Error('Termine l’enregistrement des decks avant de créer la sauvegarde.');
+    if (!await builder.flush() || !await flushPlaytestReviews()) throw new Error('Termine l’enregistrement des decks et des bilans avant de créer la sauvegarde.');
     const result = await desktop.saveBackup(captureLibraryStorage(window.localStorage));
     backupFeedback(result.canceled ? 'Sauvegarde annulée.' : `Bibliothèque sauvegardée : ${result.decks} deck(s).`);
   }));
@@ -160,7 +164,7 @@ export function initDesktopControls(closeMenu: () => void, builder: { flush(): P
     backupFeedback('Fichier vérifié. Tu peux consulter son contenu avant de restaurer.');
   }));
   element<HTMLButtonElement>('[data-backup-restore]', dialog).addEventListener('click', () => void operation(async () => {
-    if (!await builder.flush()) throw new Error('Termine l’enregistrement des decks avant de restaurer.');
+    if (!await builder.flush() || !await flushPlaytestReviews()) throw new Error('Termine l’enregistrement des decks et des bilans avant de restaurer.');
     const result = await desktop.restoreBackup(captureLibraryStorage(window.localStorage));
     if (result.canceled) { backupFeedback('Restauration annulée.'); return; }
     // No pagehide save may send an old table into the newly restored database.

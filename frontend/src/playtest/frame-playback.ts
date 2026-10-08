@@ -1,8 +1,8 @@
+import {presentationTiming,type PresentationSpeed} from './presentation-preferences';
 import type { PublicGameFrame } from "./types.js";
 
 /**
- * The one place these pacing constants live (V2e.5/V2h/V2h.2) — change them here to retune every
- * playback speed. Three importance tiers (V2h "AI PLAYBACK PACING"):
+ * Normal-speed compatibility constants (V2e.5/V2h/V2h.2), from the shared presentation profiles. Three importance tiers (V2h "AI PLAYBACK PACING"):
  *   - LOW: no narratable event at all (e.g. a mana ability tapping a land mid-payment, an untap, an
  *     internal Forge decision with no visible consequence). Never worth pacing — see the Physical
  *     Companion follow-up (V2h.2 "PACING") spec: "do not add several seconds to every priority
@@ -13,8 +13,7 @@ import type { PublicGameFrame } from "./types.js";
  *     to actually register before the next thing happens (~3-4s: "clearly reveal the spell/card,
  *     enough time to understand what was cast").
  * `OPPONENT_ACTION_DELAY_MS`/`OPPONENT_MINOR_DELAY_MS` are the pre-V2h names for the HIGH/LOW
- * tiers, kept as the exact values a caller (or a future Fast/Normal/Slow speed setting) reads for
- * those two tiers.
+ * tiers, kept as the exact Normal-profile values for existing callers.
  *
  * V2h.2 "PACING": a real physical playtest reported the whole opponent turn — land, spell cast,
  * resolution, priority back to the human — completing before the human could even process what had
@@ -22,17 +21,12 @@ import type { PublicGameFrame } from "./types.js";
  * new default; see `computePlaybackDelayMs`'s doc comment for why a HIGH-importance frame no longer
  * shrinks under backlog the way MEDIUM still mildly does.
  */
-export const OPPONENT_ACTION_DELAY_MS = 3500;
-export const OPPONENT_MEDIUM_DELAY_MS = 1000;
-export const OPPONENT_MINOR_DELAY_MS = 250;
+const normalTiming = presentationTiming();
+export const OPPONENT_ACTION_DELAY_MS = normalTiming.high;
+export const OPPONENT_MEDIUM_DELAY_MS = normalTiming.medium;
+export const OPPONENT_MINOR_DELAY_MS = normalTiming.low;
 
 export type FrameImportance = "low" | "medium" | "high";
-
-const IMPORTANCE_DELAY_MS: Readonly<Record<FrameImportance, number>> = {
-  low: OPPONENT_MINOR_DELAY_MS,
-  medium: OPPONENT_MEDIUM_DELAY_MS,
-  high: OPPONENT_ACTION_DELAY_MS,
-};
 
 /** A spell cast, an attack declared, or a block — the events worth the longest, most readable pause. */
 const HIGH_IMPORTANCE_PATTERN = /\bcasts?\b|\battacks? with\b|\bblocks?\b/i;
@@ -63,23 +57,23 @@ export function classifyFrameImportance(frame: Pick<PublicGameFrame, "event">): 
  * So the shrink is now tier-scoped, never applied uniformly:
  *   - HIGH (a cast/attack/block) NEVER shrinks — the one thing a human most needs time to read is
  *     exactly the one thing that must never be crushed by backlog. Slower-than-necessary is the
- *     accepted tradeoff for now (a future Fast/Normal/Slow setting is the intended way to speed this
- *     back up, not a silent backlog-driven shortcut).
+ *     accepted tradeoff; the explicitly chosen speed determines its duration.
  *   - LOW (no narratable event) is already minimal and never worth pacing further either way —
  *     always its flat, short delay, backlog or not.
  *   - MEDIUM (land/activated ability) is the only tier still allowed a MILD catch-up, and only once
  *     the backlog is genuinely large — order is always preserved regardless, only the per-frame wait
  *     shrinks, and never below a still-readable floor.
  */
-export function computePlaybackDelayMs(frame: Pick<PublicGameFrame, "event">, remainingAfterThisFrame: number): number {
+export function computePlaybackDelayMs(frame: Pick<PublicGameFrame, "event">, remainingAfterThisFrame: number, speed: PresentationSpeed = 'normal'): number {
   const importance = classifyFrameImportance(frame);
-  const base = IMPORTANCE_DELAY_MS[importance];
+  const timing = presentationTiming(speed), base = timing[importance];
   if (importance !== "medium") return base;
   if (remainingAfterThisFrame <= 8) return base;
-  return Math.max(700, Math.round(base * 0.7));
+  return Math.max(timing.mediumFloor, Math.round(base * 0.7));
 }
 
 export interface FramePlaybackCallbacks {
+  getDelay?: (frame: PublicGameFrame, remainingAfterThisFrame:number) => number;
   /** Presentation hooks are awaited in order; Digital keeps the default timing. */
   beforeFrame?: (frame: PublicGameFrame) => Promise<void>;
   afterFrame?: (frame: PublicGameFrame, delayMs: number) => Promise<void>;
@@ -122,6 +116,8 @@ export class FramePlaybackQueue {
     if (added) this.queue.sort((a, b) => a.id - b.id);
   }
 
+  pendingCount(): number {return this.queue.length+(this.pumping ? 1 : 0);}
+
   isIdle(): boolean {
     return !this.pumping && this.queue.length === 0;
   }
@@ -139,7 +135,7 @@ export class FramePlaybackQueue {
         callbacks.onFrame(frame);
         // Always pause after a frame, including the last one — so the final action is actually
         // seen for a beat before the decision controls appear, rather than being instantly swapped.
-        const duration = computePlaybackDelayMs(frame, this.queue.length);
+        const duration = callbacks.getDelay?.(frame,this.queue.length) ?? computePlaybackDelayMs(frame, this.queue.length);
         if (callbacks.afterFrame) await callbacks.afterFrame(frame, duration);
         else await wait(duration);
       }

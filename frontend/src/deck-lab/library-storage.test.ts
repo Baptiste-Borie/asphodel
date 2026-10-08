@@ -17,3 +17,11 @@ test('quota failure restores previous storage and leaves the new restore intent 
   assert.throws(()=>restoreLibraryStorage(storage,{'asphodel.builder-draft.v1.new':'quota failure'}));
   assert.deepEqual(captureLibraryStorage(storage),{'asphodel.deck-lab.selection.v1':'before'});
 });
+test('portable backups include presentation preferences and older backups restore Normal without touching unrelated keys',()=>{
+  const key='asphodel.play-presentation.v1';
+  const value=JSON.stringify({version:1,speed:'fast',reduceMotion:true});
+  const storage=memory({[key]:value,'unrelated':'keep'});
+  const backup=captureLibraryStorage(storage);assert.equal(backup[key],value);
+  storage.setItem(key,'changed');restoreLibraryStorage(storage,backup);assert.equal(storage.getItem(key),value);
+  restoreLibraryStorage(storage,{});assert.equal(storage.getItem(key),null);assert.equal(storage.getItem('unrelated'),'keep');
+});
