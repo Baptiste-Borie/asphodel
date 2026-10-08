@@ -262,6 +262,15 @@ Validation includes pure shuffle/mulligan conservation and replay, ordered botto
 
 Le diagnostic `start_external_match / INTERNAL_ERROR / StorageReaderFolder.ctor() error, Directory can't be created` vient de l’initialisation des éditions. Le bridge fournit à `StaticData` le chemin `res/asphodel-empty-custom-editions` ; Forge épinglé crée un `CardEdition.Reader` pour ce dossier et tente `mkdirs()` s’il manque. Une application installée sous `/opt` ou un AppImage monté ne peut pas créer ce dossier dans ses ressources.
 
-Le build prépare désormais ce répertoire vide avant le packaging ; la vérification du `.deb` refuse son absence avant toute installation privilégiée. Le runtime smoke vérifie aussi sa présence avant de démarrer le worker, puis conserve son test de vraie partie hors ligne. Le JAR et les règles Forge ne changent pas : aucune reconstruction Maven requise. Réinstaller le nouveau paquet, puis réessayer la partie ; conserver le diagnostic si une autre erreur apparaît.
+Le build prépare désormais ce répertoire sans édition personnalisée, avec un fichier `asphodel-directory.marker` pour empêcher electron-builder d’omettre le dossier vide. Forge ignore ce fichier : son lecteur d’éditions ne lit que les noms terminant par `.txt`. La vérification du `.deb` exige le dossier et son marqueur avant toute installation privilégiée. Le runtime smoke vérifie aussi sa présence avant de démarrer le worker, puis conserve son test de vraie partie hors ligne. Le JAR et les règles Forge ne changent pas : aucune reconstruction Maven requise. Réinstaller le nouveau paquet, puis réessayer la partie ; conserver le diagnostic si une autre erreur apparaît.
 
 Validation : tests frontend, persistance API/SQLite, export/restauration de sauvegardes et tests desktop ; contrôles DOM des deux builders, des versions, restauration/Undo, copie indépendante et mains d’une référence. Les tests de paquet fabriquent de vrais petits `.deb` et rejettent le dossier manquant. Le runtime Forge complet et Electron natif doivent être vérifiés sur une machine disposant du JAR et des ressources (absents de cet environnement).
+
+
+### Correctif 11.1 — conserver le dossier Forge dans le paquet
+
+Le premier patch 11 créait le dossier vide lors du build, mais electron-builder ne le copiait pas dans les ressources. L’installation s’arrêtait donc avec « Paquet incomplet » avant de modifier l’application installée.
+
+Le fichier marqueur conserve désormais le dossier à travers le packaging. Le test de régression utilise electron-builder 26.15.3 et sa vraie copie `extraResources` : l’ancien dossier vide disparaît, le dossier contenant le marqueur reste présent. Une distribution Electron factice évite de télécharger ou lancer Chromium ; ce test vérifie le packaging, pas une partie Forge. Les tests de vrais petits `.deb` rejettent aussi un paquet dont seul le marqueur manque.
+
+Appliquer ce correctif après le patch 11 déjà appliqué, puis relancer `npm --prefix desktop run install:local`. Version conservée : 0.1.14, puisque la précédente installation avait été interrompue. Pas de reconstruction Java ni de modification des decks.

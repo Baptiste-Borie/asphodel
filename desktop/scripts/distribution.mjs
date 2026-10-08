@@ -48,6 +48,7 @@ export async function verifyDeb(file, metadata, architecture = process.arch, run
     './opt/Asphodel/resources/runtime/forge-bridge/app/target/asphodel-forge-bridge.jar',
     './opt/Asphodel/resources/runtime/vendor/forge/forge-gui/res/cardsfolder/',
     './opt/Asphodel/resources/runtime/vendor/forge/forge-gui/res/asphodel-empty-custom-editions/',
+    './opt/Asphodel/resources/runtime/vendor/forge/forge-gui/res/asphodel-empty-custom-editions/asphodel-directory.marker',
     './usr/share/applications/Asphodel.desktop',
   ];
   for (const path of required) if (!contents.some(line => line.endsWith(` ${path}`))) throw new Error(`Paquet incomplet : ${path}`);

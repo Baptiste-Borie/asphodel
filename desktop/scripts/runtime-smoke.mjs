@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prepareUserData } from '../src/paths.mjs';
-import { EMPTY_FORGE_EDITIONS } from './forge-assets.mjs';
+import { EMPTY_FORGE_EDITIONS, FORGE_DIRECTORY_MARKER } from './forge-assets.mjs';
 
 const desktop = fileURLToPath(new URL('../', import.meta.url));
 const runtime = process.env.ASPHODEL_SMOKE_RUNTIME ?? join(desktop, 'runtime');
@@ -49,6 +49,7 @@ async function close() {
 }
 try {
   assert.ok((await stat(join(runtime, 'vendor/forge/forge-gui/res', EMPTY_FORGE_EDITIONS))).isDirectory(), 'custom editions must be prepared by the build, before Forge starts');
+  assert.ok((await stat(join(runtime, 'vendor/forge/forge-gui/res', EMPTY_FORGE_EDITIONS, FORGE_DIRECTORY_MARKER))).isFile(), 'the packaged directory marker must be retained');
   let api = await launch();
   await assert.rejects(api('/decks', { headers: { 'x-asphodel-desktop-token': 'wrong-token' } }), /403/);
   const decks = (await api('/decks')).decks;

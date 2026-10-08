@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, writeFile, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { debPath, distributionMetadata, installLocal, runCommand, verifyDeb } from '../scripts/distribution.mjs';
-import { prepareForgeAssets } from '../scripts/forge-assets.mjs';
+import { prepareForgeAssets, EMPTY_FORGE_EDITIONS, FORGE_DIRECTORY_MARKER } from '../scripts/forge-assets.mjs';
 
 const metadata = { name: 'asphodel-desktop', version: '0.1.1', build: { artifactName: 'Asphodel-${version}-${arch}.${ext}' } };
 const fixtureFiles = [
@@ -32,6 +32,7 @@ async function packageFixture(desktop, { version = metadata.version, architectur
   }
   await mkdir(join(root, 'opt/Asphodel/resources/runtime/vendor/forge/forge-gui/res/cardsfolder'), { recursive: true });
   if (omit !== 'empty-custom-editions') await prepareForgeAssets(join(root, 'opt/Asphodel/resources/runtime/vendor/forge/forge-gui/res'));
+  if (omit === 'custom-editions-marker') await unlink(join(root, 'opt/Asphodel/resources/runtime/vendor/forge/forge-gui/res', EMPTY_FORGE_EDITIONS, FORGE_DIRECTORY_MARKER));
   if (includeUserData) {
     await mkdir(join(root, 'home/test/.config/Asphodel'), { recursive: true });
     await writeFile(join(root, 'home/test/.config/Asphodel/decks.sqlite'), 'not allowed in a package');
@@ -67,6 +68,8 @@ test('real Debian archives validate launcher and bundled components; reject stal
     await assert.rejects(verifyDeb(file, metadata, 'x64'), /incomplet/);
     await packageFixture(desktop, { omit: 'empty-custom-editions' });
     await assert.rejects(verifyDeb(file, metadata, 'x64'), /asphodel-empty-custom-editions/);
+    await packageFixture(desktop, { omit: 'custom-editions-marker' });
+    await assert.rejects(verifyDeb(file, metadata, 'x64'), /asphodel-directory.marker/);
     await packageFixture(desktop, { includeUserData: true });
     await assert.rejects(verifyDeb(file, metadata, 'x64'), /données utilisateur/);
   } finally { await rm(desktop, { recursive: true, force: true }); }
