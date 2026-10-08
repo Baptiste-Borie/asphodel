@@ -7,7 +7,7 @@ import { BaselineAsphodelAgentV2b } from "../agent/improved-agent.js";
 import type { AgentMatchTransport } from "../agent/agent-runner.js";
 import type { AgentCardObservation, AgentObservation, ForgeDeckSpec, ForgeGameResult } from "../forge/forge-protocol.js";
 import type { DeckInput } from "../decks/deck-resolver.js";
-import { resolveDeckInput } from "../decks/deck-resolver.js";
+import { resolvePlayedDeck } from "../decks/deck-resolver.js";
 import type { DecisionOwner } from "./human-vs-agent-runner.js";
 import { runHumanVsAgentMatch } from "./human-vs-agent-runner.js";
 import { WebHumanDecisionProvider } from "./web-human-decision-provider.js";
@@ -23,6 +23,9 @@ import { redactPendingPhysicalIdentity } from "../physical/physical-observation-
 import { describePlaytestFailure, diagnosticText } from './playtest-failure.js';
 import type { PlaytestFailure } from '../../../shared/playtest-failure.mjs';
 
+import type { PlaytestReviewService } from './playtest-review-service.js';
+import type { PlayedDeck } from '../../../shared/playtest-review.mjs';
+
 /** The only two things the manager needs from a running bridge process — real or faked in tests. */
 export interface PlaytestBridge {
   start(): Promise<unknown>;
@@ -31,6 +34,8 @@ export interface PlaytestBridge {
 }
 
 export interface PlaytestSessionManagerDeps {
+  reviews?: PlaytestReviewService;
+  resolveDeck?: typeof resolvePlayedDeck;
   createBridge?: () => PlaytestBridge;
   createClient?: (bridge: PlaytestBridge) => AgentMatchTransport;
   createAgent?: () => AsphodelAgent;
@@ -148,6 +153,8 @@ export class PlaytestSessionError extends Error {
 }
 
 interface Session {
+  played: PlayedDeck[];
+  turns: number | null;
   failure?: PlaytestFailure;
   id: string;
   humanDeckName: string;
@@ -220,6 +227,10 @@ interface Session {
  */
 export class PlaytestSessionManager {
   private session: Session | null = null;
+  private starting = false;
+  isStarting() {return this.starting;}
+  private readonly reviews: PlaytestReviewService | undefined;
+  private readonly resolveDeck: typeof resolvePlayedDeck;
   private readonly createBridge: () => PlaytestBridge;
   private readonly createClient: (bridge: PlaytestBridge) => AgentMatchTransport;
   private readonly createAgent: () => AsphodelAgent;
@@ -230,10 +241,11 @@ export class PlaytestSessionManager {
     this.createClient = deps.createClient ?? (bridge => new ForgeExternalMatchClient(bridge as ForgeBridgeClient));
     this.createAgent = deps.createAgent ?? (() => new BaselineAsphodelAgentV2b());
     this.reportsRoot = deps.reportsRoot;
+    this.reviews = deps.reviews; this.resolveDeck = deps.resolveDeck ?? resolvePlayedDeck;
   }
 
   async start(request: StartPlaytestRequest): Promise<{ sessionId: string; status: WebPlaytestStatus }> {
-    if (this.session && !TERMINAL_STATUSES.has(this.statusOf(this.session))) {
+    if (this.starting || (this.session && !TERMINAL_STATUSES.has(this.statusOf(this.session)))) {
       throw new PlaytestSessionError("PLAYTEST_ALREADY_RUNNING", "A playtest is already running. End it before starting another.");
     }
 
@@ -243,12 +255,19 @@ export class PlaytestSessionManager {
         "A second Asphodel opponent is only supported in Digital mode, not Physical Companion.");
     }
 
+    this.starting = true;
+    try { return await this.startResolved(request,playMode); } finally { this.starting = false; }
+  }
+
+  private async startResolved(request: StartPlaytestRequest, playMode: PlayMode) {
     const [defaultHumanDeck, defaultAgentDeck] = commanderFixtures();
-    const [humanDeck, agentDeck, secondAgentDeck] = await Promise.all([
-      resolveDeckInput(request.humanDeck, defaultHumanDeck),
-      resolveDeckInput(request.asphodelDeck, defaultAgentDeck),
-      request.secondAsphodelDeck ? resolveDeckInput(request.secondAsphodelDeck, thirdCommanderFixture()) : Promise.resolve(null),
+    const resolved = await Promise.all([
+      this.resolveDeck(request.humanDeck, defaultHumanDeck),
+      this.resolveDeck(request.asphodelDeck, defaultAgentDeck),
+      request.secondAsphodelDeck ? this.resolveDeck(request.secondAsphodelDeck, thirdCommanderFixture()) : Promise.resolve(null),
     ]);
+    const [humanDeck,agentDeck,secondAgentDeck] = resolved.map(r=>r?.deck ?? null) as [ForgeDeckSpec,ForgeDeckSpec,ForgeDeckSpec | null];
+    const played = resolved.filter((r): r is NonNullable<typeof r>=>r!==null).map(r=>structuredClone(r.played));
     const agentDecks = secondAgentDeck ? [agentDeck, secondAgentDeck] : [agentDeck];
 
     const bridge = this.createBridge();
@@ -257,7 +276,7 @@ export class PlaytestSessionManager {
     catch (error) { await bridge.stop().catch(() => {}); throw error; }
 
     const session: Session = {
-      id: randomUUID(), humanDeckName: humanDeck.name, agentDeckNames: agentDecks.map(deck => deck.name),
+      played, turns:null, id: randomUUID(), humanDeckName: humanDeck.name, agentDeckNames: agentDecks.map(deck => deck.name),
       agentPlayerIds: agentPlayerIdsFor(agentDecks.length),
       seed: request.seed ?? 42, playMode, startedAt: new Date(), bridge, client,
       provider: new WebHumanDecisionProvider(),
@@ -276,6 +295,11 @@ export class PlaytestSessionManager {
       phase: "starting", result: null, errorMessage: null, reportResult: null,
       runPromise: Promise.resolve(),
     };
+    try {
+      await this.reviews?.create({sessionId:session.id,startedAt:session.startedAt.toISOString(),finishedAt:null,seed:session.seed,playMode,
+        status:'running',humanDeck:played[0]!,opponents:played.slice(1),turns:null,outcome:null,reason:null,error:null,events:[],omittedEvents:0,
+        feedback:{note:'',cards:[]},revision:0});
+    } catch(error) { await bridge.stop().catch(()=>{}); throw error; }
     this.session = session;
     session.runPromise = this.runMatch(session, [humanDeck, ...agentDecks]);
     return { sessionId: session.id, status: this.statusOf(session) };
@@ -316,6 +340,7 @@ export class PlaytestSessionManager {
             // see WebPlaytestStateDTO.manaPaymentActive's doc comment). This is what lets getState()
             // tell "still the same payment sequence" apart from "a real decision has since moved the
             // game past it", independent of whether `pendingDecision` itself is null right now.
+            session.turns = decision.context.turn;
             session.manaPaymentActive = owner === "human" && decision.type === "mana_payment";
             if (owner === "agent" && session.pendingFrameOwner === "agent") {
               const safeObservation = sanitizeAgentObservation(observation, HUMAN_PLAYER_ID, session.lastHumanHand);
@@ -363,6 +388,7 @@ export class PlaytestSessionManager {
         },
       );
       session.result = run.snapshot.result ?? null;
+      session.turns = session.result?.turns ?? run.snapshot.pendingDecision?.context.turn ?? run.snapshot.observation?.game.turn ?? session.turns;
       // Written BEFORE the phase flips to terminal, so status "completed"/"ended_by_human" is a
       // reliable external guarantee that the report already exists — never a race to poll around.
       session.reportResult = await writePlaytestReport({
@@ -374,14 +400,25 @@ export class PlaytestSessionManager {
         commanderCastSnapshots: session.commanderCastSnapshots,
         ...(this.reportsRoot === undefined ? {} : { reportsRoot: this.reportsRoot }),
       });
+      await this.saveReview(session,run.endedByHuman ? 'ended_by_human' : 'completed');
       session.phase = run.endedByHuman ? "ended_by_human" : "completed";
     } catch (error) {
-      session.phase = "failed";
       session.failure = describePlaytestFailure(error, session.seed);
       session.errorMessage = session.failure.message;
+      try { await this.saveReview(session,'failed'); } catch { session.errorMessage += ' Le bilan n’a pas pu être enregistré.'; }
+      session.phase = "failed";
     } finally {
       await session.bridge.stop().catch(() => { /* best-effort shutdown */ });
     }
+  }
+
+  private async saveReview(session: Session, status: 'completed' | 'ended_by_human' | 'failed') {
+    const result = session.result;
+    await this.reviews?.finish(session.id,{status,turns:session.turns,
+      outcome:result?.gameOver ? result.draw ? 'draw' : result.winnerId === HUMAN_PLAYER_ID ? 'human' : result.winnerId ? 'asphodel' : null : null,
+      reason:result?.terminalReason?.slice(0,2000) ?? null,error:session.errorMessage?.slice(0,4000) ?? null,
+      events:session.events.slice(-1000).map(e=>({...e,phase:e.phase.slice(0,100),text:e.text.slice(0,2000)})),
+      omittedEvents:Math.max(0,session.events.length-1000)});
   }
 
   private statusOf(session: Session): WebPlaytestStatus {

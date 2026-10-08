@@ -1,3 +1,4 @@
+import { getReview, mountPlaytestReview, openPlaytestHistory, type ReviewReturn } from './playtest-review-view';
 import { createPhysicalScene } from './physical-scene.js';
 import { DecisionGate } from './decision-gate.js';
 import { decisionPresentationNames, renderDecisionCards, renderOpeningHandReview } from "./decision-cards.js";
@@ -10,7 +11,7 @@ import { createDigitalBoardSlot, digitalSeatLabel, renderDigitalBoardSlot, type 
 import { digitalPlayerOrder, type DigitalView } from "./digital-layout.js";
 import { VisualTransitions } from "./visual-transitions.js";
 import { apiRequest } from "../api/api-client.js";
-import { endPlaytest, getActivePlaytest, getPlaytestReport, getPlaytestState, startPlaytest, submitPlaytestChoice } from "../api/playtest-api.js";
+import { endPlaytest, getActivePlaytest, getPlaytestState, startPlaytest, submitPlaytestChoice } from "../api/playtest-api.js";
 import { appendPlaytestDiagnostic } from './playtest-failure-view';
 import { element } from "../dom.js";
 import { collectVisibleCardNames, commandZoneCards, formatHudPhase, opponentPlayer, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
@@ -216,7 +217,7 @@ function renderActions(container: HTMLElement, events: PublicGameEvent[]): void 
 }
 
 /** Wires the whole Play screen (setup, live game, end) into #play-view. Talks only to the backend playtest API — never to Forge directly. */
-export function initPlaytestView(onGameActive: () => void = () => {}): void {
+export function initPlaytestView(onGameActive: () => void = () => {}, returnToTable?: ReviewReturn) {
   const root = element<HTMLElement>("#play-view");
   const setupSection = document.createElement("div");
   const gameSection = document.createElement("div");
@@ -226,6 +227,9 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   root.append(setupSection, gameSection, endSection);
 
   let sessionId: string | null = null;
+  let preparedDeck: {input:DeckInput;label:string} | undefined;
+  let setupNavigation = 0;
+  let endReview: ReturnType<typeof mountPlaytestReview> | undefined;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let submitting = false;
 
@@ -318,6 +322,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
   }
 
   function showSetup(): void {
+    endSection.replaceChildren(); endReview=undefined;
     stopPolling();
     sessionId = null;
     frameQueue = new FramePlaybackQueue();
@@ -385,9 +390,11 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
    * this falls through to a normal New Playtest screen.
    */
   async function resumeActivePlaytestIfAny(): Promise<void> {
+    const navigation=++setupNavigation;
     renderResuming();
     try {
       const result = await getActivePlaytest();
+      if (navigation!==setupNavigation) return;
       if ("sessionId" in result && !TERMINAL_STATUSES.has(result.status)) {
         sessionId = result.sessionId;
         currentPlayMode = result.playMode;
@@ -405,6 +412,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     } catch {
       /* Fall through to a fresh setup screen — nothing to resume, or the backend is unreachable. */
     }
+    if(navigation!==setupNavigation) return;
     showSetup();
     const retry = document.createElement('button'); retry.type='button'; retry.className='secondary-button'; retry.textContent='Resume active game';
     retry.onclick=()=>void resumeActivePlaytestIfAny(); setupSection.append(retry);
@@ -415,10 +423,10 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     setupSection.className = "playtest-setup";
 
     const heading = document.createElement("h1");
-    heading.textContent = "New Playtest";
+    heading.textContent = preparedDeck ? "Tester ce deck" : "Nouvel essai";
     const description = document.createElement("p");
     description.className = "page-description";
-    description.textContent = "Play a real Forge Commander 1v1 against Asphodel (V2b) in your browser.";
+    description.textContent = "Choisis ton adversaire et les paramètres. La liste jouée sera conservée au lancement, avec ton bilan de partie.";
     setupSection.append(heading, description);
 
     const columns = document.createElement("div");
@@ -427,7 +435,14 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     const agentPicker = createDeckPicker("ASPHODEL");
     const secondAgentPicker = createDeckPicker("ASPHODEL 2");
     secondAgentPicker.element.hidden = true;
-    columns.append(humanPicker.element, agentPicker.element, secondAgentPicker.element);
+    const prepared=preparedDeck;
+    if (prepared) {
+      const selected=document.createElement('div');selected.className='deck-picker';
+      const heading=document.createElement('h3');heading.textContent='TON DECK';
+      const label=document.createElement('p');label.textContent=prepared.label;
+      const change=document.createElement('button');change.type='button';change.textContent='Changer de deck';change.onclick=()=>{preparedDeck=undefined;renderSetup();};
+      selected.append(heading,label,change);columns.append(selected,agentPicker.element,secondAgentPicker.element);
+    } else columns.append(humanPicker.element, agentPicker.element, secondAgentPicker.element);
     setupSection.append(columns);
 
     const playModePicker = createPlayModePicker();
@@ -477,7 +492,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
     startButton.addEventListener("click", () => {
       const seed = Number(seedInput.value);
       const request: StartPlaytestRequest = {
-        humanDeck: humanPicker.getValue(),
+        humanDeck: prepared?.input ?? humanPicker.getValue(),
         asphodelDeck: agentPicker.getValue(),
         playMode: playModePicker.getValue(),
         ...(Number.isSafeInteger(seed) ? { seed } : {}),
@@ -486,6 +501,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       void startGame(request, startButton, feedback);
     });
     setupSection.append(startButton);
+    const history=document.createElement('button');history.type='button';history.className='secondary-button';history.textContent='Carnet d’essais';history.onclick=()=>{openPlaytestHistory(undefined,returnToTable);};setupSection.append(history);
 
     void apiRequest<{ decks: DeckOption[] }>("/decks")
       .then((result) => {
@@ -1272,28 +1288,35 @@ export function initPlaytestView(onGameActive: () => void = () => {}): void {
       appendPlaytestDiagnostic(endSection, state);
     }
 
+    endReview=undefined;
     try {
-      const report = await getPlaytestReport(state.sessionId);
-      const reportHeading = document.createElement("h2");
-      reportHeading.textContent = "Report";
-      const summary = document.createElement("p");
-      summary.textContent = report.summaryPath;
-      const decisions = document.createElement("p");
-      decisions.textContent = report.decisionsPath;
-      endSection.append(reportHeading, summary, decisions);
-    } catch {
-      /* No report yet (e.g. the playtest failed before completing) — nothing to show. */
+      const review=await getReview(state.sessionId);
+      const body=document.createElement('section');endSection.append(body);
+      endReview=mountPlaytestReview(body,review,returnToTable);
+    } catch(error) {
+      const message=document.createElement('p');message.textContent='Bilan indisponible pour le moment. Tu peux réessayer ou le retrouver dans le carnet d’essais.';
+      const retry=document.createElement('button');retry.type='button';retry.textContent='Réessayer le bilan';retry.onclick=()=>{
+        retry.disabled=true;void getReview(state.sessionId).then(review=>{const body=document.createElement('section');message.remove();retry.remove();endSection.append(body);endReview=mountPlaytestReview(body,review,returnToTable);}).catch(()=>{retry.disabled=false;});
+      };endSection.append(message,retry);
     }
 
     const newGameButton = document.createElement("button");
     newGameButton.type = "button";
     newGameButton.className = "primary-button";
     newGameButton.textContent = "New Playtest";
-    newGameButton.addEventListener("click", showSetup);
+    newGameButton.addEventListener('click',()=>{if(endReview?.dirty() && !window.confirm('Des retours ne sont pas enregistrés. Les abandonner ?')) return;preparedDeck=undefined;showSetup();});
     endSection.append(newGameButton);
   }
 
   document.addEventListener('decks-changed', () => { if (!sessionId) renderSetup(); });
   document.querySelector('#nav-play')?.addEventListener('click', () => { if (!sessionId) void resumeActivePlaytestIfAny(); });
   void resumeActivePlaytestIfAny();
+  return {async prepareDeck(input: DeckInput,label:string) {
+    const navigation=++setupNavigation;
+    const active=await getActivePlaytest();
+    if(navigation!==setupNavigation) throw new Error('Une autre navigation est en cours. Réessaie.');
+    if ('sessionId' in active) throw new Error('Une partie est déjà en cours. Termine-la depuis Jouer avant de lancer cet essai.');
+    if (endReview?.dirty() && !window.confirm('Des retours ne sont pas enregistrés. Les abandonner ?')) throw new Error('Les retours de la partie restent ouverts dans Jouer.');
+    preparedDeck={input:structuredClone(input),label};showSetup();
+  }};
 }

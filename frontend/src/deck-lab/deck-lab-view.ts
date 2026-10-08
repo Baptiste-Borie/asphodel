@@ -1,3 +1,7 @@
+import { openPlaytestHistory } from '../playtest/playtest-review-view';
+import type { PlaytestReview } from '../../../shared/playtest-review.mjs';
+import type { DeckInput } from '../playtest/types';
+import { applyPlaytestFeedback } from './playtest-feedback';
 import { ProjectHistory, historyShortcut } from './project-history';
 import { exportDeckText, deckTextFilename } from './deck-export';
 import sampleCards from './cards.json';
@@ -91,7 +95,7 @@ function loadStoredSelection(): { names: string[]; cards: Card[] } {
 }
 
 /** Decks and tables share one snapshot; local journals protect deferred writes. */
-export function initDeckLabView(root: HTMLElement) {
+export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: DeckInput, label: string) => Promise<void>} = {}) {
   const selection = new Set<string>();
   const knownCards = new Map<string, Card>(sampleCards.map(c => [c.name, c]));
   const stored = loadStoredSelection();
@@ -133,6 +137,7 @@ export function initDeckLabView(root: HTMLElement) {
   const commanderCatalog = new CommanderCatalog();
   let openingHands: HTMLDialogElement | undefined;
   let versionsDialog: HTMLDialogElement | undefined;
+  let reviewsDialog: HTMLDialogElement | undefined;
   let drawerInvoker: HTMLElement | null = null;
   const sample = (): Sheet => {
     const sections: [string, number, number][] = [['Unsorted', 0, 10], ['Early development', 10, 18], ['Keep the cards coming', 18, 23], ['Protect the board', 23, 28], ['Counters & company', 28, 45], ['Closing the game', 45, 48], ['Lands', 48, 55], ['Second pass', 55, 71], ['Try next', 71, 86], ['Other possibilities', 86, 101]];
@@ -260,6 +265,7 @@ export function initDeckLabView(root: HTMLElement) {
     const sheet = active;
     versionsDialog = openProjectVersions(sheet, {
       changed: () => scheduleAutoSave(sheet),
+      ...(options.testDeck ? {test: (id:string) => {void testDeck(sheet,id);}} : {}),
       hands: state => { openingHands?.close(); openingHands = openOpeningHands(structuredClone(state)); },
       fork: id => {
         const fork = forkProjectVersion(sheet, id);
@@ -278,6 +284,37 @@ export function initDeckLabView(root: HTMLElement) {
         renderBuilder(); scheduleAutoSave(sheet); return planned.backupName;
       },
     });
+  }
+  async function testDeck(sheet: Sheet, versionId?: string) {
+    try {
+      table?.checkpoint();scheduleAutoSave(sheet);
+      if (!await persistence.flush() || !sheet.backendId) throw new Error('Enregistre le deck avant de lancer un essai.');
+      const version = versionId ? sheet.versions?.find(v=>v.id===versionId) : undefined;
+      if (versionId && !version) throw new Error('Cette version a été supprimée.');
+      await options.testDeck?.({type:'library',value:String(sheet.backendId),projectId:sheet.projectId,...(versionId ? {versionId} : {})},`${sheet.name} · ${version?.name ?? 'Travail actuel'}`);
+      versionsDialog?.close();
+    } catch(error) {toast(error instanceof Error ? error.message : 'Essai impossible.');}
+  }
+  async function returnFromReview(review: PlaytestReview) {
+    const id=review.humanDeck.sourceDeckId,projectId=review.humanDeck.projectId;
+    if (!id || !projectId) throw new Error('Ce bilan ne provient pas d’un projet du builder.');
+    if (recovery.drafts.some(d=>d.backendId===id)) throw new Error('Récupère d’abord le brouillon de ce deck.');
+    let sheet=sheets.find(s=>s.projectId===projectId);
+    if (!sheet) {
+      const deck=await apiRequest<DeckDetailView>(`/decks/${id}`);
+      if (deck.project?.projectId!==projectId) throw new Error('Le deck d’origine a été supprimé ou remplacé. Son bilan reste dans le carnet.');
+      openDeckDetail(deck);sheet=active!;
+    }
+    active=sheet;table?.checkpoint();
+    let count=0;
+    const history=historyFor(sheet);history.begin('Reporter le bilan de l’essai');
+    try {count=applyPlaytestFeedback(sheet,review);prepareProject(sheet);history.commit();}
+    catch(error) {history.cancel();throw error;}
+    scheduleAutoSave(sheet);switchView('table');toast(`${count} note${count>1?'s':''} de l’essai sur la table. Tu peux annuler cette action.`);
+  }
+  function openReviews() {
+    if (!active) return;table?.checkpoint();prepareProject(active);reviewsDialog?.close();
+    reviewsDialog=openPlaytestHistory(active.projectId,returnFromReview);
   }
   function performHistory(direction: 'undo' | 'redo') {
     if (!active || (view !== 'builder' && view !== 'table')) return;
@@ -505,6 +542,7 @@ export function initDeckLabView(root: HTMLElement) {
     tableSheet = active;
     const sheet = active;
     table = mountDeckTable(get('.lab-table'), sheet, {
+      canTest:!!options.testDeck,
       history: historyFor(sheet),
       changed: () => scheduleAutoSave(sheet),
       inspect: (card, entryId) => { knownCards.set(card.name, card); openInspect(card.name, entryId); },
@@ -539,7 +577,7 @@ export function initDeckLabView(root: HTMLElement) {
       : commanderCount > 2 ? `<p class="lab-builder-warning" role="status">The Commander category has <strong>${commanderCount}</strong> cards — most decks run just one (two with Partner).</p>` : '';
     const warning = total !== 100 ? `<p class="lab-builder-warning" role="status">This sheet has <strong>${total}</strong> card${total === 1 ? '' : 's'} — a Commander deck needs exactly 100.</p>` : '';
     const saveStatus = '<span class="lab-save-status" data-save-status role="status"></span><button data-action="retry-save" hidden>Réessayer</button>';
-    const deckActions = '<button type="button" data-action="versions">Versions</button><button type="button" data-action="opening-hands">Mains de départ</button>' + historyButtons + (window.asphodelDesktop ? '<button data-action="prepare-artwork">Préparer hors ligne</button>' : '') + '<button data-action="export-deck">Exporter</button><button data-action="rename-deck">Rename</button><button data-action="delete-deck">Delete</button>';
+    const deckActions = (options.testDeck ? '<button type="button" data-action="test-deck">Tester ce deck</button>' : '') + '<button type="button" data-action="reviews">Mes essais</button><button type="button" data-action="versions">Versions</button><button type="button" data-action="opening-hands">Mains de départ</button>' + historyButtons + (window.asphodelDesktop ? '<button data-action="prepare-artwork">Préparer hors ligne</button>' : '') + '<button data-action="export-deck">Exporter</button><button data-action="rename-deck">Rename</button><button data-action="delete-deck">Delete</button>';
     get('.lab-builder').innerHTML = `${commanderWarning}${warning}<div class="lab-deck-heading"><div><button class="lab-back" data-action="close-sheet" aria-label="Back to all decks">← All decks</button><p class="lab-eyebrow">COMMANDER / CANDIDATE SHEET</p><h2>${esc(active.name)}${saveStatus}</h2><p><strong>${total}</strong> candidate cards <span> / 100 final deck target</span></p></div><div><select class="lab-sheet-picker" aria-label="Open deck sheet">${sheets.map((s,i) => `<option value="${i}" ${s === active ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><button data-action="new">+ New sheet</button><button data-action="selection">+ From Selection</button>${deckActions}</div></div><div class="lab-builder-tools"><button type="button" data-action="manage-tags">Tags et cibles</button><span>Manual categories <span class="lab-muted">· drag a card, use its menu, or search a category to add one</span></span><form class="lab-new-category"><input aria-label="New category name" placeholder="Name your category" required maxlength="60" /><button>+ New category</button></form></div><div class="lab-categories">${active.groups.map(categoryHtml).join('')}</div><details class="lab-cuts"><summary>Cuts · ${active.cuts.length} <span>Keep discarded ideas nearby</span></summary>${active.cuts.map((c,i) => `<button data-restore="${i}">↶ ${esc(c.name)}</button>`).join('') || '<p>No cuts yet. Cut a card using its menu to keep it here.</p>'}</details><section class="lab-stats"><div><p class="lab-eyebrow">DECK STATISTICS</p><h2>The shape of your sheet.</h2><p class="lab-muted">All candidates · cuts excluded<br>Card types may overlap.</p><div class="lab-type-counts">${['Creature','Instant','Sorcery','Artifact','Enchantment','Planeswalker','Land'].map(type => `<div><span>${type}</span><strong>${entries.filter(e => e.card.type_line.includes(type)).reduce((n,e) => n+e.quantity,0)}</strong></div>`).join('')}</div></div><div><div class="lab-curve-heading"><h3>Mana curve</h3><span>${spells} nonland spells</span></div><div class="lab-curve">${curve.map((n,i) => `<div><span>${n}</span><i style="height:${n / Math.max(...curve,1) * 150}px"></i><label>${i === 7 ? '7+' : i}</label></div>`).join('')}</div><p class="lab-average">${spells ? (nonlands.reduce((n,e) => n+e.card.cmc*e.quantity,0)/spells).toFixed(2) : '—'} <span>Average mana value · nonlands</span></p></div></section>${commanderSummary(active, commanderCatalog.state(active))}${manaSummary(active, commanderCatalog.state(active))}${roleSummary(active)}`;
     setSaveStatus(persistence.status(active)); updateHistoryControls();
   }
@@ -760,6 +798,8 @@ export function initDeckLabView(root: HTMLElement) {
       }
       case 'manage-tags': editTags(); break;
       case 'opening-hands': if (active) { openingHands?.close(); openingHands = openOpeningHands(active); } break;
+      case 'test-deck': if(active) void testDeck(active); break;
+      case 'reviews': openReviews(); break;
       case 'versions': openVersions(); break;
       case 'export-deck': openExport(); break;
       case 'prepare-artwork': if(active){table?.checkpoint();openDeckArtwork(prepareProject(active,journalStorage));} break;
@@ -972,7 +1012,7 @@ export function initDeckLabView(root: HTMLElement) {
 
   let retired = false;
   window.addEventListener('pagehide', () => { if (retired) return; table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); });
-  return { retire() { retired = true; versionsDialog?.close(); openingHands?.close(); commanderCatalog.retire(); }, async flush() { if (retired) return true; table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); return persistence.flush(); }, activate() {
+  return { returnFromReview, retire() { retired = true; reviewsDialog?.close(); versionsDialog?.close(); openingHands?.close(); commanderCatalog.retire(); }, async flush() { if (retired) return true; table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); return persistence.flush(); }, activate() {
     void loadCatalog();
     void loadSavedDecks();
     if (!activated) { activated = true; void renderSearch(); }

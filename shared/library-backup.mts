@@ -1,3 +1,4 @@
+import { parsePlaytestReview, type PlaytestReview } from './playtest-review.mjs';
 import { parseBuilderProject, type BuilderProject } from './builder-project.mjs';
 
 export const MAX_BACKUP_BYTES = 64 * 1024 * 1024;
@@ -13,6 +14,7 @@ export interface BackupEntry {
   category: string; categoryPosition: number;
 }
 export interface LibrarySnapshot {
+  reviews?: PlaytestReview[];
   decks: BackupDeck[]; cards: BackupCard[]; entries: BackupEntry[];
   projects: { deckId: number; projectId: string; state: BuilderProject }[];
 }
@@ -75,6 +77,10 @@ export function parseLibrarySnapshot(value: unknown): LibrarySnapshot {
       JSON.stringify([cardById.get(e.cardId)!.normalizedName, e.section, e.category]), { quantity: e.quantity, position: e.categoryPosition },
     ]));
     if (expected.size !== actual.size || [...expected].some(([k,v]) => actual.get(k)?.quantity !== v.quantity || actual.get(k)?.position !== v.position)) return fail();
+  }
+  if (l.reviews !== undefined) {
+    if (!Array.isArray(l.reviews) || l.reviews.length > 10000 || !unique(l.reviews.map(r=>r?.sessionId))) return fail();
+    try { l.reviews.forEach(parsePlaytestReview); } catch { return fail(); }
   }
   return l;
 }

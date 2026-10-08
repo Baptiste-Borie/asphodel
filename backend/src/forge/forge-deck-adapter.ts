@@ -16,7 +16,7 @@ export class ForgeDeckAdapterError extends Error {
 }
 
 export class ForgeDeckAdapter {
-  toForgeDeckSpec(deck: DeckDetailView): ForgeDeckSpec {
+  toForgeDeckSpec(deck: { id: number; name: string; cards: Pick<DeckDetailView['cards'][number], 'name' | 'quantity' | 'section'>[] }): ForgeDeckSpec {
     if (!Number.isSafeInteger(deck.id) || deck.id < 1) {
       throw new ForgeDeckAdapterError(
         "INVALID_FORGE_DECK",

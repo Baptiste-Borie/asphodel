@@ -771,3 +771,62 @@ it("V2h.2 'K'RRIK FORENSICS': a human priority_action decision with a commander 
     assert.match(summary, /K'rrik, Son of Yawgmoth.*\*\*NOT OFFERED\*\*/);
   });
 });
+
+it('stores the exact played reference before running and retains it after editing/deleting the deck',async()=>{
+  const {createTestDatabase,FakeCardProvider}=await import('./test-helpers.js');
+  const {PlaytestReviewService}=await import('./human/playtest-review-service.js');
+  const {DeckService}=await import('./decks/deck-service.js');
+  const {resolvePlayedDeck}=await import('./decks/deck-resolver.js');
+  const {project}=await import('./testing/review-fixture.js');
+  const database=await createTestDatabase();
+  await withTempReports(async reportsRoot=>{
+    const service=new PlaytestReviewService(database.db),decks=new DeckService(database.db,new FakeCardProvider()),p=project(),saved=await decks.saveProject(p);
+    const {client}=scriptedTransport([
+      ()=>({sessionId:'s',status:'waiting_for_decision',progress,forgeAiStrategicFallbacks:[],observation:humanObservation(),pendingDecision:priorityDecision('player-1','d-1')}),
+      ()=>({sessionId:'s',status:'waiting_for_decision',progress,forgeAiStrategicFallbacks:[],observation:agentObservation(),pendingDecision:priorityDecision('player-2','d-2')}),
+      ()=>({sessionId:'s',status:'completed',progress,forgeAiStrategicFallbacks:[],result:{gameId:'g',format:'commander',seed:42,players:[],winnerId:'player-1',turns:3,gameOver:true,draw:false,terminalReason:'AllOpponentsLost',commanderRulesActive:true}}),
+    ]);
+    let sent:unknown;const realStart=client.startMatch;client.startMatch=async(...args)=>{sent=structuredClone(args);return realStart(...args);};
+    const manager=new PlaytestSessionManager({reviews:service,resolveDeck:(input,fixture)=>resolvePlayedDeck(input,fixture,decks),createBridge:fakeBridge,createClient:()=>client,createAgent:()=>new FakeAgent(),reportsRoot});
+    try {
+      const start=await manager.start({humanDeck:{type:'library',value:String(saved.id),projectId:p.projectId,versionId:'base'},asphodelDeck:{type:'fixture'}});
+      assert.equal((await service.get(start.sessionId)).humanDeck.cards.find(c=>c.name==='Mountain')!.quantity,99);
+      assert.ok(JSON.stringify(sent).includes('"quantity":99'));
+      p.groups[1]!.entries[0]!.quantity=10;p.versions=[];await decks.saveProject(p,saved.id);await decks.deleteDeck(saved.id);
+      for(let i=0;i<100&&!manager.getState(start.sessionId).pendingDecision;i++)await new Promise(r=>setTimeout(r,2));
+      manager.submitChoice(start.sessionId,{decisionId:'d-1',kind:'action',choice:'pass',reason:'human_choice'});
+      for(let i=0;i<200&&manager.getState(start.sessionId).status!=='completed';i++)await new Promise(r=>setTimeout(r,5));
+      assert.equal(manager.getState(start.sessionId).status,'completed');const record=await service.get(start.sessionId);
+      assert.equal(record.humanDeck.versionName,'Base');assert.equal(record.humanDeck.cards.find(c=>c.name==='Mountain')!.quantity,99);assert.equal(record.turns,3);assert.equal(record.outcome,'human');
+      assert.ok(!JSON.stringify(record).includes(AGENT_HAND_CARD));assert.ok(!JSON.stringify(record).includes(HUMAN_HAND_CARD));
+    } finally {await manager.close();}
+  });database.close();
+});
+
+it('records a bridge failure as a failed trial and prevents concurrent starts during resolution',async()=>{
+  const {createTestDatabase}=await import('./test-helpers.js');const {PlaytestReviewService}=await import('./human/playtest-review-service.js');const {resolvePlayedDeck}=await import('./decks/deck-resolver.js');
+  const database=await createTestDatabase();const reviews=new PlaytestReviewService(database.db);
+  let release!:()=>void;const gate=new Promise<void>(r=>{release=r;});
+  const {client}=scriptedTransport([]);client.startMatch=async()=>{throw new ForgeBridgeError('INTERNAL_ERROR','Cannot create directory');};
+  const manager=new PlaytestSessionManager({reviews,resolveDeck:async(...args)=>{await gate;return resolvePlayedDeck(...args);},createBridge:fakeBridge,createClient:()=>client});
+  try {
+    const pending=manager.start({humanDeck:{type:'fixture'},asphodelDeck:{type:'fixture'}});
+    await assert.rejects(manager.start({humanDeck:{type:'fixture'},asphodelDeck:{type:'fixture'}}),e=>e instanceof PlaytestSessionError&&e.code==='PLAYTEST_ALREADY_RUNNING');
+    release();const started=await pending;for(let i=0;i<100&&manager.getState(started.sessionId).status!=='failed';i++)await new Promise(r=>setTimeout(r,5));
+    const record=await reviews.get(started.sessionId);assert.equal(record.status,'failed');assert.equal(record.outcome,null);assert.ok(record.error);assert.ok(record.finishedAt);
+  } finally {await manager.close();database.close();}
+});
+
+it('a voluntary stop persists its reached turn without inventing a winner',async()=>{
+  const {createTestDatabase}=await import('./test-helpers.js');const {PlaytestReviewService}=await import('./human/playtest-review-service.js');
+  const database=await createTestDatabase(),reviews=new PlaytestReviewService(database.db);
+  try {await withTempReports(async reportsRoot=>{
+    const {client}=scriptedTransport([()=>({sessionId:'s',status:'waiting_for_decision',progress,forgeAiStrategicFallbacks:[],observation:humanObservation(4),pendingDecision:{...priorityDecision('player-1','d'),context:{...priorityDecision('player-1','d').context,turn:4}}})]);
+    const manager=new PlaytestSessionManager({reviews,createBridge:fakeBridge,createClient:()=>client,reportsRoot});
+    try {
+      const {sessionId}=await manager.start({humanDeck:{type:'fixture'},asphodelDeck:{type:'fixture'}});
+      for(let i=0;i<100&&!manager.getState(sessionId).pendingDecision;i++)await new Promise(r=>setTimeout(r,2));
+      await manager.end(sessionId);const record=await reviews.get(sessionId);assert.equal(record.status,'ended_by_human');assert.equal(record.turns,4);assert.equal(record.outcome,null);
+    } finally {await manager.close();}
+  });} finally {database.close();}
+});

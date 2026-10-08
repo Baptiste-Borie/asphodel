@@ -238,7 +238,7 @@ export interface WebPlaytestStateDTO {
 
 export type DeckInput =
   | { type: "fixture" }
-  | { type: "library"; value: string }
+  | { type: "library"; value: string; versionId?: string; projectId?: string }
   | { type: "archidekt"; value: string };
 
 export interface StartPlaytestRequest {

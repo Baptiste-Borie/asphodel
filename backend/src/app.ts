@@ -15,6 +15,9 @@ import { DeckService } from "./decks/deck-service.js";
 import { LibraryBackupService } from './decks/library-backup-service.js';
 import { InvalidBackupError } from '../../shared/library-backup.mjs';
 import { PlaytestSessionManager } from "./human/playtest-session-manager.js";
+import { PlaytestReviewService } from './human/playtest-review-service.js';
+import { resolvePlayedDeck } from './decks/deck-resolver.js';
+import { registerPlaytestReviewRoutes } from './human/playtest-review-routes.js';
 import { registerPlaytestRoutes } from "./human/playtest-routes.js";
 import { CardPresentationService, MAX_CARD_PRESENTATION_NAMES } from "./cards/card-presentation-service.js";
 import type { VoiceTranscriptionService } from "./voice/voice-transcription-service.js";
@@ -293,11 +296,14 @@ export async function buildApp(options: BuildAppOptions = {}) {
     async (request) => ({ cards: await cardPresentationService.resolveMany(request.body.names) }),
   );
 
-  const playtestSessionManager = options.playtestSessionManager ?? new PlaytestSessionManager();
+  const reviews = new PlaytestReviewService(database.db);
+  if (!options.playtestSessionManager) await reviews.interruptRunning();
+  const playtestSessionManager = options.playtestSessionManager ?? new PlaytestSessionManager({reviews,resolveDeck:(input,fixture)=>resolvePlayedDeck(input,fixture,deckService)});
+  registerPlaytestReviewRoutes(app,reviews);
   const libraryBackup = new LibraryBackupService(database.db);
   app.get('/decks/library-backup', () => libraryBackup.snapshot());
   app.post('/decks/library-restore', { bodyLimit: 64 * 1024 * 1024 }, async (request, reply) => {
-    if (playtestSessionManager.getActiveState()) return reply.code(409).send({ message: 'Termine la partie en cours avant de restaurer la bibliothèque.' });
+    if (playtestSessionManager.isStarting?.() || playtestSessionManager.getActiveState()) return reply.code(409).send({ message: 'Termine la partie en cours avant de restaurer la bibliothèque.' });
     try { await libraryBackup.restore(request.body); return { restored: true }; }
     catch (error) {
       if (error instanceof InvalidBackupError) return reply.code(400).send({ message: error.message });

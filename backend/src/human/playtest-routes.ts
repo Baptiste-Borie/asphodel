@@ -10,6 +10,8 @@ import { ManualPhysicalCardProviderError } from "../physical/physical-card-provi
 interface DeckInputBody {
   type: "fixture" | "library" | "archidekt";
   value?: string;
+  versionId?: string;
+  projectId?: string;
 }
 interface StartPlaytestBody {
   humanDeck: DeckInputBody;
@@ -30,7 +32,9 @@ const deckInputSchema = {
   required: ["type"],
   properties: {
     type: { enum: ["fixture", "library", "archidekt"] },
-    value: { type: "string", minLength: 1 },
+    value: { type: "string", minLength: 1, maxLength: 2048 },
+    versionId: {type:"string",minLength:1,maxLength:100,pattern:"^[a-zA-Z0-9_-]+$"},
+    projectId: {type:"string",minLength:1,maxLength:100,pattern:"^[a-zA-Z0-9_-]+$"},
   },
 } as const;
 
@@ -55,8 +59,10 @@ const sessionParamsSchema = {
 } as const;
 
 function toDeckInput(body: DeckInputBody): DeckInput {
+  if ((body.versionId || body.projectId) && body.type !== "library") throw new PlaytestValidationError("Les versions appartiennent aux decks locaux.");
   if (body.type === "fixture") return { type: "fixture" };
   if (!body.value) throw new PlaytestValidationError(`"${body.type}" deck input requires a non-empty "value".`);
+  if (body.type === "library") return {type:body.type,value:body.value,...(body.versionId ? {versionId:body.versionId} : {}),...(body.projectId ? {projectId:body.projectId} : {})};
   return { type: body.type, value: body.value };
 }
 

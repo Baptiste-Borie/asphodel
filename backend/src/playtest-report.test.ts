@@ -64,7 +64,7 @@ it("generates summary.md and decisions.json with sequential reportIds, reasons, 
       endedByHuman: true, snapshot: snapshot(), decisions: recorder.all(), reportsRoot,
     });
 
-    assert.equal(result.directory, join(reportsRoot, reportDirectoryName(new Date("2026-09-05T22:30:00.000Z"), "Uurg, Spawn of Turg", ["Krenko, Tin Street Kingpin"])));
+    assert.equal(result.directory, join(reportsRoot, reportDirectoryName(new Date("2026-09-05T22:30:00.000Z"), "Uurg, Spawn of Turg", ["Krenko, Tin Street Kingpin"]) + "_match-1"));
     const summary = await readFile(result.summaryPath, "utf8");
     const decisionsJson = JSON.parse(await readFile(result.decisionsPath, "utf8"));
 
@@ -200,4 +200,14 @@ it("report directory names are chronologically sortable, filesystem-safe, and id
   const name = reportDirectoryName(new Date("2026-09-05T22:30:00.000Z"), "Uurg, Spawn of Turg", ["Krenko, Tin Street Kingpin!"]);
   assert.match(name, /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_uurg-spawn-of-turg-vs-krenko-tin-street-kingpin$/);
   assert.ok(!/[^a-z0-9_-]/i.test(name), "must be filesystem-safe");
+});
+
+it('two same-minute trials of the same decks retain separate diagnostic files',async()=>{
+  await withTempDir(async reportsRoot=>{
+    const input={startedAt:new Date('2026-10-08T09:00:00.000Z'),seed:42,humanDeckName:'Deck',agentDeckNames:['Opponent'],humanPlayerId:'player-1',agentPlayerIds:['player-2'],endedByHuman:true,snapshot:snapshot(),decisions:[],reportsRoot};
+    const first=await writePlaytestReport({...input,sessionId:'trial-one'}),second=await writePlaytestReport({...input,sessionId:'trial-two'});
+    assert.notEqual(first.directory,second.directory);
+    assert.equal(JSON.parse(await readFile(first.decisionsPath,'utf8')).match.sessionId,'trial-one');
+    assert.equal(JSON.parse(await readFile(second.decisionsPath,'utf8')).match.sessionId,'trial-two');
+  });
 });

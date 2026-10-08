@@ -86,3 +86,12 @@ export const deckProjects = sqliteTable('deck_projects', {
   projectId: text('project_id').notNull().unique(),
   state: text('state', { mode: 'json' }).$type<import('../../../shared/builder-project.mjs').BuilderProject>().notNull(),
 });
+
+// Independent of deck rows: deleting or restoring a deck must never rewrite a played list.
+export const playtestReviews = sqliteTable('playtest_reviews', {
+  sessionId: text('session_id').primaryKey(),
+  projectId: text('project_id'),
+  startedAt: text('started_at').notNull(),
+  revision: integer('revision').notNull().default(0),
+  state: text('state', { mode: 'json' }).$type<import('../../../shared/playtest-review.mjs').PlaytestReview>().notNull(),
+}, table => [index('playtest_reviews_project_date').on(table.projectId, table.startedAt)]);

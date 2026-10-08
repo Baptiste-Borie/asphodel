@@ -1,0 +1,19 @@
+.playtest-history { width:min(1000px,94vw); max-height:90vh; overflow:auto; color:var(--text,#e8e5df); background:var(--surface,#1c2221); border:1px solid #64716a; border-radius:18px; padding:26px; }
+.playtest-history::backdrop { background:#080f10cc; }
+.playtest-history>header { display:flex;justify-content:space-between;align-items:center;gap:18px; }
+.playtest-history button,.playtest-review button { cursor:pointer; border:1px solid #64716a;border-radius:8px;padding:10px 14px;color:inherit;background:#293530; }
+.playtest-history>div>div>button { display:block;width:100%;text-align:left;margin:10px 0; }
+.playtest-review { text-align:left; width:100%;max-width:900px;margin:20px auto; }
+.playtest-review h2 { margin-top:0; }
+.playtest-review details { margin:14px 0;padding:14px;border:1px solid #526158;border-radius:10px; }
+.playtest-review summary { cursor:pointer;font-weight:600; }
+.playtest-review details ul,.playtest-review details ol { max-height:350px;overflow:auto; }
+.playtest-review fieldset { margin:20px 0;padding:16px;border:1px solid #64716a;border-radius:12px;min-width:0; }
+.playtest-review label { display:flex;flex-direction:column;gap:8px; }
+.playtest-review textarea,.playtest-review select { width:100%;padding:10px;background:#111d18;color:#f1eee8;border:1px solid #6c8174;border-radius:8px;font:inherit;box-sizing:border-box; }
+.review-card-note { display:grid;grid-template-columns:minmax(130px,1fr) minmax(130px,1fr);gap:12px;margin:16px 0;padding:16px;background:#29352b;border-radius:10px; }
+.review-card-note>strong,.review-card-note>label:has(textarea) { grid-column:1/-1; }
+.review-add-card,.review-actions { display:flex;align-items:end;flex-wrap:wrap;gap:12px;margin-top:16px; }
+.review-add-card>label { flex:1;min-width:160px; }
+.playtest-review button:disabled { opacity:.5;cursor:wait; }
+@media(max-width:600px) { .review-card-note { grid-template-columns:1fr; } .playtest-history { padding:16px; } }

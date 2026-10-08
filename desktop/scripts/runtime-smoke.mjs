@@ -75,10 +75,25 @@ try {
     await new Promise(resolve => setTimeout(resolve, 100));
   } while (Date.now() < deadline);
   assert.equal(state.status, 'waiting_for_human', 'bundled Java/Forge reaches a real human choice offline');
+  const runningReview = await api(`/playtests/reviews/${sessionId}`);
+  assert.equal(runningReview.status, 'running');
+  assert.equal(runningReview.humanDeck.name, 'Offline game smoke');
+  assert.equal(runningReview.humanDeck.cards.reduce((n,c) => n+c.quantity,0), 100);
+  await api(`/decks/${saved.id}`, {method:'PATCH',body:JSON.stringify({name:'Edited after launch'})});
+  await close();
+  api = await launch();
+  const finishedReview = await api(`/playtests/reviews/${sessionId}`);
+  assert.equal(finishedReview.status, 'ended_by_human');
+  assert.equal(finishedReview.humanDeck.name, 'Offline game smoke');
+  const feedback = {note:'Try more draw',cards:[{name:'Mountain',verdict:'test',note:'Check flooding'}]};
+  await api(`/playtests/reviews/${sessionId}/feedback`, {method:'PUT',body:JSON.stringify({revision:finishedReview.revision,feedback})});
+  assert.ok((await api('/decks/library-backup')).reviews.some(r => r.sessionId===sessionId));
+  await close(); api = await launch();
+  assert.deepEqual((await api(`/playtests/reviews/${sessionId}`)).feedback, feedback);
   await close();
   const reports = await readdir(join(userData, 'playtest-reports'));
   assert.ok(reports.length > 0, 'quitting a game writes a local report');
-  console.log('Electron runtime smoke passed: authenticated local API, seed library, offline metadata, restart persistence, bundled Java/Forge game, active-game shutdown.');
+  console.log('Electron runtime smoke passed: authenticated local API, seed library, offline metadata, restart persistence, bundled Java/Forge game, active-game shutdown, frozen list and review/feedback/backup restart persistence.');
 } finally {
   if (child) child.kill('SIGKILL');
   await rm(userData, { recursive: true, force: true });

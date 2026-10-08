@@ -195,7 +195,7 @@ function renderDecisionsJson(input: PlaytestReportInput) {
 
 export async function writePlaytestReport(input: PlaytestReportInput): Promise<PlaytestReportResult> {
   const root = input.reportsRoot ?? process.env.ASPHODEL_REPORTS_ROOT ?? DEFAULT_REPORTS_ROOT;
-  const directory = resolve(root, reportDirectoryName(input.startedAt, input.humanDeckName, input.agentDeckNames));
+  const directory = resolve(root, reportDirectoryName(input.startedAt, input.humanDeckName, input.agentDeckNames) + '_' + slugify(input.sessionId));
   await mkdir(directory, { recursive: true });
   const summaryPath = resolve(directory, "summary.md");
   const decisionsPath = resolve(directory, "decisions.json");
