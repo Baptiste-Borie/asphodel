@@ -304,3 +304,25 @@ it("describePhysicalDeclare (V2g): result always carries kind 'physical_declare'
   assert.equal(prompt.count, 2);
   assert.deepEqual(prompt.candidates, candidates);
 });
+
+it('combat edits carry exact operation/destination metadata independently of their labels',()=>{
+  for(const type of ['attackers_selection','blockers_selection'] as const) {
+    const d:ForgePendingCombatDecision={decisionId:'combat-patch14',type,playerId:'player-1',
+      context:{turn:1,phase:'combat_declare_attackers',activePlayerId:'player-1',priorityPlayerId:'player-1',stackSize:0},selected:[],
+      options:[{objectId:'add-custom',operation:'add',cardRef:'same-card-1',relatedRef:'destination-2',label:'unparsed'},
+        {objectId:'remove-custom',operation:'remove',cardRef:'same-card-1',relatedRef:'destination-1',label:'unparsed'},
+        {objectId:'finish-custom',operation:'finish',cardRef:null,relatedRef:null,label:'unparsed'}]};
+    const before=JSON.stringify(d),prompt=describeDecision(observation(),d);assert.equal(prompt.kind,'menu');if(prompt.kind!=='menu')continue;
+    assert.deepEqual(prompt.items.map(i=>i.combat),d.options.map(o=>({operation:o.operation,relatedRef:o.relatedRef})));
+    assert.deepEqual(prompt.items.map(i=>i.choice),d.options.map(o=>({decisionId:d.decisionId,kind:'object',choice:o.objectId,reason:'human_choice'})));
+    assert.equal(JSON.stringify(d),before);
+    for(const item of prompt.items)assert.doesNotThrow(()=>validateChoice(d,item.choice));
+  }
+});
+it('combat metadata never synthesizes a finish option absent from Forge',()=>{
+  const d:ForgePendingCombatDecision={decisionId:'mandatory-combat',type:'blockers_selection',playerId:'player-1',
+    context:{turn:1,phase:'combat_declare_blockers',activePlayerId:'player-2',priorityPlayerId:'player-1',stackSize:0},selected:[],
+    options:[{objectId:'must-adjust',operation:'add',cardRef:'blocker',relatedRef:'attacker',label:'Block'}]};
+  const prompt=describeDecision(observation(),d);assert.equal(prompt.kind,'menu');if(prompt.kind!=='menu')return;
+  assert.equal(prompt.items.length,1);assert.equal(prompt.items.some(i=>i.combat?.operation==='finish'),false);
+});

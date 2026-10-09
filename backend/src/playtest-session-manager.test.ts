@@ -339,6 +339,8 @@ it("V2e.6: relays Forge's currently-declared attackers as selectedCardRefs on th
       state = manager.getState(started.sessionId);
     }
     assert.deepEqual(state.pendingDecision?.selectedCardRefs, ["krenko-1"]);
+    assert.deepEqual(state.pendingDecision?.combatPairings, [{cardRef: "krenko-1", relatedRef: "player-2"}]);
+    assert.equal(state.pendingDecision?.combatAttackers, null);
   });
 });
 
@@ -829,4 +831,25 @@ it('a voluntary stop persists its reached turn without inventing a winner',async
       await manager.end(sessionId);const record=await reviews.get(sessionId);assert.equal(record.status,'ended_by_human');assert.equal(record.turns,4);assert.equal(record.outcome,null);
     } finally {await manager.close();}
   });} finally {database.close();}
+});
+
+it('combat DTO retains every public attacker, including attackers with no legal blocker option',async()=>{
+  await withTempReports(async reportsRoot=>{
+    const obs:AgentObservation={...humanObservation(1),game:{...humanObservation(1).game,phase:'combat_declare_blockers'}};
+    const decision:ForgePendingCombatDecision={decisionId:'combat-dto',type:'blockers_selection',playerId:'player-1',
+      context:{turn:1,phase:'combat_declare_blockers',activePlayerId:'player-1',priorityPlayerId:'player-1',stackSize:0},
+      selected:[{cardRef:'blocker',relatedRef:'bear'}],
+      attackers:[{cardRef:'bear',relatedRef:'player-1'},{cardRef:'unoffered',relatedRef:'player-1'}],
+      options:[{objectId:'remove',operation:'remove',cardRef:'blocker',relatedRef:'bear',label:'Remove block'},
+        {objectId:'finish',operation:'finish',cardRef:null,relatedRef:null,label:'Confirm'}]};
+    const {client}=scriptedTransport([()=>({sessionId:'s',status:'waiting_for_decision',progress,forgeAiStrategicFallbacks:[],observation:obs,pendingDecision:decision})]);
+    const manager=new PlaytestSessionManager({createBridge:fakeBridge,createClient:()=>client,createAgent:()=>new FakeAgent(),reportsRoot});
+    const started=await manager.start({humanDeck:{type:'fixture'},asphodelDeck:{type:'fixture'}});
+    let state=manager.getState(started.sessionId);
+    for(let i=0;i<50&&state.pendingDecision===null;i++){await new Promise(resolve=>setTimeout(resolve,5));state=manager.getState(started.sessionId);}
+    assert.deepEqual(state.pendingDecision?.combatAttackers,decision.attackers);
+    assert.deepEqual(state.pendingDecision?.combatPairings,decision.selected);
+    assert.equal(state.pendingDecision?.rendered.kind,'menu');
+    if(state.pendingDecision?.rendered.kind==='menu')assert.equal(state.pendingDecision.rendered.items.length,2,'an unoffered attacker never creates an invented block choice');
+  });
 });

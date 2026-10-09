@@ -1,0 +1,39 @@
+/* A temporary combat decision keeps the board visible and the finish command in reach. */
+.table-root .table-decision-dock.table-decision-dock--combat {
+  position:absolute;inset:auto auto 24px 50%;transform:translateX(-50%);
+  width:min(650px,calc(100% - 40px));min-width:0;max-width:calc(100% - 40px);max-height:52vh;
+  padding:14px;box-sizing:border-box;display:block;overflow:hidden;text-align:left;
+  border:1px solid #9c8966;background:#17221ff7;border-radius:8px;z-index:8;
+}
+.combat-flow { display:flex;flex-direction:column;max-height:calc(52vh - 30px);gap:8px; }
+.combat-flow h2 { margin:0;font:20px Georgia,serif;color:#f2e3c6; }
+.combat-hint { margin:0;font-size:12px;color:#c0c8c0; }
+.combat-body { overflow:auto;min-height:0; }
+.combat-columns { display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin:10px 0; }
+.combat-creatures { display:flex;flex-direction:column;gap:5px;max-height:190px;overflow:auto; }
+.combat-flow button { border:1px solid #657267;background:#24362c;color:#eee7d6;border-radius:5px;cursor:pointer;font:12px/1.4 system-ui;min-height:36px;box-sizing:border-box; }
+.combat-flow .combat-creature { display:flex;align-items:center;gap:6px;text-align:left;padding:6px;flex-shrink:0; }
+.combat-creature[aria-pressed=true] { border-color:#dfc48e;background:#344235; }
+.combat-card { display:flex;align-items:center;gap:8px;min-width:0; }
+.combat-card img { width:42px;height:32px;object-fit:cover;border-radius:3px;flex-shrink:0; }
+.combat-card strong { display:block;font-size:12px;font-weight:600;overflow-wrap:anywhere; }
+.combat-card small { display:block;font-size:11px;color:#bcc6bb; }
+.combat-flow .combat-selected { margin-left:auto;font-size:10px;color:#f0cf89; }
+.combat-edits { min-width:0;display:flex;flex-direction:column;gap:6px; }
+.combat-edits h3 { font-size:13px;margin:0 0 4px;overflow-wrap:anywhere; }
+.combat-edits .combat-edit { text-align:left;padding:8px; }
+.combat-edit[data-operation=remove] { border-color:#c19472; }
+.combat-flow summary { cursor:pointer;color:#d8c49d;font-size:12px;padding:5px 0; }
+.combat-flow details p { margin:5px 0;font-size:12px;line-height:1.5; }
+.combat-assignment { display:flex;align-items:center;gap:10px;flex-wrap:wrap; }
+.combat-assignment>span:last-child { color:#bec8be; }
+.combat-footer { flex-shrink:0;border-top:1px solid #ffffff24;padding-top:8px; }
+.combat-footer .combat-finish { background:#bda371;color:#151c18;border-color:#dec89b;padding:9px 12px;font-weight:600; }
+.combat-submit-status { font-size:12px;margin:5px 0 0;color:#e2c495; }
+.combat-submit-status:empty { display:none; }
+.combat-flow button:disabled { opacity:.6;cursor:wait; }
+.combat-flow :focus-visible { outline:2px solid #f2d7a6;outline-offset:2px; }
+@media(max-height:700px) { .table-root .table-decision-dock.table-decision-dock--combat { bottom:12px;max-height:60vh; } .combat-flow { max-height:calc(60vh - 30px); } }
+@media(max-width:650px) { .combat-columns { grid-template-columns:minmax(0,1fr); } .combat-creatures { max-height:110px; } }
+
+.table-decision-dock--combat::before { display:none; }

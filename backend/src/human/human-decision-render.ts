@@ -12,6 +12,8 @@ import { resolvePlayerPresentation } from "./player-presentation.js";
 
 /** One selectable line in a rendered decision. `choice` is a complete, already-legal answer. */
 export interface MenuItem {
+  /** Combat option metadata copied from Forge; presentation never parses a label into a choice. */
+  combat?: { operation: 'add' | 'remove' | 'finish' | 'order'; relatedRef: string | null };
   presentationName?: string;
   /** Presentation hint for an explicit Forge cancellation choice. */
   control?: "cancel" | "pass";
@@ -199,7 +201,7 @@ export function describeDecision(observation: AgentObservation, d: ForgePendingE
         const label = o.operation === "finish" ? "Finish declaring attackers/blockers"
           : `${o.operation === "add" ? "Add" : "Remove"} ${describeCardRef(observation, o.cardRef)}`
             + (d.type === "attackers_selection" ? ` attacking ${describeCardRef(observation, o.relatedRef)}` : ` blocking ${describeCardRef(observation, o.relatedRef)}`);
-        return { label, choice: { decisionId: d.decisionId, kind: "object", choice: o.objectId, reason }, cardRef: o.operation === "finish" ? null : o.cardRef };
+        return { label, choice: { decisionId: d.decisionId, kind: "object", choice: o.objectId, reason }, cardRef: o.operation === "finish" ? null : o.cardRef, combat: { operation: o.operation, relatedRef: o.relatedRef } };
       });
       return { kind: "menu", title: d.type === "attackers_selection" ? "Declare attackers" : "Declare blockers", items };
     }

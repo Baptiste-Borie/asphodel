@@ -112,6 +112,8 @@ export type AgentChoice = { decisionId: string; reason: string } & (
 );
 
 export interface MenuItem {
+  /** Combat option metadata copied from Forge; presentation never parses a label into a choice. */
+  combat?: { operation: 'add' | 'remove' | 'finish' | 'order'; relatedRef: string | null };
   presentationName?: string;
   /** Presentation hint for an explicit Forge cancellation choice. */
   control?: "cancel" | "pass";
@@ -174,6 +176,8 @@ export interface WebPendingDecisionDTO {
    * attackers_selection/blockers_selection.
    */
   combatPairings: { cardRef: string; relatedRef: string }[] | null;
+  /** Public attackers from Forge, including those with no legal block option. Null/absent on older bridges. */
+  combatAttackers?: { cardRef: string; relatedRef: string }[] | null;
 }
 
 export interface PublicGameEvent {

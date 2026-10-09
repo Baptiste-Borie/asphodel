@@ -1,4 +1,4 @@
-# Asphodel Desktop 0.1.16
+# Asphodel Desktop 0.1.17
 
 Desktop wrapper around the existing TypeScript/Vite frontend, Node backend and pinned Forge bridge. No stack migration. Launch Asphodel, choose a saved deck, play locally, close the application. The packaged app includes Chromium/Node, Java and Forge's resources; no terminal, Node installation, Java installation or remote server is needed to run it.
 
@@ -10,13 +10,13 @@ Close Asphodel, then from the repository root:
 npm --prefix desktop run install:local
 ```
 
-This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.16-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
+This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.17-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
 
 Afterwards, open **Asphodel** from Ubuntu's application menu and pin it to your dock if desired. The package installs the app in `/opt/Asphodel`, the desktop entry `Asphodel.desktop`, the existing icon and the `asphodel` command. This launch uses the installed app, independent of the checkout, and needs no local server command. The normal desktop settings, fullscreen preference and Quitter button remain available.
 
 To update after a new patch/pull, close Asphodel and run the same command again. Decks, cached images, drafts and display settings remain in the existing `~/.config/Asphodel` profile; the package contains no home-directory files. Package removal (`sudo apt-get remove asphodel-desktop`) leaves this profile in place. Backup/restore is available in settings; abrupt-crash recovery still depends on a persisted draft.
 
-To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.16-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
+To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.17-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
 
 ## Automated Linux packages
 
@@ -246,7 +246,7 @@ This is a diagnostic improvement for the reported generic `The Forge bridge coul
 Validation includes pure shuffle/mulligan conservation and replay, ordered bottoming, exhaustion, immutable art/roles, bounded allocation, real child stdio with a scripted bridge, failed-session restart/cleanup, wrapped/cyclic errors, restricted diagnostics and actual builder dialog events. Native Electron rendering and real Forge playtests remain to validate on the PC.
 
 
-## Patch 11 — versions et comparaison (0.1.16)
+## Patch 11 — versions et comparaison (0.1.17)
 
 - **Versions**, accessible dans Builder V1 et Table V2, conserve un instantané nommé du projet : cartes, quantités, commandants, candidats, cuts V1, éditions et faces choisies, tags/cibles, table, piles, zones, notes et caméra.
 - Les instantanés sont indépendants des modifications suivantes, intégrés à SQLite, aux brouillons de récupération et aux sauvegardes exportées. Les anciens projets sans versions restent lisibles ; aucune migration SQL supplémentaire.
@@ -273,10 +273,10 @@ Le premier patch 11 créait le dossier vide lors du build, mais electron-builder
 
 Le fichier marqueur conserve désormais le dossier à travers le packaging. Le test de régression utilise electron-builder 26.15.3 et sa vraie copie `extraResources` : l’ancien dossier vide disparaît, le dossier contenant le marqueur reste présent. Une distribution Electron factice évite de télécharger ou lancer Chromium ; ce test vérifie le packaging, pas une partie Forge. Les tests de vrais petits `.deb` rejettent aussi un paquet dont seul le marqueur manque.
 
-Appliquer ce correctif après le patch 11 déjà appliqué, puis relancer `npm --prefix desktop run install:local`. Version conservée : 0.1.16, puisque la précédente installation avait été interrompue. Pas de reconstruction Java ni de modification des decks.
+Appliquer ce correctif après le patch 11 déjà appliqué, puis relancer `npm --prefix desktop run install:local`. Version conservée : 0.1.17, puisque la précédente installation avait été interrompue. Pas de reconstruction Java ni de modification des decks.
 
 
-## Playtest notebook (patch 12, version 0.1.16)
+## Playtest notebook (patch 12, version 0.1.17)
 
 **Tester ce deck** opens the existing game setup with the current builder deck selected; **Versions → Jouer cette référence** selects a named version without restoring it over the working deck. Pending builder edits must save successfully before handing over. Opponents, seed and digital/physical mode remain selectable; an active game must end before preparing another. The backend resolves the library deck and its historical identity in one read, then stores the exact commander/mainboard list sent to Forge. Candidates and cuts are excluded. Later edits, reference deletion, deck deletion and renames never change the played list.
 
@@ -297,3 +297,22 @@ When public actions are being presented, **Rattraper l’affichage** appears on 
 The settings are saved on the stable renderer origin and included in portable library backups. An older backup restores Normal and the default motion preference. If renderer storage is unavailable, the settings still apply to the current session, with an explicit message and retry button. Backup/restore first flushes pending deck and playtest-review edits.
 
 No Forge rebuild, database migration or new dependency is needed. Checks cover corrupt/unavailable storage, persistence, backup replacement, speed changes, all three importance tiers, catch-up during phase/card waits, frame order/deduplication, decision gating and old-session cancellation. The native window and desktop smoke scripts additionally check settings across restart and portable restoration; these scripts require an Electron-capable environment.
+
+## Explicit combat declarations (patch 14)
+
+Digital and Physical playtests now show **Déclarer les attaquants / Déclarer les bloqueurs** as a compact decision panel. Choose a creature to see its legal destinations; selecting the creature is local navigation. **Attaquer**, **Bloquer** and **Retirer** submit the exact current Forge option. The selected creature remains selected across subsequent edits when it still has an option. Same-named creatures receive distinct visible numbers, and missing artwork keeps a readable name and current power/toughness.
+
+**Affectations confirmées** comes from Forge's actual declaration, with every pairing retained, including a creature assigned to several attackers. During blocking, the optional public attacker list includes threats with no offered block. The UI says **Aucun ajout de bloc proposé**, which describes the current menu and does not infer an unblockable ability or predict damage. Player and planeswalker defenders remain distinct; three-player destinations retain the correct player and life total. Hidden and face-down identities never provide names or artwork.
+
+The footer offers **Valider les attaques / Valider les blocs**, or explicitly **N’attaquer avec aucune créature / Ne bloquer avec aucune créature** for a known empty declaration. This command exists only when Forge offers Finish. Mandatory attacks/blocks and constraints such as menace remain Forge's responsibility; the panel neither invents a completion choice nor submits several choices together. Double clicks and detached old controls cannot submit twice or reuse an older decision. Existing board shortcuts and the generic combat damage-order decision remain available. An older backend without combat option metadata falls back to the existing menu; an older bridge without the public attacker list simply omits that list.
+
+This patch adds optional presentation fields to existing DTOs, with no database migration, new dependency or Java source change. Rebuild/install normally; the existing Forge JAR remains usable. The native combat window check uses deterministic public DTOs, the production renderer/CSS, both play modes, keyboard input and a 1366×768 window. It also checks that the validation footer remains visible:
+
+```sh
+npm --prefix frontend run build
+npm --prefix desktop run smoke:combat
+# For headless CI with a virtual display:
+xvfb-run -a npm --prefix desktop run smoke:combat
+```
+
+The Desktop workflow includes this check. It checks UI behavior, not a real Forge match; use a real combat in the installed application to validate the whole engine-to-window interaction.

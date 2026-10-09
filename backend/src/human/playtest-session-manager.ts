@@ -101,6 +101,8 @@ export interface WebPendingDecisionDTO {
    * decision type other than `attackers_selection`/`blockers_selection`.
    */
   combatPairings: { cardRef: string; relatedRef: string }[] | null;
+  /** Public attackers from Forge, including those with no legal block option. Null/absent on older bridges. */
+  combatAttackers?: { cardRef: string; relatedRef: string }[] | null;
 }
 
 export interface WebPlaytestStateDTO {
@@ -474,6 +476,8 @@ export class PlaytestSessionManager {
           ? pending.decision.selected.map(s => s.cardRef) : null,
         combatPairings: (pending.decision.type === "attackers_selection" || pending.decision.type === "blockers_selection")
           ? pending.decision.selected.map(s => ({ cardRef: s.cardRef, relatedRef: s.relatedRef })) : null,
+        ...((pending.decision.type === "attackers_selection" || pending.decision.type === "blockers_selection")
+          ? { combatAttackers: pending.decision.attackers?.map(s => ({cardRef: s.cardRef, relatedRef: s.relatedRef})) ?? null } : {}),
       } : null,
       manaPaymentActive: session.manaPaymentActive,
       publicEvents: session.events,
