@@ -1,3 +1,5 @@
+import {targetDecisionModel} from './target-decision';
+import {createTargetDecisionView} from './target-decision-view';
 import {combatDecisionModel} from './combat-decision';
 import {createCombatDecisionView} from './combat-decision-view';
 import {presentationPreferences,presentationTiming} from './presentation-preferences';
@@ -54,6 +56,7 @@ import "../styles/physical-flows.css";
 import '../styles/physical-v2.css';
 import '../styles/voice-panel.css';
 import './combat-decision.css';
+import './target-decision.css';
 import type { AgentCardObservation, AgentChoice, AgentObservation, AgentSelfPlayerObservation, DeckInput, MenuItem, PublicGameEvent, StartPlaytestRequest, WebPendingDecisionDTO, WebPlaytestStateDTO } from "./types.js";
 
 const POLL_INTERVAL_MS = 300;
@@ -255,6 +258,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
   const handActionMenu = createHandActionMenu();
   const manaOverlay = createManaPaymentOverlay();
   const combatView = createCombatDecisionView();
+  const targetView = createTargetDecisionView();
   const zoneInspector = createZoneInspector((name) => cardStore.get(name));
   const preferences=presentationPreferences();
   let presentationClock=new PresentationClock();
@@ -341,7 +345,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
   function cancelPresentation() {presentationClock.catchUp();updateMotion();cardReveal.hide(true);cardReveal.cancelAnimations();transitions.cancelAnimations();phaseBanner.reset();}
 
   function showSetup(): void {
-    combatView.reset();
+    combatView.reset();targetView.reset();
     cancelPresentation();presentationClock=new PresentationClock();updateMotion();
     gamePresentation?.dispose();gamePresentation=undefined;playbackControls.length=0;
     endSection.replaceChildren(); endReview=undefined;
@@ -383,7 +387,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
   }
 
   function showEndScreen(): void {
-    combatView.reset();
+    combatView.reset();targetView.reset();
     transitions.reset();
     physicalScene = null;
     voicePanel?.stop();
@@ -568,7 +572,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
    */
   function buildGameScreen(humanDeckName: string | null, asphodelDeckNames: string[] | null, fallbackOpponentCount = 1): void {
     cancelPresentation();presentationClock=new PresentationClock();updateMotion();gamePresentation?.dispose();playbackControls.length=0;
-    combatView.reset();
+    combatView.reset();targetView.reset();
     const opponentCount = asphodelDeckNames ? asphodelDeckNames.length : fallbackOpponentCount;
     transitions.reset();
     physicalScene = currentPlayMode === "physical" ? createPhysicalScene(zoneInspector.open) : null;
@@ -1071,7 +1075,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
       beforeFrame: async frame => {
         gameSection.dataset.playback = 'playing';
         gameSection.classList.remove('physical-input-required');
-        combatView.deactivate();decisionDock.classList.remove('table-decision-dock--combat');
+        combatView.deactivate();targetView.deactivate();decisionDock.classList.remove('table-decision-dock--combat','table-decision-dock--targets');
         decisionDock.replaceChildren();
         lastDecisionKey = '';
         inspectionActions = undefined;
@@ -1137,6 +1141,11 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
       for (const observation of observationsInPlay) {
         if (await cardStore.ensure(collectVisibleCardNames(observation)).catch(() => false)) presentationChanged = true;
       }
+      // Revealed legal targets can be absent from board/hand zones. Fetch only model-safe names.
+      const targetNames=[...new Set(targetDecisionModel(state.pendingDecision,state.observation)?.options.flatMap(option=>option.artName?[option.artName]:[])??[])];
+      for(let i=0;i<targetNames.length;i+=75) {
+        if(await cardStore.ensure(targetNames.slice(i,i+75)).catch(()=>false)) presentationChanged=true;
+      }
       if (presentationChanged) lastPresentationVersion++;
 
       const candidateId = state.pendingDecision?.decisionId ?? null;
@@ -1155,7 +1164,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
       stopPolling();
       if (sessionId !== pollingSession) return;
       gameSection.dataset.connection = 'disconnected';
-      combatView.deactivate();decisionDock.classList.remove('table-decision-dock--combat');lastDecisionKey='';
+      combatView.deactivate();targetView.deactivate();decisionDock.classList.remove('table-decision-dock--combat','table-decision-dock--targets');lastDecisionKey='';
       if (error instanceof ApiError && error.status === 404) { showSetup(); return; }
       decisionDock.textContent = error instanceof Error ? error.message : "Lost contact with the playtest.";
       const retry=document.createElement('button'); retry.textContent='Reconnect'; retry.onclick=()=> { pollTimer=setInterval(()=>void poll(),POLL_INTERVAL_MS); void poll(); }; decisionDock.append(retry);
@@ -1163,9 +1172,9 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
   }
 
   function renderStatusLine(status: WebPlaytestStateDTO["status"]): void {
-    combatView.deactivate();
+    combatView.deactivate();targetView.deactivate();
     decisionDock.replaceChildren();
-    decisionDock.classList.remove("table-decision-dock--combat", "table-decision-dock--complex", "table-decision-dock--cards", "physical-declaration");
+    decisionDock.classList.remove("table-decision-dock--targets", "table-decision-dock--combat", "table-decision-dock--complex", "table-decision-dock--cards", "physical-declaration");
     const text = submitting ? "Submitting choice…" : {
       starting: "Starting Forge…", running: "Asphodel is thinking…",
       waiting_for_human: "", completed: "", ended_by_human: "", failed: "",
@@ -1198,17 +1207,24 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
 
   function renderDecisionIfChanged(state: WebPlaytestStateDTO, dockItems: MenuItem[] | null): void {
     const combat = combatDecisionModel(state.pendingDecision,state.observation);
-    const key = JSON.stringify(state.pendingDecision) + (combat ? JSON.stringify(state.observation) : '') + (submitting ? ":submitting" : "");
+    const targets = targetDecisionModel(state.pendingDecision,state.observation);
+    const key = JSON.stringify(state.pendingDecision) + ((combat || targets) ? JSON.stringify(state.observation) : '') + (targets ? `:presentation:${lastPresentationVersion}` : '') + (submitting ? ":submitting" : "");
     if (key === lastDecisionKey) return;
     lastDecisionKey = key;
     if (state.pendingDecision) spaceReadyAt = performance.now() + 650;
     handActionMenu.close();
+    if (targets) {
+      combatView.deactivate();manaOverlay.close();
+      targetView.render(decisionDock,targets,name=>cardStore.get(name),choice=>void submitChoice(choice));
+      return;
+    }
+    targetView.deactivate();decisionDock.classList.remove('table-decision-dock--targets');
     if (combat) {
       manaOverlay.close();
       combatView.render(decisionDock,combat,name=>cardStore.get(name),choice=>void submitChoice(choice));
       return;
     }
-    combatView.deactivate();decisionDock.classList.remove('table-decision-dock--combat');
+    combatView.deactivate();targetView.deactivate();decisionDock.classList.remove('table-decision-dock--combat','table-decision-dock--targets');
 
     // mana_payment (V2e.5.1): a dedicated visual overlay entirely replaces the generic decision
     // buttons — never the old "[Mountain produces R]"-style dock list.
@@ -1314,7 +1330,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
       cancelPresentation();showEndScreen();
       await renderEnd(state);
     } catch (error) {
-      combatView.deactivate();decisionDock.classList.remove('table-decision-dock--combat');lastDecisionKey='';
+      combatView.deactivate();targetView.deactivate();decisionDock.classList.remove('table-decision-dock--combat','table-decision-dock--targets');lastDecisionKey='';
       decisionDock.textContent = error instanceof Error ? error.message : "Could not end the playtest.";
       pollTimer = setInterval(() => void poll(), POLL_INTERVAL_MS);
     }

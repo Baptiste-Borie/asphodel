@@ -36,4 +36,4 @@
 @media(max-height:700px) { .table-root .table-decision-dock.table-decision-dock--combat { bottom:12px;max-height:60vh; } .combat-flow { max-height:calc(60vh - 30px); } }
 @media(max-width:650px) { .combat-columns { grid-template-columns:minmax(0,1fr); } .combat-creatures { max-height:110px; } }
 
-.table-decision-dock--combat::before { display:none; }
+.table-root .table-decision-dock.table-decision-dock--combat::before { display:none; }

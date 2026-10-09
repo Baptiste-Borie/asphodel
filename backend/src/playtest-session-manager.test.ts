@@ -853,3 +853,24 @@ it('combat DTO retains every public attacker, including attackers with no legal 
     if(state.pendingDecision?.rendered.kind==='menu')assert.equal(state.pendingDecision.rendered.items.length,2,'an unoffered attacker never creates an invented block choice');
   });
 });
+
+it('target DTO survives a reconnect with public metadata, count and only current exact target choices',async()=>{
+  await withTempReports(async reportsRoot=>{
+    const obs=humanObservation();
+    const decision:Extract<Decision,{type:'target_selection'}>={decisionId:'target-dto',type:'target_selection',playerId:'player-1',context:{...obs.game,stackSize:0},
+      source:{actionId:null,cardRef:'human-card',cardName:HUMAN_HAND_CARD,abilityText:'Choose a public target'},prompt:'Choose a target',minTargets:0,maxTargets:2,selectedTargetIds:['previous-target-id'],canFinish:true,finishTargetId:'finish-current',
+      targets:[{targetId:'player-current',type:'player',label:'Opponent',playerId:'player-2',cardRef:null,stackRef:null,name:'External Player 2',zone:null,controllerId:'player-2',hidden:false,faceDown:false}]};
+    const {client}=scriptedTransport([()=>({sessionId:'s',status:'waiting_for_decision',progress,forgeAiStrategicFallbacks:[],observation:obs,pendingDecision:decision})]);
+    const manager=new PlaytestSessionManager({createBridge:fakeBridge,createClient:()=>client,reportsRoot});
+    const started=await manager.start({humanDeck:{type:'fixture'},asphodelDeck:{type:'fixture'}});
+    try{
+      for(let i=0;i<100&&!manager.getState(started.sessionId).pendingDecision;i++)await new Promise(r=>setTimeout(r,2));
+      const first=manager.getState(started.sessionId).pendingDecision!;
+      assert.deepEqual(manager.getActiveState()!.pendingDecision,first);
+      if(first.rendered.kind!=='menu')throw Error('Expected menu');
+      assert.equal(first.rendered.targeting!.selectedCount,1);assert.equal(first.rendered.targeting!.sourceName,HUMAN_HAND_CARD);
+      assert.deepEqual(first.rendered.items.map(item=>'choice' in item.choice?item.choice.choice:null),['player-current','finish-current']);
+      assert.equal(first.rendered.items[0]!.target!.kind,'player');assert.equal(first.selectedCardRefs,null);assert.ok(!JSON.stringify(first).includes('previous-target-id'));
+    }finally{await manager.close();}
+  });
+});

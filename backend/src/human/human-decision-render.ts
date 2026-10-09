@@ -10,8 +10,26 @@ import type { AgentChoice } from "../agent/baseline-agent.js";
 import type { EvaluationDiagnostics } from "../agent/evaluation-diagnostics.js";
 import { resolvePlayerPresentation } from "./player-presentation.js";
 
+/** Observer-safe target details copied from the engine; IDs remain exact choices. */
+export interface TargetPresentation {
+  kind: 'card' | 'player' | 'spell' | 'finish';
+  name: string | null;
+  concealed: boolean;
+  zone: string | null;
+  controllerId: string | null;
+  stackRef: string | null;
+}
+export interface TargetSelectionPresentation {
+  sourceName: string | null;
+  abilityText: string | null;
+  minTargets: number;
+  maxTargets: number;
+  selectedCount: number;
+}
+
 /** One selectable line in a rendered decision. `choice` is a complete, already-legal answer. */
 export interface MenuItem {
+  target?: TargetPresentation;
   /** Combat option metadata copied from Forge; presentation never parses a label into a choice. */
   combat?: { operation: 'add' | 'remove' | 'finish' | 'order'; relatedRef: string | null };
   presentationName?: string;
@@ -42,7 +60,7 @@ export type DecisionPrompt =
   | { kind: "opening_hand"; title: string; items: MenuItem[] }
   | { kind: "card_picker"; title: string; items: MenuItem[]; selected: string[]; minSelections: number; maxSelections: number }
 
-  | { kind: "menu"; title: string; items: MenuItem[] }
+  | { kind: "menu"; title: string; items: MenuItem[]; targeting?: TargetSelectionPresentation }
   | { kind: "value"; title: string; decisionId: string; min: number; max: number; suggested: number[] }
   /**
    * V2g Physical Companion: declare which real physical card(s) correspond to a hidden-zone event
@@ -156,16 +174,34 @@ export function describeDecision(observation: AgentObservation, d: ForgePendingE
       return { kind: "menu", title: "Choose an action", items };
     }
     case "target_selection": {
-      const items = d.targets.map((t): MenuItem => ({
-        label: t.type === "player"
-          ? playerTargetLabel(observation, t.playerId, t.name)
-          : `Target ${describeCard(cardMap(observation).get(t.cardRef ?? ""), t.cardRef)}`,
-        choice: { decisionId: d.decisionId, kind: "target", choice: t.targetId, reason },
-        cardRef: t.type === "card" ? t.cardRef : null,
-        ...(t.type === "player" ? { playerId: t.playerId } : {}),
-      }));
-      if (d.canFinish && d.finishTargetId) items.push({ label: "Finish selecting targets", choice: { decisionId: d.decisionId, kind: "target", choice: d.finishTargetId, reason } });
-      return { kind: "menu", title: d.prompt || "Choose a target", items };
+      const observed = cardMap(observation);
+      const items = d.targets.map((t): MenuItem => {
+        const card = t.cardRef ? observed.get(t.cardRef) : undefined;
+        const stack = t.stackRef ? observation.stack.find(item => item.stackRef === t.stackRef) : undefined;
+        const concealed = t.hidden || t.faceDown || Boolean(card?.hidden || card?.faceDown || stack?.hidden || stack?.faceDown);
+        const name = concealed ? null : t.type === 'player' ? t.name : (t.name ?? (t.type === 'spell' ? stack?.sourceCardName : card?.name) ?? null);
+        return {
+          label: t.type === 'player' ? playerTargetLabel(observation, t.playerId, t.name)
+            : concealed ? 'Target hidden card or spell' : `Target ${name ?? 'unidentified object'}`,
+          choice: { decisionId: d.decisionId, kind: 'target', choice: t.targetId, reason },
+          // A spell on the stack is not a board action on its source permanent.
+          cardRef: t.type === 'card' ? t.cardRef : null,
+          ...(t.type === 'player' ? { playerId: t.playerId } : {}),
+          target: {kind: t.type, name, concealed, zone: t.zone, controllerId: t.controllerId, stackRef: t.stackRef},
+        };
+      });
+      if (d.canFinish && d.finishTargetId) items.push({ label: 'Finish selecting targets',
+        choice: { decisionId: d.decisionId, kind: 'target', choice: d.finishTargetId, reason },
+        target: {kind: 'finish', name: null, concealed: false, zone: null, controllerId: null, stackRef: null} });
+      const sourceCard = observed.get(d.source.cardRef);
+      const sourceStack = observation.stack.find(item => item.sourceCardRef === d.source.cardRef);
+      const sourceVisible = Boolean((sourceCard && !sourceCard.hidden && !sourceCard.faceDown && sourceCard.name)
+        || (sourceStack && !sourceStack.hidden && !sourceStack.faceDown && sourceStack.sourceCardName));
+      return { kind: 'menu', title: d.prompt || 'Choose a target', items, targeting: {
+        sourceName: sourceVisible ? d.source.cardName : null,
+        abilityText: sourceVisible ? d.source.abilityText : null,
+        minTargets: d.minTargets, maxTargets: d.maxTargets, selectedCount: d.selectedTargetIds.length,
+      } };
     }
     case "mode_selection": {
       const items = d.modes.map((m): MenuItem => ({ label: m.description ?? m.label, choice: { decisionId: d.decisionId, kind: "mode", choice: m.modeId, reason } }));

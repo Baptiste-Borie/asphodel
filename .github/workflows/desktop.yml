@@ -57,7 +57,8 @@ jobs:
       - run: npm --prefix desktop run build
       - run: xvfb-run -a npm --prefix desktop run smoke:art-headers
       - run: xvfb-run -a npm --prefix desktop run smoke:window
-      - run: xvfb-run -a npm --prefix desktop run smoke:combat
+      - run: xvfb-run -a -s "-screen 0 1600x1000x24" npm --prefix desktop run smoke:combat
+      - run: xvfb-run -a -s "-screen 0 1600x1000x24" npm --prefix desktop run smoke:targets
       - run: npm --prefix desktop run smoke:runtime
       - run: xvfb-run -a npm --prefix desktop run smoke
       - working-directory: desktop

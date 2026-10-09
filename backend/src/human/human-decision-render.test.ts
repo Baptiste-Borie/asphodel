@@ -326,3 +326,19 @@ it('combat metadata never synthesizes a finish option absent from Forge',()=>{
   const prompt=describeDecision(observation(),d);assert.equal(prompt.kind,'menu');if(prompt.kind!=='menu')return;
   assert.equal(prompt.items.length,1);assert.equal(prompt.items.some(i=>i.combat?.operation==='finish'),false);
 });
+
+it('target presentation relays bounds/count and exact stack/finish choices without a source board action',()=>{
+  const obs=observation();obs.stack=[{stackRef:'stack-1',position:0,sourceCardRef:'source',sourceCardName:'Counterspell',controllerId:'player-1',description:'Counter target spell',faceDown:false,hidden:false}];
+  const decision:Extract<Decision,{type:'target_selection'}>={decisionId:'targets',type:'target_selection',playerId:'player-1',context:{...obs.game,stackSize:1},source:{actionId:null,cardRef:'source',cardName:'Counterspell',abilityText:'Counter target spell'},prompt:'Choose a spell',minTargets:0,maxTargets:2,selectedTargetIds:['previous-step-id'],canFinish:true,finishTargetId:'stop',targets:[{targetId:'spell-choice',type:'spell',label:'Spell',playerId:null,cardRef:'source',stackRef:'stack-1',name:'Counterspell',zone:'stack',controllerId:'player-1',faceDown:false,hidden:false}]};
+  const prompt=describeDecision(obs,decision);if(prompt.kind!=='menu')throw Error('Expected menu');
+  assert.deepEqual(prompt.targeting,{sourceName:'Counterspell',abilityText:'Counter target spell',minTargets:0,maxTargets:2,selectedCount:1});
+  assert.equal(prompt.items[0]!.cardRef,null);assert.equal(prompt.items[0]!.target!.stackRef,'stack-1');assert.equal(prompt.items[1]!.target!.kind,'finish');
+  for(const item of prompt.items)assert.doesNotThrow(()=>validateChoice(decision,item.choice));
+  decision.canFinish=false;assert.equal((describeDecision(obs,decision) as typeof prompt).items.length,1,'no synthetic finish even when the minimum is reached');
+});
+it('concealed target and source names/text stay out of the entire rendered prompt',()=>{
+  const obs=observation();const hidden={cardRef:'hidden',name:'Secret card',zone:'battlefield' as const,ownerId:'player-2',controllerId:'player-2',faceDown:true,hidden:false,tapped:false,summoningSick:false,counters:null,power:null,toughness:null,typeLine:null};obs.players[1]!.battlefield=[hidden];
+  const decision:Extract<Decision,{type:'target_selection'}>={decisionId:'targets',type:'target_selection',playerId:'player-1',context:{...obs.game,stackSize:0},source:{actionId:null,cardRef:'hidden',cardName:'Secret card',abilityText:'Secret ability'},prompt:'Choose a target',minTargets:1,maxTargets:1,selectedTargetIds:[],canFinish:false,finishTargetId:null,targets:[{targetId:'hidden-choice',type:'card',label:'Secret card',playerId:null,cardRef:'hidden',stackRef:null,name:'Secret card',zone:'battlefield',controllerId:'player-2',faceDown:false,hidden:false}]};
+  const prompt=describeDecision(obs,decision);if(prompt.kind!=='menu')throw Error('Expected menu');
+  assert.equal(prompt.targeting!.sourceName,null);assert.equal(prompt.targeting!.abilityText,null);assert.equal(prompt.items[0]!.target!.name,null);assert.equal(prompt.items[0]!.target!.concealed,true);assert.ok(!JSON.stringify(prompt).includes('Secret'));
+});

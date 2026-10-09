@@ -1,4 +1,4 @@
-# Asphodel Desktop 0.1.17
+# Asphodel Desktop 0.1.18
 
 Desktop wrapper around the existing TypeScript/Vite frontend, Node backend and pinned Forge bridge. No stack migration. Launch Asphodel, choose a saved deck, play locally, close the application. The packaged app includes Chromium/Node, Java and Forge's resources; no terminal, Node installation, Java installation or remote server is needed to run it.
 
@@ -10,13 +10,13 @@ Close Asphodel, then from the repository root:
 npm --prefix desktop run install:local
 ```
 
-This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.17-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
+This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.18-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
 
 Afterwards, open **Asphodel** from Ubuntu's application menu and pin it to your dock if desired. The package installs the app in `/opt/Asphodel`, the desktop entry `Asphodel.desktop`, the existing icon and the `asphodel` command. This launch uses the installed app, independent of the checkout, and needs no local server command. The normal desktop settings, fullscreen preference and Quitter button remain available.
 
 To update after a new patch/pull, close Asphodel and run the same command again. Decks, cached images, drafts and display settings remain in the existing `~/.config/Asphodel` profile; the package contains no home-directory files. Package removal (`sudo apt-get remove asphodel-desktop`) leaves this profile in place. Backup/restore is available in settings; abrupt-crash recovery still depends on a persisted draft.
 
-To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.17-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
+To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.18-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
 
 ## Automated Linux packages
 
@@ -312,7 +312,15 @@ This patch adds optional presentation fields to existing DTOs, with no database 
 npm --prefix frontend run build
 npm --prefix desktop run smoke:combat
 # For headless CI with a virtual display:
-xvfb-run -a npm --prefix desktop run smoke:combat
+xvfb-run -a -s "-screen 0 1600x1000x24" npm --prefix desktop run smoke:combat
 ```
 
 The Desktop workflow includes this check. It checks UI behavior, not a real Forge match; use a real combat in the installed application to validate the whole engine-to-window interaction.
+
+## Readable target choices (patch 15 / 0.1.18)
+
+Digital and Physical target selection share a temporary panel showing the public source spell/ability, the engine prompt, the number of targets already chosen and the engine's bounds. Every offered card, player and spell/ability remains available, grouped by zone; same-name objects have distinct entries. Graveyard/hand targets retain their location, player choices show seats and life, and stack choices show their exact instance position rather than acting on a source permanent. Public target identities absent from the observation are usable; concealed names, artwork and stats stay hidden. Artwork failures leave text intact.
+
+For longer lists, **Trouver une cible** filters the displayed options locally. Choosing a target sends its exact current Forge choice immediately. Finish appears only when Forge supplies it; an optional zero-target selection says **Terminer sans choisir de cible**. Reaching the engine's maximum may continue automatically without a Finish step. The count is authoritative; this UI does not fabricate the identities of previously chosen targets from obsolete target IDs. Existing highlighted board/hand/player shortcuts remain available. Older backends or incomplete presentation metadata fall back to the generic decision menu.
+
+No database migration, runtime dependency, Java source or Forge JAR change. The native **smoke:targets** check uses the production window/compiled frontend with simulated public DTOs, not real Forge gameplay. It covers Digital/Physical, graveyard duplicates, local search, keyboard selection, multi-step count/Finish, player destinations, distinct stack instances, hidden identities, restoration of the normal decision dock and a visible Finish at 1366 × 768. Run after building the frontend, with a display or `xvfb-run -a -s "-screen 0 1600x1000x24" npm --prefix desktop run smoke:targets`. Real targeting effects and counterspells should also be exercised in a local match.

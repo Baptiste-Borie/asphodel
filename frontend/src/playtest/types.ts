@@ -111,7 +111,25 @@ export type AgentChoice = { decisionId: string; reason: string } & (
   | { kind: "physical_identity"; declaredNames: string[] }
 );
 
+/** Observer-safe target details copied from the engine; IDs remain exact choices. */
+export interface TargetPresentation {
+  kind: 'card' | 'player' | 'spell' | 'finish';
+  name: string | null;
+  concealed: boolean;
+  zone: string | null;
+  controllerId: string | null;
+  stackRef: string | null;
+}
+export interface TargetSelectionPresentation {
+  sourceName: string | null;
+  abilityText: string | null;
+  minTargets: number;
+  maxTargets: number;
+  selectedCount: number;
+}
+
 export interface MenuItem {
+  target?: TargetPresentation;
   /** Combat option metadata copied from Forge; presentation never parses a label into a choice. */
   combat?: { operation: 'add' | 'remove' | 'finish' | 'order'; relatedRef: string | null };
   presentationName?: string;
@@ -143,7 +161,7 @@ export type DecisionPrompt =
   | { kind: "opening_hand"; title: string; items: MenuItem[] }
   | { kind: "card_picker"; title: string; items: MenuItem[]; selected: string[]; minSelections: number; maxSelections: number }
 
-  | { kind: "menu"; title: string; items: MenuItem[] }
+  | { kind: "menu"; title: string; items: MenuItem[]; targeting?: TargetSelectionPresentation }
   | { kind: "value"; title: string; decisionId: string; min: number; max: number; suggested: number[] }
   /**
    * V2g: the human declares which real card(s) correspond to a hidden-zone event — draw (including
