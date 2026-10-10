@@ -1,7 +1,7 @@
 {
   "name": "asphodel-desktop",
   "productName": "Asphodel",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "private": true,
   "type": "module",
   "main": "src/main.mjs",
@@ -23,7 +23,8 @@
     "smoke:combat": "node scripts/combat-smoke.mjs",
     "smoke:targets": "node scripts/target-smoke.mjs",
     "smoke:art-headers": "electron scripts/art-header-smoke.mjs",
-    "smoke:runtime": "node scripts/runtime-smoke.mjs"
+    "smoke:runtime": "node scripts/runtime-smoke.mjs",
+    "smoke:builder": "node scripts/builder-smoke.mjs"
   },
   "engines": {
     "node": ">=22.16.0"

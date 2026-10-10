@@ -8,6 +8,8 @@ import { createNote, detachNote, notePosition, NOTE_WIDTH, NOTE_HEIGHT } from '.
 import './deck-table.css';
 import { tagBadges, roleSummary } from './deck-tags';
 import './deck-tags.css';
+import '../styles/asphodel-theme.css';
+import './builder-theme.css';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 type Options = { canTest?: boolean; history: ProjectHistory; changed: () => void; inspect: (card: LabCard, entryId: string) => void; legacy: () => void; library: () => void; tags?: (names: string[]) => void; commanderAnalysis?: () => string };
@@ -27,17 +29,18 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
   let space = false;
   let disposed = false;
   let gesture: { pointer: number; start: Point; camera: Point; positions: { point: Point; x: number; y: number }[]; pan: boolean; lasso: boolean; additive: boolean; cards: boolean; moved: boolean; last: Point; selection: string[]; raised: boolean; note?: string; pile?: string; resize?: { zone: Zone; width: number; height: number } } | undefined;
-  root.innerHTML = `<div class="dt-heading"><h2 title="${esc(sheet.name)}">${esc(sheet.name)}</h2><span data-dt-count></span>
-    <details class="dt-create"><summary>+ Zone</summary><form class="dt-zone-form"><label for="dt-zone-name">Nouvelle zone</label><input id="dt-zone-name" aria-label="New zone name" placeholder="Ramp, Draw, À tester…" maxlength="60" required><button>Create zone</button><small>Le contour s’adapte aux cartes déposées.</small></form></details>
-    <button data-dt="note">+ Note</button><div class="dt-history"><button type="button" data-history="undo" aria-label="Annuler">↶</button><button type="button" data-history="redo" aria-label="Rétablir">↷</button></div>
-    <button data-dt="search" aria-expanded="false">Search</button><button data-dt="analysis" aria-expanded="false">Analyse</button>${options.canTest ? '<button data-action="test-deck">Tester ce deck</button>' : ''}<button data-action="reviews">Mes essais</button><button data-action="versions">Versions</button><button data-action="opening-hands">Mains de départ</button>
-    <details class="dt-menu"><summary aria-label="Table tools">•••</summary><div class="dt-menu-content"><button data-action="export-deck">Exporter le deck</button>${window.asphodelDesktop ? '<button data-action="prepare-artwork">Préparer hors ligne</button>' : ''}<button data-action="manage-tags">Gérer les tags</button><button data-dt="library">Tous les decks</button><button data-dt="legacy">Builder V1</button><button data-action="selection">Selection</button><button data-dt="deck">Center deck</button><button data-dt="pan" aria-pressed="false">Pan tool</button><p>Ctrl / Espace + glisser : déplacer la vue<br>Shift + clic : sélectionner plusieurs cartes<br>Créer une pile depuis la sélection<br>Glisser une carte hors d’une pile : l’extraire<br>Poignée ↘ : redimensionner une zone<br>Verrouiller une zone fixe son cadre, pas ses cartes<br>Glisser sur le vide : sélectionner une zone<br>Échap : annuler le geste en cours<br>Ctrl+Z : annuler · Ctrl+Maj+Z / Ctrl+Y : rétablir<br>Molette : zoom · F : tout voir<br>Double clic / I : inspecter une carte<br>Notes liées : suivent leur carte<br>Échap dans une note : annuler la saisie</p></div></details></div>
-    <div class="dt-body"><div class="dt-canvas" tabindex="0" aria-label="Deck table. Drag cards to move. Shift click to select several. Control or Space drag to pan. Wheel to zoom."><div class="dt-world"><div class="dt-zones"></div><div class="dt-cards"></div><div class="dt-piles"></div><div class="dt-notes"></div></div><div class="dt-lasso" hidden></div><p class="dt-empty" hidden>Room to think. Search for cards and place your first ideas.</p></div>
-    <aside class="dt-panel dt-search" hidden><header><h3>Find cards</h3><button data-dt="search" aria-label="Close search">✕</button></header><form class="dt-search-form"><input aria-label="Table card search" placeholder="Name or Oracle text…"><label><input type="checkbox" name="advanced"> Advanced syntax</label><button>Search catalog</button></form><p class="dt-search-status" role="status"></p><div class="dt-search-results"></div><button data-dt="more" hidden>Load more</button><small>Click or drag a result onto the table. It starts as a candidate.</small></aside>
-    <aside class="dt-panel dt-analysis" hidden aria-label="Deck analysis"><header><h3>Analyse</h3><button data-dt="analysis" aria-label="Close analysis">✕</button></header><div class="dt-analysis-content"></div></aside></div>
-    <div class="dt-tools"><button data-dt="fit">Show all · F</button><button data-dt="out" aria-label="Zoom out">−</button><span data-dt-zoom></span><button data-dt="in" aria-label="Zoom in">+</button></div>
-    <div class="dt-selection" hidden><span data-dt-selected>0 selected</span><label class="dt-quantity">Quantité <input type="number" min="1" max="999" step="1" data-dt-quantity aria-label="Quantité de la carte sélectionnée"></label><button data-dt="tags">Tags</button><button data-dt="inspect">Inspecter</button><button data-dt="card-note">+ Note liée</button><button data-dt="exclude">Set aside</button><button data-dt="include">Add to deck</button><details class="dt-new-pile"><summary>Créer une pile</summary><form class="dt-pile-form"><label for="dt-pile-name">Nom de la pile</label><input id="dt-pile-name" maxlength="60" value="Nouvelle pile" required><button>Regrouper</button></form></details><select data-add-to-pile aria-label="Ajouter la sélection à une pile"></select><button data-dt="clear" aria-label="Clear selection">✕</button></div>
-    <footer class="dt-footer"><span>Ctrl + glisser : déplacer la vue · F : tout voir</span><span data-dt-storage role="status"></span><span data-save-status role="status"></span><button data-action="retry-save" hidden>Réessayer</button></footer>`;
+  root.lang = 'fr';
+  root.innerHTML = `<header class="dt-heading">
+    <div class="dt-title"><span class="dt-eyebrow">BUILDER</span><h2 title="${esc(sheet.name)}">${esc(sheet.name)}</h2></div>
+    <nav class="dt-primary-tools" aria-label="Actions du deck"><button data-dt="library" aria-label="Revenir à la bibliothèque" title="Revenir à la bibliothèque">← <span>Bibliothèque</span></button><button class="dt-search-toggle" data-dt="search" aria-label="Rechercher des cartes" aria-expanded="false" aria-controls="dt-search-panel">⌕ <span>Rechercher</span></button><button data-dt="analysis" aria-expanded="false" aria-controls="dt-analysis-panel">Analyse</button>${options.canTest ? '<button class="dt-test" data-action="test-deck">Tester <span class="dt-test-caption">ce deck</span> <span aria-hidden="true">↗</span></button>' : ''}
+    <details class="dt-menu"><summary aria-label="Autres actions du deck">•••</summary><div class="dt-menu-content"><h3>Faire évoluer le deck</h3><button data-action="versions">Versions et comparaison</button><button data-action="reviews">Mes essais</button><button data-action="opening-hands">Mains de départ</button><h3>Organiser et partager</h3><button data-action="manage-tags">Gérer les tags</button><button data-action="export-deck">Exporter le deck</button>${window.asphodelDesktop ? '<button data-action="prepare-artwork">Préparer hors ligne</button>' : ''}<button data-action="selection">Réserve de cartes</button><button data-dt="legacy">Ouvrir le builder classique</button></div></details></nav></header>
+    <div class="dt-workbar"><div class="dt-making-tools"><details class="dt-create"><summary>+ Zone</summary><form class="dt-zone-form"><label for="dt-zone-name">Nouvelle zone</label><input id="dt-zone-name" aria-label="Nom de la nouvelle zone" placeholder="Ramp, Pioche, À tester…" maxlength="60" required><button>Créer la zone</button><small>Le contour s’adapte aux cartes déposées.</small></form></details><button data-dt="note">+ Note</button><span class="dt-separator" aria-hidden="true"></span><div class="dt-history"><button type="button" data-history="undo" aria-label="Annuler" title="Annuler · Ctrl+Z">↶</button><button type="button" data-history="redo" aria-label="Rétablir" title="Rétablir · Ctrl+Maj+Z">↷</button></div></div><div class="dt-deck-count" data-dt-count aria-label="Nombre de cartes"></div></div>
+    <div class="dt-body"><div class="dt-canvas" tabindex="0" aria-label="Table du deck. Glisser les cartes pour les déplacer. Majuscule et clic pour sélectionner plusieurs cartes. Contrôle ou Espace et glisser pour déplacer la vue. Molette pour zoomer."><div class="dt-world"><div class="dt-zones"></div><div class="dt-cards"></div><div class="dt-piles"></div><div class="dt-notes"></div></div><div class="dt-lasso" hidden></div><div class="dt-empty" hidden><span class="dt-eyebrow">TABLE VIDE</span><h3>Construire ton deck.</h3><p>Recherche une carte pour poser ta première idée.<br>Les nouvelles cartes arrivent comme candidates.</p><button data-dt="search">Rechercher des cartes</button></div></div>
+    <aside id="dt-search-panel" class="dt-panel dt-search" hidden aria-label="Recherche de cartes"><header><div><span class="dt-eyebrow">EXPLORER</span><h3>Trouver une carte</h3></div><button data-dt="search" aria-label="Fermer la recherche">✕</button></header><form class="dt-search-form"><label class="dt-search-label">Nom ou texte de carte<input aria-label="Recherche sur la table" placeholder="Nom, capacité, idée…"></label><label><input type="checkbox" name="advanced"> Syntaxe avancée Scryfall</label><button>Rechercher dans le catalogue</button></form><p class="dt-search-status" role="status"></p><div class="dt-search-results"></div><button data-dt="more" hidden>Afficher la suite</button><small>Cliquer ou glisser une carte la pose sur la table comme candidate. Inclure au deck reste une action explicite.</small></aside>
+    <aside id="dt-analysis-panel" class="dt-panel dt-analysis" hidden aria-label="Analyse du deck"><header><div><span class="dt-eyebrow">COMPRENDRE</span><h3>Analyse du deck</h3></div><button data-dt="analysis" aria-label="Fermer l’analyse">✕</button></header><div class="dt-analysis-content"></div></aside>
+    <div class="dt-tools"><button data-dt="fit" title="Cadrer toute la table · F">Tout voir <kbd>F</kbd></button><button data-dt="deck" title="Cadrer uniquement les cartes du deck">Voir le deck</button><span class="dt-separator" aria-hidden="true"></span><button data-dt="out" aria-label="Dézoomer">−</button><span data-dt-zoom></span><button data-dt="in" aria-label="Zoomer">+</button><button data-dt="pan" aria-label="Déplacer la vue" aria-pressed="false" title="Outil déplacement de la vue">✥</button></div></div>
+    <div class="dt-selection" aria-label="Actions de la sélection"><span class="dt-selection-hint">Clic : sélectionner · Maj + clic : sélection multiple · Glisser : déplacer</span><span data-dt-selected></span><label class="dt-quantity">Quantité <input type="number" min="1" max="999" step="1" data-dt-quantity aria-label="Quantité de la carte sélectionnée"></label><button data-dt="include">Inclure au deck</button><button data-dt="exclude">Mettre de côté</button><span class="dt-separator" aria-hidden="true"></span><button data-dt="inspect">Inspecter</button><button data-dt="tags">Tags</button><button data-dt="card-note">+ Note liée</button><details class="dt-new-pile"><summary>Créer une pile</summary><form class="dt-pile-form"><label for="dt-pile-name">Nom de la pile</label><input id="dt-pile-name" maxlength="60" value="Nouvelle pile" required><button>Regrouper</button></form></details><select data-add-to-pile aria-label="Ajouter la sélection à une pile"></select><button data-dt="clear" aria-label="Effacer la sélection" title="Effacer la sélection · Échap">✕</button></div>
+    <footer class="dt-footer"><details class="dt-help"><summary>Gestes et raccourcis <span aria-hidden="true">?</span></summary><div><h3>Une table libre</h3><p><kbd>Ctrl</kbd> ou <kbd>Espace</kbd> + glisser : déplacer la vue<br><kbd>Maj</kbd> + clic : sélectionner plusieurs cartes<br>Glisser sur le vide : sélectionner un groupe<br>Créer une pile depuis la sélection<br>Glisser une carte hors d’une pile : l’extraire<br>Poignée ↘ : redimensionner une zone<br>Verrouiller une zone fixe son cadre, pas ses cartes<br><kbd>Échap</kbd> : annuler le geste ou fermer un panneau<br><kbd>Ctrl+Z</kbd> : annuler · <kbd>Ctrl+Maj+Z</kbd> : rétablir<br>Molette : zoom · <kbd>F</kbd> : tout voir<br>Double clic / <kbd>I</kbd> : inspecter une carte<br>Les notes liées suivent leur carte<br><kbd>Échap</kbd> dans une note : annuler la saisie</p></div></details><span data-dt-storage></span><span data-save-status role="status"></span><button data-action="retry-save" hidden>Réessayer</button></footer>`;
   const get = <T extends HTMLElement = HTMLElement>(s: string) => root.querySelector<T>(s)!;
   const canvas = get('.dt-canvas');
   let panTool = false;
@@ -46,7 +49,23 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
   function persist() {
     sheet.workspace = workspace;
     options.changed();
-    get('[data-dt-storage]').textContent = 'Table et deck enregistrés ensemble';
+    get('[data-dt-storage]').textContent = 'Sauvegarde automatique';
+  }
+  function closePanels() {
+    for (const name of ['search','analysis']) {
+      get(`.dt-${name}`).hidden = true;
+      get(`[data-dt=${name}][aria-controls]`).setAttribute('aria-expanded','false');
+    }
+  }
+  function togglePanel(name: 'search' | 'analysis') {
+    const panel = get(`.dt-${name}`), open = panel.hidden;
+    closePanels();
+    panel.hidden = !open;
+    get(`[data-dt=${name}][aria-controls]`).setAttribute('aria-expanded',String(open));
+    if (open) {
+      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) panel.animate([{opacity:0,transform:'translateX(8px)'},{opacity:1,transform:'translateX(0)'}],{duration:150,easing:'cubic-bezier(.2,.7,.2,1)'});
+      panel.querySelector<HTMLElement>('input,button')?.focus();
+    } else canvas.focus();
   }
   function camera() {
     const c = workspace.camera;
@@ -61,8 +80,9 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
       const yes = selected.has(el.dataset.dtCard!);
       el.classList.toggle('is-selected', yes); el.setAttribute('aria-pressed', String(yes));
     }
-    get('.dt-selection').hidden = selected.size === 0;
-    get('[data-dt-selected]').textContent = `${selected.size} selected`;
+    get('.dt-selection').classList.toggle('has-selection', selected.size > 0);
+    get('.dt-selection-hint').hidden = selected.size > 0;
+    get('[data-dt-selected]').textContent = selected.size === 1 ? rows.find(r => selected.has(r.placement.id))?.entry.card.name ?? '1 carte' : `${selected.size} cartes sélectionnées`;
     get('.dt-new-pile').hidden = selected.size < 2;
     get<HTMLButtonElement>('[data-dt=inspect]').disabled = selected.size !== 1;
     get<HTMLButtonElement>('[data-dt=card-note]').disabled = selected.size !== 1;
@@ -78,17 +98,17 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
   }
   function analysis() {
     const stats = deckStatistics(sheet.groups);
-    get('[data-dt-count]').textContent = `${stats.total} / 100 in deck · ${rows.filter(r => r.group.maybeboard).reduce((n,r) => n+r.entry.quantity,0)} aside`;
+    get('[data-dt-count]').innerHTML = `<span><strong>${stats.total}<small> / 100</small></strong> dans le deck</span><span><strong>${rows.filter(r => r.group.maybeboard).reduce((n,r) => n+r.entry.quantity,0)}</strong> de côté</span>`;
     const list = (pairs: { name: string; count: number }[]) => pairs.map(p => `<div><span>${esc(p.name)}</span><strong>${p.count}</strong></div>`).join('');
-    get('.dt-analysis-content').innerHTML = `${options.commanderAnalysis?.() ?? ''}<p>${stats.total} cards in deck · candidates and cuts excluded</p><h4>Types</h4><div class="dt-stat-list">${list(stats.types)}</div><h4>Mana curve · nonlands</h4><div class="lab-curve">${stats.curve.map((n,i) => `<div><span>${n}</span><i style="height:${n/Math.max(...stats.curve,1)*100}px"></i><label>${i===7?'7+':i}</label></div>`).join('')}</div><p>Average mana value: ${stats.spells ? stats.average.toFixed(2) : '—'}</p><h4>Color identity · overlaps</h4><div class="dt-stat-list">${list(['W','U','B','R','G'].map(name => ({name,count:stats.entries.filter(e=>e.card.color_identity.includes(name)).reduce((n,e)=>n+e.quantity,0)})))}</div><h4>Catégories de rangement</h4><div class="dt-stat-list">${list(sheet.groups.filter(g=>!g.maybeboard).map(g=>({name:g.name,count:g.entries.reduce((n,e)=>n+e.quantity,0)})))}</div>${roleSummary(sheet)}<p>Les zones et catégories ne changent pas les tags.</p>`;
+    get('.dt-analysis-content').innerHTML = `${options.commanderAnalysis?.() ?? ''}<p>${stats.total} cartes dans le deck · candidats et coupes exclus</p><h4>Types</h4><div class="dt-stat-list">${list(stats.types)}</div><h4>Courbe de mana · hors terrains</h4><div class="lab-curve">${stats.curve.map((n,i) => `<div><span>${n}</span><i style="height:${n/Math.max(...stats.curve,1)*100}px"></i><label>${i===7?'7+':i}</label></div>`).join('')}</div><p>Valeur de mana moyenne : ${stats.spells ? stats.average.toFixed(2) : '—'}</p><h4>Identité couleur · recouvrements</h4><div class="dt-stat-list">${list(['W','U','B','R','G'].map(name => ({name,count:stats.entries.filter(e=>e.card.color_identity.includes(name)).reduce((n,e)=>n+e.quantity,0)})))}</div><h4>Catégories de rangement</h4><div class="dt-stat-list">${list(sheet.groups.filter(g=>!g.maybeboard).map(g=>({name:g.name,count:g.entries.reduce((n,e)=>n+e.quantity,0)})))}</div>${roleSummary(sheet)}<p>Les zones et catégories ne changent pas les tags.</p>`;
   }
   function render() {
     rows = reconcileWorkspace(sheet, workspace);
     initializeZones(workspace, rows, fresh);
     fitZones(workspace, rows);
     for (const id of selected) if (!rows.some(r => r.placement.id === id)) selected.delete(id);
-    get('.dt-cards').innerHTML = rows.map(r => `<button class="dt-card ${r.group.maybeboard ? 'is-aside' : ''}" data-dt-card="${r.placement.id}" ${visibleInPile(workspace,r.placement.id) ? '' : 'hidden'} style="left:${r.placement.x}px;top:${r.placement.y}px;z-index:${r.placement.z}" aria-label="${esc(r.entry.card.name)} · ${r.entry.quantity} · ${r.group.maybeboard?'outside deck':'in deck'}" aria-pressed="false">${r.entry.card.image ? `<img draggable="false" src="${esc(r.entry.card.image)}" alt="${esc(r.entry.card.name)}" loading="lazy">` : `<span class="dt-fallback">${esc(r.entry.card.name)}</span>`}${tagBadges(sheet,r.entry.card.name)}<span class="dt-card-label">${esc(r.entry.card.name)}</span><span class="dt-badge">${r.entry.quantity > 1 ? `×${r.entry.quantity} · ` : ''}${r.group.maybeboard ? r.placement.cut ? 'Cut' : 'Candidate' : r.group.commander ? 'Commander' : 'In deck'}</span></button>`).join('');
-    get('.dt-zones').innerHTML = workspace.zones.map(z => `<section class="dt-zone ${z.locked?'is-locked':''} ${z.sizing==='manual'?'is-manual':''}" data-dt-zone="${z.id}" style="left:${z.x}px;top:${z.y}px;width:${z.width}px;height:${z.height}px"><header><input aria-label="Zone name" maxlength="60" value="${esc(z.name)}" ${z.locked?'readonly':''}><span data-zone-count></span><button data-zone-action="fit" data-zone="${z.id}" aria-label="Ajuster la zone ${esc(z.name)} aux cartes" title="Ajuster le cadre aux cartes" ${z.locked?'disabled':''}>↔</button><button data-zone-action="arrange" data-zone="${z.id}" aria-label="Ranger les cartes dans ${esc(z.name)}" title="Ranger en grille, sur demande" ${z.locked?'disabled':''}>▦</button><button data-zone-action="lock" data-zone="${z.id}" aria-label="${z.locked?'Déverrouiller':'Verrouiller'} la zone ${esc(z.name)}" title="${z.locked?'Déverrouiller le cadre':'Fixer le cadre ; les cartes restent libres'}" aria-pressed="${!!z.locked}">${z.locked?'🔒':'🔓'}</button><button data-delete-zone="${z.id}" aria-label="Delete zone ${esc(z.name)}" ${z.locked?'disabled':''}>×</button></header><span class="dt-zone-empty">Déposer des cartes ici</span><button class="dt-zone-resize" data-resize-zone="${z.id}" aria-label="Redimensionner la zone ${esc(z.name)}" title="Glisser pour redimensionner · flèches au clavier" ${z.locked?'disabled':''}>↘</button></section>`).join('');
+    get('.dt-cards').innerHTML = rows.map(r => `<button class="dt-card ${r.group.maybeboard ? 'is-aside' : ''}" data-dt-card="${r.placement.id}" ${visibleInPile(workspace,r.placement.id) ? '' : 'hidden'} style="left:${r.placement.x}px;top:${r.placement.y}px;z-index:${r.placement.z}" aria-label="${esc(r.entry.card.name)} · ${r.entry.quantity} · ${r.group.maybeboard?'hors du deck':'dans le deck'}" aria-pressed="false">${r.entry.card.image ? `<img draggable="false" src="${esc(r.entry.card.image)}" alt="${esc(r.entry.card.name)}" loading="lazy">` : ''}<span class="dt-fallback" ${r.entry.card.image ? 'hidden' : ''}><strong>${esc(r.entry.card.name)}</strong><small>${esc(r.entry.card.type_line)}</small><span>Illustration indisponible</span></span>${tagBadges(sheet,r.entry.card.name)}<span class="dt-card-label">${esc(r.entry.card.name)}</span><span class="dt-badge">${r.entry.quantity > 1 ? `×${r.entry.quantity} · ` : ''}${r.group.maybeboard ? r.placement.cut ? 'Écartée' : 'Candidate' : r.group.commander ? 'Commandant' : 'Dans le deck'}</span></button>`).join('');
+    get('.dt-zones').innerHTML = workspace.zones.map(z => `<section class="dt-zone ${z.locked?'is-locked':''} ${z.sizing==='manual'?'is-manual':''}" data-dt-zone="${z.id}" style="left:${z.x}px;top:${z.y}px;width:${z.width}px;height:${z.height}px"><header><input aria-label="Nom de la zone" maxlength="60" value="${esc(z.name)}" ${z.locked?'readonly':''}><span data-zone-count></span><button data-zone-action="fit" data-zone="${z.id}" aria-label="Ajuster la zone ${esc(z.name)} aux cartes" title="Ajuster le cadre aux cartes" ${z.locked?'disabled':''}>↔</button><button data-zone-action="arrange" data-zone="${z.id}" aria-label="Ranger les cartes dans ${esc(z.name)}" title="Ranger en grille, sur demande" ${z.locked?'disabled':''}>▦</button><button data-zone-action="lock" data-zone="${z.id}" aria-label="${z.locked?'Déverrouiller':'Verrouiller'} la zone ${esc(z.name)}" title="${z.locked?'Déverrouiller le cadre':'Fixer le cadre ; les cartes restent libres'}" aria-pressed="${!!z.locked}">${z.locked?'🔒':'🔓'}</button><button data-delete-zone="${z.id}" aria-label="Supprimer la zone ${esc(z.name)}" ${z.locked?'disabled':''}>×</button></header><span class="dt-zone-empty">Déposer des cartes ici</span><button class="dt-zone-resize" data-resize-zone="${z.id}" aria-label="Redimensionner la zone ${esc(z.name)}" title="Glisser pour redimensionner · flèches au clavier" ${z.locked?'disabled':''}>↘</button></section>`).join('');
     get('.dt-piles').innerHTML = (workspace.piles ?? []).map(p => {
       const members=pileRows(p,rows), total=members.reduce((n,r)=>n+r.entry.quantity,0), included=members.filter(r=>!r.group.maybeboard).reduce((n,r)=>n+r.entry.quantity,0);
       return `<header class="dt-pile" data-dt-pile="${p.id}" style="left:${p.x}px;top:${p.y}px;width:${pileBounds(p,rows).width}px;z-index:${Math.max(0,...members.map(r=>r.placement.z))}" aria-label="Pile ${esc(p.name)}"><div class="dt-pile-title"><span class="dt-pile-grip" title="Déplacer la pile">⠿</span><input aria-label="Nom de la pile ${esc(p.name)}" maxlength="60" value="${esc(p.name)}"><span title="${total} cartes, dont ${included} dans le deck">×${total}</span></div><div class="dt-pile-actions"><button data-pile-action="toggle" data-pile="${p.id}" aria-expanded="${p.expanded}">${p.expanded?'Réduire':'Déplier'}</button><button data-pile-action="select" data-pile="${p.id}" aria-label="Sélectionner la pile ${esc(p.name)}" title="Sélectionner toutes ses cartes">☷</button><button data-pile-action="dissolve" data-pile="${p.id}" title="Séparer les cartes sans les retirer du deck">Dissoudre</button></div></header>`;
@@ -177,7 +197,7 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
   }
   function addCandidate(card: LabCard, point=center(), zoneId?: string) {
     let row=rows.find(r=>r.entry.card.name===card.name);
-    if (row) { selected.clear(); selected.add(row.placement.id); selection(); get('.dt-search-status').textContent='Already on the table. Selected the existing card.'; return; }
+    if (row) { selected.clear(); selected.add(row.placement.id); selection(); get('.dt-search-status').textContent='Déjà sur la table. La carte existante a été sélectionnée.'; return; }
     edit('Ajouter un candidat', () => {
     let group=sheet.groups.find(g=>g.maybeboard && g.name==='Candidates');
     if (!group) {group={name:'Candidates',maybeboard:true,entries:[]};sheet.groups.push(group);}
@@ -195,14 +215,14 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
       searchQuery=get<HTMLInputElement>('[name=advanced]').checked ? {raw:input.value.trim()} : {query:input.value.trim()};
       results=[];get('.dt-search-results').innerHTML=''; nextOffset=null;
     }
-    get('[data-dt=more]').hidden=true; get('.dt-search-status').textContent='Searching…';
+    get('[data-dt=more]').hidden=true; get('.dt-search-status').textContent='Recherche en cours…';
     try {
       const data=await apiRequest<LabSearchResult>('/cards/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...searchQuery,offset:append?nextOffset:0,limit:24}),signal:controller.signal});
       if(disposed || controller.signal.aborted)return;
       const start=results.length; results.push(...data.cards);nextOffset=data.nextOffset;
-      get('.dt-search-results').insertAdjacentHTML('beforeend',data.cards.map((c,i)=>`<button draggable="true" data-result="${start+i}" aria-label="Place ${esc(c.name)} as candidate">${c.image?`<img src="${esc(c.image)}" alt="" loading="lazy">`:''}<span>${esc(c.name)}</span></button>`).join(''));
-      get('.dt-search-status').textContent=`${data.total} results · ${results.length} shown`; get('[data-dt=more]').hidden=nextOffset===null;
-    } catch(error) { if(!controller.signal.aborted && !disposed)get('.dt-search-status').textContent=error instanceof Error?error.message:'Search failed'; }
+      get('.dt-search-results').insertAdjacentHTML('beforeend',data.cards.map((c,i)=>`<button draggable="true" data-result="${start+i}" aria-label="Poser ${esc(c.name)} comme candidate">${c.image?`<img src="${esc(c.image)}" alt="" loading="lazy">`:''}<span>${esc(c.name)}</span></button>`).join(''));
+      get('.dt-search-status').textContent=`${data.total} résultats · ${results.length} affichés`; get('[data-dt=more]').hidden=nextOffset===null;
+    } catch(error) { if(!controller.signal.aborted && !disposed)get('.dt-search-status').textContent=error instanceof Error?error.message:'La recherche a échoué'; }
   }
   root.addEventListener('submit',e=>{
     e.preventDefault(); const form=e.target as HTMLFormElement;
@@ -239,9 +259,9 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     if(action==='inspect' && selectedRow){checkpoint();options.inspect(selectedRow.entry.card,selectedRow.placement.id);}
     if(action==='legacy')options.legacy();
     if(action==='library')options.library();
-    if(action) get<HTMLDetailsElement>('.dt-menu').open=false;
+    if(action || target.closest('.dt-menu')) get<HTMLDetailsElement>('.dt-menu').open=false;
     if(action==='fit'||action==='deck')fit(action==='deck');
-    if(action==='search'||action==='analysis') {const panel=get(`.dt-${action}`);panel.hidden=!panel.hidden;const other=action==='search'?'analysis':'search';get(`.dt-${other}`).hidden=true;get(`[data-dt=${other}]`).setAttribute('aria-expanded','false');get(`[data-dt=${action}]`).setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden)panel.querySelector<HTMLElement>('input,button')?.focus();else canvas.focus();}
+    if(action==='search'||action==='analysis') togglePanel(action);
     if(action==='pan'){panTool=!panTool;target.setAttribute('aria-pressed',String(panTool));updatePanCursor();}
     if(action==='in'||action==='out'){zoomAt(workspace.camera,{x:canvas.clientWidth/2,y:canvas.clientHeight/2},workspace.camera.zoom*(action==='in'?1.25:.8));camera();persist();}
     if(action==='clear'){selected.clear();selection();}
@@ -277,7 +297,7 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
   canvas.addEventListener('pointerdown',e=>{
     if(gesture || (e.button!==0 && e.button!==1))return;
     const target=e.target as HTMLElement;
-    if(target.closest('input,textarea,select,[data-delete-zone],[data-zone-action],[data-pile-action],[data-note-action]'))return;
+    if(target.closest('input,textarea,select,[data-dt],[data-delete-zone],[data-zone-action],[data-pile-action],[data-note-action]'))return;
     const start=local(e),pan=e.ctrlKey||space||panTool||e.button===1;
     const card=target.closest<HTMLElement>('[data-dt-card]'),zoneEl=target.closest<HTMLElement>('[data-dt-zone]'),pileEl=target.closest<HTMLElement>('[data-dt-pile]');
     const note=workspace.notes?.find(n=>n.id===target.closest<HTMLElement>('[data-note]')?.dataset.note);
@@ -304,6 +324,8 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     if(!gesture || e.pointerId!==gesture.pointer)return;const p=local(e),dx=p.x-gesture.start.x,dy=p.y-gesture.start.y;
     gesture.last=p;
     if(Math.hypot(dx,dy)>3)gesture.moved=true;
+    canvas.classList.toggle('is-gesturing',gesture.moved);
+    canvas.classList.toggle('is-panning',gesture.pan && gesture.moved);
     if(!gesture.moved)return;
     if((gesture.cards || gesture.pile) && !gesture.raised) {
       const moving=new Set(gesture.positions.map(item=>item.point));
@@ -311,6 +333,7 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
       gesture.raised=true;let z=Math.max(0,...workspace.cards.map(p=>p.z));
       for(const row of rows.filter(r=>moving.has(r.placement))){row.placement.z=++z;get(`[data-dt-card="${row.placement.id}"]`).style.zIndex=String(z);}
     }
+    for (const el of root.querySelectorAll<HTMLElement>('[data-dt-card]')) el.classList.toggle('is-moving',gesture.cards && gesture.moved && selected.has(el.dataset.dtCard!));
     if(gesture.resize){resizeZone(gesture.resize.zone,gesture.resize.width+dx/workspace.camera.zoom,gesture.resize.height+dy/workspace.camera.zoom);updateZoneCounts();}
     else if(gesture.pan){workspace.camera.x=gesture.camera.x+dx;workspace.camera.y=gesture.camera.y+dy;camera();}
     else if(gesture.lasso){const box=get('.dt-lasso');box.hidden=false;Object.assign(box.style,{left:`${Math.min(p.x,gesture.start.x)}px`,top:`${Math.min(p.y,gesture.start.y)}px`,width:`${Math.abs(dx)}px`,height:`${Math.abs(dy)}px`});}
@@ -321,6 +344,7 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     if (!gesture) return;
     const completed = gesture;
     gesture = undefined;
+    clearGestureStyles();
     if ((completed.cards || completed.pile) && completed.moved) {
       const target = zoneAt(workspace, screenToWorld(completed.last, workspace.camera));
       const moved = new Set(completed.positions.map(item => item.point));
@@ -348,9 +372,13 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
       el.style.left = `${row.placement.x}px`; el.style.top = `${row.placement.y}px`;
     }
   }
+  function clearGestureStyles() {
+    canvas.classList.remove('is-gesturing','is-panning');
+    for (const el of root.querySelectorAll('.is-moving')) el.classList.remove('is-moving');
+  }
   function cancelGesture(): boolean {
     if (!gesture) return false;
-    const canceled = gesture; gesture = undefined;
+    const canceled = gesture; gesture = undefined; clearGestureStyles();
     if (history.state.editing) history.cancel();
     if (canceled.pan) Object.assign(workspace.camera, canceled.camera);
     selected.clear(); for (const id of canceled.selection) selected.add(id);
@@ -365,6 +393,7 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
   canvas.addEventListener('lostpointercapture',e=>{if(gesture?.pointer===e.pointerId)cancelGesture();},{signal:abort.signal});
   root.addEventListener('keydown',e=>{
     if(e.key==='Escape' && noteEditing){e.preventDefault();e.stopPropagation();noteEditing=undefined;history.cancel();render();persist();canvas.focus();return;}
+    if(e.key==='Escape' && (e.target as HTMLElement).closest('.dt-panel')) {e.preventDefault();e.stopPropagation();closePanels();canvas.focus();return;}
     if((e.target as HTMLElement).closest('input,textarea,select'))return;
     if(e.key.toLowerCase()==='i'&&!e.ctrlKey&&!e.metaKey&&!e.altKey && selected.size===1){const row=rows.find(r=>selected.has(r.placement.id));if(row){e.preventDefault();checkpoint();options.inspect(row.entry.card,row.placement.id);}return;}
     const zone=workspace.zones.find(z=>z.id===(e.target as HTMLElement).closest<HTMLElement>('[data-resize-zone]')?.dataset.resizeZone);
@@ -377,7 +406,7 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     if(e.key==='Escape' && gesture){e.preventDefault();e.stopPropagation();cancelGesture();return;}
     if(e.code==='Space'){e.preventDefault();space=true;updatePanCursor();}
     if(e.key.toLowerCase()==='f'&&!e.ctrlKey&&!e.metaKey){e.preventDefault();fit();}
-    if(e.key==='Escape'){selected.clear();selection();get('.dt-analysis').hidden=true;get('.dt-search').hidden=true;get<HTMLDetailsElement>('.dt-menu').open=false;get<HTMLDetailsElement>('.dt-create').open=false;canvas.focus();}
+    if(e.key==='Escape'){selected.clear();selection();closePanels();get<HTMLDetailsElement>('.dt-help').open=false;get<HTMLDetailsElement>('.dt-menu').open=false;get<HTMLDetailsElement>('.dt-create').open=false;canvas.focus();}
   },{signal:abort.signal});
   window.addEventListener('keydown',e=>{if(e.key==='Control'){control=true;updatePanCursor();}},{signal:abort.signal});
   window.addEventListener('keyup',e=>{control=e.ctrlKey;if(e.code==='Space')space=false;updatePanCursor();},{signal:abort.signal});
@@ -387,9 +416,17 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
   canvas.addEventListener('dragleave',e=>{if(!canvas.contains(e.relatedTarget as Node))highlightZone();},{signal:abort.signal});
   root.addEventListener('dragend',()=>highlightZone(),{signal:abort.signal});
   canvas.addEventListener('drop',e=>{e.preventDefault();const value=e.dataTransfer?.getData('application/x-asphodel-card');if(value===undefined||value==='')return;const card=results[Number(value)];if(card){const point=screenToWorld(local(e),workspace.camera);addCandidate(card,point,zoneAt(workspace,point)?.id);}highlightZone();},{signal:abort.signal});
+  root.addEventListener('error',e=>{
+    const img = e.target;
+    if (!(img instanceof HTMLImageElement) || !img.closest('.dt-card')) return;
+    img.hidden = true;
+    const fallback = img.parentElement?.querySelector<HTMLElement>('.dt-fallback');
+    if (fallback) fallback.hidden = false;
+  },{capture:true,signal:abort.signal});
   root.addEventListener('pointerdown',e=>{
     if(!(e.target as HTMLElement).closest('.dt-create')) get<HTMLDetailsElement>('.dt-create').open=false;
     if(!(e.target as HTMLElement).closest('.dt-menu')) get<HTMLDetailsElement>('.dt-menu').open=false;
+    if(!(e.target as HTMLElement).closest('.dt-help')) get<HTMLDetailsElement>('.dt-help').open=false;
   },{signal:abort.signal});
   render(); persist();
   return { addNote, refreshAnalysis(){analysis();}, refresh(){render();persist();}, cancelGesture, checkpoint, dispose(){checkpoint();disposed=true;abort.abort();searchAbort?.abort();} };
