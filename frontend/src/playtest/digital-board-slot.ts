@@ -1,5 +1,5 @@
 import { renderHiddenHand, renderPublicZones } from './table-scene.js';
-import { renderBattlefieldHalf, renderCommanderDock, renderHand, renderLandZone, type BoardCallbacks, type HandActionCallbacks } from './board-renderer.js';
+import { commandZoneCards, renderBattlefieldHalf, renderCommanderDock, renderHand, renderLandZone, type BoardCallbacks, type HandActionCallbacks } from './board-renderer.js';
 import { seatName } from './player-seat.js';
 import type { AgentObservation, AgentPlayerObservation, AgentCardObservation, AgentSelfPlayerObservation, CardPresentation } from './types.js';
 
@@ -17,6 +17,7 @@ export interface DigitalBoardSlot {
   landZone: HTMLElement;
   publicZones: HTMLElement;
   hand: HTMLElement;
+  commandName: HTMLElement;
 }
 
 /**
@@ -57,8 +58,18 @@ export function createDigitalBoardSlot(positionClass: 'asphodel' | 'human', extr
   const landZone = area('table-land-zone');
   const publicZones = area('table-public-zones');
   const hand = area('table-viewport-hand');
-  half.append(life, commanderDock, battlefieldCards, landZone, publicZones, hand);
-  return { half, life, commanderDock, battlefieldCards, landZone, publicZones, hand };
+  const labelled = (label: string, content: HTMLElement, className: string) => {
+    const tray = area(className);
+    const title = document.createElement('span'); title.className = 'table-zone-label'; title.textContent = label;
+    tray.append(title, content);return tray;
+  };
+  const personalBand = area('table-personal-band');
+  personalBand.append(labelled('Terrains',landZone,'table-land-tray'),labelled(positionClass === 'human' ? 'Ta main' : 'Main adverse',hand,'table-hand-tray'));
+  const permanentsTray = labelled('Permanents',battlefieldCards,'table-permanents-tray');
+  const commandTray = area('table-command-tray');
+  const commandName = area('table-command-name');commandTray.append(commanderDock,commandName);
+  half.append(life, commandTray, permanentsTray, publicZones, personalBand);
+  return { half, life, commanderDock, battlefieldCards, landZone, publicZones, hand, commandName };
 }
 
 /** Pure. The label shown on a player's life plaque — reuses Physical Scene's own naming so both scenes agree on what to call a seat, generalizing past the hardcoded "ASPHODEL"/"YOU" strings without changing today's 2-player output (`seatName` already returns exactly "Asphodel"/"You" for a 1v1). */
@@ -100,6 +111,9 @@ export function renderDigitalBoardSlot(
   slot.half.classList.toggle('table-battlefield-half--active', player.playerId === observation.game.activePlayerId);
   renderPublicZones(slot.publicZones, player, get, inspect);
   renderCommanderDock(slot.commanderDock, player, callbacks, expand);
+  slot.commandName.textContent = commandZoneCards(player).filter(card => !card.hidden && !card.faceDown && card.name).map(card => card.name).join(' · ');
+  slot.commandName.title = slot.commandName.textContent;
+  slot.commandName.hidden = !slot.commandName.textContent;
   renderBattlefieldHalf(slot.battlefieldCards, player, callbacks, expand);
   renderLandZone(slot.landZone, player, callbacks, expand);
   if (player.role === 'self') renderHand(slot.hand, (player as AgentSelfPlayerObservation).hand, get, handActions);

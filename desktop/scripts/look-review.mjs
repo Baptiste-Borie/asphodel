@@ -9,6 +9,7 @@ import {physicalGeometry} from './fixtures/physical-geometry.mjs';
 import {populatedTableFixture} from './fixtures/populated-table.mjs';
 import {strategyFixture} from './fixtures/strategy-flow.mjs';
 import {digitalGeometry} from './fixtures/digital-geometry.mjs';
+import {presentationGeometry} from './fixtures/presentation-geometry.mjs';
 
 // Captures the compiled app in its production window with public deterministic DTOs.
 // No Forge, personal library, real match or database is opened.
@@ -42,13 +43,13 @@ async function capture(name,task) {
     const visible=el=>{const r=el.getBoundingClientRect(),style=getComputedStyle(el);return r.width>0&&r.height>0&&style.visibility!=='hidden'&&style.display!=='none'&&!el.closest('[hidden]')};
     const controls=[...document.querySelectorAll('button,input,select,textarea,summary')].filter(visible);
     // Free tables and horizontally scrollable hands intentionally contain off-screen items.
-    const outside=controls.filter(el=>!el.closest('.dt-world,.table-hand,.physical-hand,.lab-stack,.lab-result-scroll')).filter(el=>{const r=el.getBoundingClientRect();return r.left< -1||r.right>innerWidth+1}).map(el=>({label:(el.getAttribute('aria-label')||el.textContent||el.getAttribute('placeholder')||el.tagName).trim().slice(0,100),tag:el.tagName}));
+    const outside=controls.filter(el=>!el.closest('.dt-world,.table-hand,.physical-hand,.table-viewport-hand,.table-battlefield-cards,.table-land-zone,.lab-stack,.lab-result-scroll')).filter(el=>{const r=el.getBoundingClientRect();return r.left< -1||r.right>innerWidth+1}).map(el=>({label:(el.getAttribute('aria-label')||el.textContent||el.getAttribute('placeholder')||el.tagName).trim().slice(0,100),tag:el.tagName}));
     const overflowCandidates=[...document.querySelectorAll('body *')].filter(visible).filter(el=>{const r=el.getBoundingClientRect();return r.left< -1||r.right>innerWidth+1}).slice(0,20).map(el=>({tag:el.tagName,className:el.className,left:Math.round(el.getBoundingClientRect().left),right:Math.round(el.getBoundingClientRect().right),scrollWidth:el.scrollWidth,clientWidth:el.clientWidth}));
     return {viewport:{width:innerWidth,height:innerHeight},documentHorizontalOverflow:document.documentElement.scrollWidth>innerWidth+1,overflowCandidates,controlsOutsideViewport:outside,pendingImages:[...document.images].filter(el=>visible(el)&&!el.complete).length,brokenImages:[...document.images].filter(el=>visible(el)&&el.complete&&el.naturalWidth===0).length,focusedControl:document.activeElement?.getAttribute('aria-label')||document.activeElement?.tagName};
   });
   const file=`${String(report.captures.length+1).padStart(2,'0')}-${name}.png`;
   await page.screenshot({path:join(output,file),animations:'disabled'});
-  report.captures.push({name,task,file,...metrics,physicalGeometry:await page.evaluate(physicalGeometry),digitalGeometry:await page.evaluate(digitalGeometry)});
+  report.captures.push({name,task,file,...metrics,physicalGeometry:await page.evaluate(physicalGeometry),digitalGeometry:await page.evaluate(digitalGeometry),presentationGeometry:await page.evaluate(presentationGeometry)});
 }
 try {
   for(const count of [2,3,4]) {
@@ -56,10 +57,11 @@ try {
     await page.locator('#nav-play').click();await page.locator('.table-card-art').first().waitFor();
     await capture(`strategy-${count}-players`,'Comparer la composition, les cartes engagées, la main et la place des décisions.');
     if(count===2) {
-      const frames=[];
+      const frames=[];report.motionChecks=[];
       for(let i=0;i<12;i++) {
         const file=`motion-${String(i).padStart(2,'0')}.jpg`;
         await page.screenshot({path:join(output,file),type:'jpeg',quality:75,animations:'allow'});frames.push(file);
+        report.motionChecks.push({file,presentationGeometry:await page.evaluate(presentationGeometry)});
         if(i===0)await page.locator('.decision-option--pass').click();
         await page.waitForTimeout(90);
       }
@@ -70,8 +72,13 @@ try {
       await page.locator('.table-battlefield-half--human').click({position:{x:160,y:30}});
       await capture('strategy-self-focus','Agrandir son plateau en gardant les commandes et les sièges adverses.');
       await page.locator('.table-focus-return').click();
+      await capture('strategy-overview-return','Retour au plateau complet après une transition de focus.');
       await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(960,640));
       await page.waitForFunction(()=>innerWidth===960);await capture('strategy-compact','Vérifier la composition à 960 × 640.');
+    }
+    if(count===4) {
+      await page.locator('.table-battlefield-half--human').click({position:{x:160,y:30}});
+      await capture('strategy-four-player-focus','Agrandir un siège en conservant les trois aperçus adverses dans une colonne.');
     }
   }
   await launch();await page.evaluate(installCombatFixture,await populatedTableFixture('physical'));

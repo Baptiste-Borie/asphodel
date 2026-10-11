@@ -383,3 +383,18 @@ ajoute douze images JPEG de la transition synthétique ; `review-looks/index.htm
 permet de rejouer cet échantillonnage. Il s'agit de captures successives, pas d'une
 vidéo à cadence garantie. Le rapport comprend aussi les collisions de permanents
 numériques et les éventuels chevauchements entre plateau et décisions.
+
+## Zones et notifications (0.1.27)
+
+La bande personnelle numérique contient deux zones distinctes : terrains et main.
+Les titres restent au-dessus du contenu défilant. Les commandants imprimés ne
+reçoivent plus une deuxième légende tronquée ; leur nom est affiché à part. Le
+focus place les sièges secondaires dans une colonne d'aperçus défilants, y compris
+à quatre joueurs. Les annonces de tour occupent l'en-tête et les boutons désactivés
+conservent un texte clair. L'historique numérique utilise la colonne des commandes.
+
+`npm run review:looks` produit dix captures et douze images de mouvement. Le rapport
+ajoute les intersections main/terrains, les zones sortant de leur siège, les titres
+coupés et la superposition des annonces avec une carte révélée. Les couleurs et
+le contraste mesuré des boutons désactivés sont aussi rapportés lorsqu'ils sont
+présents dans les captures de mouvement. Ces mesures complètent l'examen visuel.
