@@ -657,6 +657,12 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
       tableViewButton.hidden = focusedPlayerId === null;
     });
     for (const slot of digitalBoardSlots) {
+      slot.summary.onclick = () => {
+        const playerId = slot.half.dataset.playerId;
+        if (!playerId) return;
+        digitalView = { mode: "focus", playerId };
+        applyDigitalFocus();
+      };
       // The primary Digital focus interaction (replaces the old per-viewport Focus button): click
       // anywhere non-interactive on a viewport — overview or receded preview alike — to focus that
       // player. Must never swallow a click meant for an actual card/zone/button/decision control,
@@ -721,6 +727,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
 
     decisionDock = document.createElement("div");
     decisionDock.className = "table-decision-dock";
+    decisionDock.dataset.layout = "rail";
 
     if (physicalScene) gameSection.append(physicalScene.element, physicalScene.overview);
     if (voicePanel) gameSection.append(voicePanel.element);
@@ -1174,7 +1181,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     combatView.deactivate();targetView.deactivate();
     decisionDock.replaceChildren();
     decisionDock.classList.remove("table-decision-dock--targets", "table-decision-dock--combat", "table-decision-dock--complex", "table-decision-dock--cards", "physical-declaration");
-    const text = submitting ? "Submitting choice…" : {
+    const text = submitting ? "Envoi de ton action…" : {
       starting: "Démarrage du moteur…", running: "Asphodel réfléchit…",
       waiting_for_human: "", completed: "", ended_by_human: "", failed: "",
     }[status];
@@ -1210,6 +1217,8 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     const key = JSON.stringify(state.pendingDecision) + ((combat || targets) ? JSON.stringify(state.observation) : '') + (targets ? `:presentation:${lastPresentationVersion}` : '') + (submitting ? ":submitting" : "");
     if (key === lastDecisionKey) return;
     lastDecisionKey = key;
+    // A new choice can change composition; transient status text keeps the previous layout.
+    if (state.pendingDecision) decisionDock.dataset.layout = "rail";
     if (state.pendingDecision) spaceReadyAt = performance.now() + 650;
     handActionMenu.close();
     if (targets) {

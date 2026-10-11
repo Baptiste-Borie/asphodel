@@ -45,6 +45,7 @@ export function installCombatFixture(fixture) {
       const legal=state.pendingDecision.rendered.items.some(item=>JSON.stringify(item.choice)===JSON.stringify(choice));
       if(!legal)return Response.json({message:'Illegal/stale fixture choice'},{status:400});
       window.combatSmoke.choices.push(choice);
+      if(window.combatSmoke.holdChoice)await new Promise(resolve=>{window.combatSmoke.releaseChoice=resolve;});
       if(fixture.transition[window.combatSmoke.index]===choice.choice)window.combatSmoke.index++;
       return Response.json({accepted:true});
     }

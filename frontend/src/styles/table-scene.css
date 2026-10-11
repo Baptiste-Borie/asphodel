@@ -254,3 +254,6 @@
 
 .table-personal-band,.table-land-tray,.table-hand-tray,.table-permanents-tray,.table-command-tray { display:contents; }
 .table-zone-label,.table-command-name { display:none; }
+
+/* Summary is a presentation alternative only in the contrast focus layout. */
+.table-seat-summary { display:none; }

@@ -59,6 +59,8 @@ try {
     await page.locator('#nav-play').click();await page.locator('.table-card-art').first().waitFor();
     await capture(`strategy-${count}-players`,'Comparer la composition, les cartes engagées, la main et la place des décisions.');
     if(count===2) {
+      const stableBoard=()=>[...document.querySelectorAll('.table-battlefield,.table-battlefield-half')].map(el=>{const r=el.getBoundingClientRect();return {left:r.left,top:r.top,width:r.width,height:r.height};});
+      const beforeSubmission=await page.evaluate(stableBoard);
       const frames=[];report.motionChecks=[];
       await page.evaluate(()=>{window.combatSmoke.holdChoice=true;});
       for(let i=0;i<12;i++) {
@@ -68,7 +70,11 @@ try {
         if(i===0) {
           await page.locator('.decision-option--pass').click();
           await page.waitForFunction(()=>typeof window.combatSmoke.releaseChoice==='function'&&document.querySelector('.table-status-line'));
-          await capture('strategy-priority-pending','Vérifier le message affiché pendant une réponse en attente.');
+          await capture('strategy-priority-pending','Vérifier le message et la stabilité du plateau pendant une réponse en attente.');
+          const duringSubmission=await page.evaluate(stableBoard);
+          assert.equal(duringSubmission.length,beforeSubmission.length);
+          duringSubmission.forEach((rect,index)=>Object.keys(rect).forEach(key=>assert.ok(Math.abs(rect[key]-beforeSubmission[index][key])<=1,`submission moved board ${index} ${key}`)));
+          report.submissionLayout={before:beforeSubmission,during:duringSubmission,stable:true};
           await page.evaluate(()=>{window.combatSmoke.holdChoice=false;window.combatSmoke.releaseChoice();});
         }
         await page.waitForTimeout(90);
@@ -78,7 +84,9 @@ try {
       assert.equal(await page.evaluate(()=>window.combatSmoke.choices.length),1);
       await capture('strategy-state-change','Arrivée depuis la main, engagement, perte de trois PV et changement de joueur actif.');
       await page.locator('.table-battlefield-half--human').click({position:{x:160,y:30}});
-      await capture('strategy-self-focus','Agrandir son plateau en gardant les commandes et les sièges adverses.');
+      await capture('strategy-self-focus','Agrandir les cartes avec le plateau, en gardant les résumés adverses.');
+      report.focusCardWidth=await page.locator('.table-battlefield-half--focused .table-battlefield-cards .table-card').first().evaluate(el=>el.getBoundingClientRect().width);
+      assert.ok(report.focusCardWidth>100,'focus should enlarge this sparse fixture board');
       await page.locator('.table-focus-return').click();
       await capture('strategy-overview-return','Retour au plateau complet après une transition de focus.');
       await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(960,640));

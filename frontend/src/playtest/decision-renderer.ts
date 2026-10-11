@@ -38,6 +38,7 @@ export function renderDecision(
   // card_picker/opening_hand render via decision-cards.ts; physical_declare (V2g) renders via
   // physical-declare.ts — both are wired directly from playtest-view.ts's renderDecisionIfChanged.
   if (pending.rendered.kind === "card_picker" || pending.rendered.kind === "opening_hand" || pending.rendered.kind === "physical_declare") return;
+  container.dataset.layout = pending.rendered.kind === "menu" && pending.rendered.items.length === 1 && isPassOption(pending.rendered.items[0].label) ? "compact" : "rail";
   container.replaceChildren();
   container.classList.toggle("table-decision-dock--complex", pending.rendered.kind === "value" || pending.rendered.items.length > 5);
 

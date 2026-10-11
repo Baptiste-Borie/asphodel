@@ -1,5 +1,6 @@
 import { renderHiddenHand, renderPublicZones } from './table-scene.js';
 import { commandZoneCards, renderBattlefieldHalf, renderCommanderDock, renderHand, renderLandZone, type BoardCallbacks, type HandActionCallbacks } from './board-renderer.js';
+import { partitionBattlefield } from './land-zone.js';
 import { seatName } from './player-seat.js';
 import type { AgentObservation, AgentPlayerObservation, AgentCardObservation, AgentSelfPlayerObservation, CardPresentation } from './types.js';
 
@@ -18,6 +19,7 @@ export interface DigitalBoardSlot {
   publicZones: HTMLElement;
   hand: HTMLElement;
   commandName: HTMLElement;
+  summary: HTMLButtonElement;
 }
 
 /**
@@ -68,8 +70,10 @@ export function createDigitalBoardSlot(positionClass: 'asphodel' | 'human', extr
   const permanentsTray = labelled('Permanents',battlefieldCards,'table-permanents-tray');
   const commandTray = area('table-command-tray');
   const commandName = area('table-command-name');commandTray.append(commanderDock,commandName);
-  half.append(life, commandTray, permanentsTray, publicZones, personalBand);
-  return { half, life, commanderDock, battlefieldCards, landZone, publicZones, hand, commandName };
+  const summary = document.createElement('button');
+  summary.type = 'button'; summary.className = 'table-seat-summary';
+  half.append(life, commandTray, permanentsTray, publicZones, personalBand, summary);
+  return { half, life, commanderDock, battlefieldCards, landZone, publicZones, hand, commandName, summary };
 }
 
 /** Pure. The label shown on a player's life plaque — reuses Physical Scene's own naming so both scenes agree on what to call a seat, generalizing past the hardcoded "ASPHODEL"/"YOU" strings without changing today's 2-player output (`seatName` already returns exactly "Asphodel"/"You" for a 1v1). */
@@ -109,12 +113,17 @@ export function renderDigitalBoardSlot(
   slot.landZone.setAttribute('aria-label', 'Terrains');
   slot.hand.setAttribute('aria-label', player.role === 'self' ? 'Ta main' : 'Main adverse');
   slot.half.classList.toggle('table-battlefield-half--active', player.playerId === observation.game.activePlayerId);
+  const { lands, nonLands } = partitionBattlefield(player.battlefield);
+  slot.summary.textContent = `${nonLands.length} permanents · ${lands.length} terrains\n${player.handSize} cartes en main · Agrandir →`;
+  slot.summary.setAttribute('aria-label', `Agrandir le plateau de ${seatName(player, observation)} — ${nonLands.length} permanents, ${lands.length} terrains, ${player.handSize} cartes en main`);
   renderPublicZones(slot.publicZones, player, get, inspect);
   renderCommanderDock(slot.commanderDock, player, callbacks, expand);
   slot.commandName.textContent = commandZoneCards(player).filter(card => !card.hidden && !card.faceDown && card.name).map(card => card.name).join(' · ');
   slot.commandName.title = slot.commandName.textContent;
   slot.commandName.hidden = !slot.commandName.textContent;
   renderBattlefieldHalf(slot.battlefieldCards, player, callbacks, expand);
+  // Count rendered slots (including grouped tokens), not raw observations, for fit sizing.
+  slot.half.style.setProperty('--strategy-slot-count', String(Math.max(1, slot.battlefieldCards.children.length)));
   renderLandZone(slot.landZone, player, callbacks, expand);
   if (player.role === 'self') renderHand(slot.hand, (player as AgentSelfPlayerObservation).hand, get, handActions);
   else renderHiddenHand(slot.hand, player.handSize);

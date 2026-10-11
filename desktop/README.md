@@ -398,3 +398,7 @@ ajoute les intersections main/terrains, les zones sortant de leur siège, les ti
 coupés et la superposition des annonces avec une carte révélée. Les couleurs et
 le contraste mesuré des boutons désactivés sont aussi rapportés lorsqu'ils sont
 présents dans les captures de mouvement. Ces mesures complètent l'examen visuel.
+
+### Revue de composition 0.1.28
+
+`npm run review:looks` inclut une capture de priorité désactivée en attente, les résumés à quatre joueurs et le focus d’un adversaire depuis son résumé. Les mesures de vues statiques attendent la fin des animations de disposition. Voir `../docs/composition-jeu-01.md`.

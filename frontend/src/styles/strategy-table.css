@@ -135,3 +135,89 @@ body.play-reduced-motion .table-root[data-look=strategy] *,body.play-reduced-mot
 .table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-command-tray { flex-direction:row;justify-content:flex-start;gap:8px; }
 .table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-commander-dock .table-card { width:36px; }
 .table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-command-name { text-align:left;flex:1;font-size:10px; }
+
+/* A single priority choice belongs near the hand, not in a permanent empty column.
+   The renderer retains its composition during submission; new complex choices keep their rail. */
+.table-root:not(.table-root--physical)[data-look=strategy]:has(.table-decision-dock[data-layout=compact]) .table-battlefield {
+  margin:84px 24px 104px;
+}
+.table-root:not(.table-root--physical)[data-look=strategy]:has(.table-decision-dock[data-layout=compact]) .table-decision-dock {
+  inset:auto 24px 20px auto;width:420px;max-height:76px;padding:10px 14px;display:grid;
+  grid-template-columns:minmax(0,1fr) 210px;align-items:center;gap:6px 12px;
+}
+.table-root:not(.table-root--physical)[data-look=strategy]:has(.table-decision-dock[data-layout=compact]) .table-decision-dock .decision-title {
+  margin:0;font-size:13px;color:#d9e7ee;
+}
+.table-root:not(.table-root--physical)[data-look=strategy]:has(.table-decision-dock[data-layout=compact]) .table-decision-dock .decision-menu { margin:0;grid-column:2;grid-row:1 / 3; }
+.table-root:not(.table-root--physical)[data-look=strategy]:has(.table-decision-dock[data-layout=compact]) .table-action-hint { grid-column:1;font-size:10px;margin:0; }
+.table-root:not(.table-root--physical)[data-look=strategy]:has(.table-decision-dock[data-layout=compact]) .table-rail-left { left:24px;right:auto;bottom:20px;max-height:76px; }
+.table-root:not(.table-root--physical)[data-look=strategy][data-player-count="2"] .table-battlefield:not(.table-battlefield--focused) { display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:.85fr 1.15fr; }
+/* The life badge has a bounded identity column; it cannot cover a tray heading. */
+.table-root:not(.table-root--physical)[data-look=strategy] .table-life { box-sizing:border-box;width:74px;max-width:74px;flex-direction:column;align-items:center;gap:0;padding:3px; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-life-name { max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-command-tray { padding-top:46px; }
+/* A receded player is a public summary, with one keyboard-accessible action to
+   restore their complete interactive board. No miniature nested scroll surfaces. */
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused { grid-template-columns:minmax(0,1fr) 224px; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) {
+  display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:32px 36px minmax(40px,1fr) 38px;gap:4px;padding:8px;overflow:hidden;
+}
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) :is(.table-permanents-tray,.table-personal-band) { display:none; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-life { position:relative;inset:auto;grid-column:1;grid-row:1;flex-direction:row;width:auto;max-width:100%;justify-self:start;padding:3px 8px;gap:6px; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-command-tray { grid-column:1;grid-row:2;padding:0; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-command-name { display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-commander-dock .table-card { width:24px; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-seat-summary {
+  display:block;grid-column:1;grid-row:3;width:100%;padding:5px 7px;white-space:pre-line;text-align:left;font-size:11px;line-height:1.5;
+  color:#d5e5ed;background:#0c1b2555;border:1px solid #446574;border-radius:6px;align-self:center;
+}
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-public-zones { grid-column:1;grid-row:4;flex-wrap:nowrap;padding:0;background:transparent;gap:6px; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-pile { display:grid;grid-template-columns:18px auto;grid-template-rows:16px 16px;width:62px;gap:0 3px; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-pile-face { width:18px;height:28px;grid-row:1 / 3; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-pile-label { margin:0;font-size:6px; }
+/* Equal-or-higher specificity than game-looks' shared button paint, including pass. */
+.table-root:is([data-look=strategy]) .table-decision-dock button:disabled {
+  color:#c3d2da!important;background:#273d49!important;border-color:#536b78;opacity:1!important;box-shadow:none;
+}
+.table-root--physical[data-look=strategy] { --physical-rail:300px; }
+.table-root[data-look=strategy] .table-seat-summary:focus-visible { outline:2px solid #ffe3a8;outline-offset:2px; }
+@media(max-height:700px),(max-width:1100px) {
+  .table-root:not(.table-root--physical)[data-look=strategy] .table-life { width:64px;max-width:64px; }
+  .table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused { grid-template-columns:minmax(0,1fr) 204px; }
+}
+
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) { grid-template-rows:32px 36px 48px 38px;align-self:start; }
+@media(max-height:700px) {
+  .table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) { grid-template-rows:28px 40px 38px; }
+  .table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-command-tray { display:none; }
+  .table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-seat-summary { grid-row:2; }
+  .table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-public-zones { grid-row:3; }
+}
+/* Three seats: opponents share the upper row; the human keeps a full-width hand. */
+.table-root:not(.table-root--physical)[data-look=strategy][data-player-count="3"] .table-battlefield:not(.table-battlefield--focused) {
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:.85fr 1.15fr;
+}
+.table-root:not(.table-root--physical)[data-look=strategy][data-player-count="3"] .table-battlefield:not(.table-battlefield--focused) .table-battlefield-half--human {
+  grid-column:1 / -1;grid-row:2;--strategy-card:100px;--strategy-hand:74px;--strategy-band:136px;
+}
+@media(max-height:700px),(max-width:1100px) {
+  .table-root:not(.table-root--physical)[data-look=strategy][data-player-count="3"] .table-battlefield:not(.table-battlefield--focused) .table-battlefield-half--human { --strategy-card:78px;--strategy-hand:62px;--strategy-band:116px; }
+}
+
+/* Status inherits the previous decision layout, preserving the board while Forge responds. */
+.table-root[data-look=strategy] .table-status-line { color:#d9e7ee;letter-spacing:.01em;text-transform:none;font:600 13px/1.5 system-ui;margin:0; }
+.table-root:not(.table-root--physical)[data-look=strategy]:has(.table-decision-dock[data-layout=compact]) .table-decision-dock:has(.table-status-line) { min-height:62px; }
+.table-root:not(.table-root--physical)[data-look=strategy]:has(.table-decision-dock[data-layout=compact]) .table-status-line { grid-column:1 / -1; }
+/* Focus uses the actual number of rendered slots and its own available width.
+   Sparse boards grow; crowded boards retain a readable floor and horizontal inspection. */
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half--focused {
+  container-type:size;
+  --strategy-card:clamp(78px,calc((100cqw - 190px) / var(--strategy-slot-count,1) - 12px),164px);
+  --strategy-hand:clamp(62px,8cqw,88px);
+  --strategy-band:164px;
+  grid-template-rows:minmax(90px,1fr) var(--strategy-band);
+}
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half--asphodel.table-battlefield-half--focused { grid-template-rows:64px minmax(90px,1fr); }
+@media(max-height:700px) {
+  .table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half--focused { --strategy-hand:clamp(58px,8cqw,68px);--strategy-band:132px; }
+}
