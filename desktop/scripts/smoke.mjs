@@ -76,18 +76,20 @@ try {
     if (!response.ok) throw new Error('Rename failed');
   }, id);
   // Close immediately after a real builder/table edit, before its debounce can finish.
-  await page.getByRole('button', { name: 'Builder', exact: true }).click();
-  await page.getByRole('button', { name: 'New empty sheet', exact: true }).click();
-  await page.getByLabel('New category name', { exact: true }).fill('Preserved empty role');
-  await page.getByLabel('New category name', { exact: true }).press('Enter');
+  await page.locator('#nav-deck-lab').click();
+  await page.locator('[data-action=new]').click();
+  await page.locator('.dt-menu summary').click();
+  await page.locator('[data-dt=legacy]').click();
+  await page.getByLabel('Nom de la catégorie', { exact: true }).fill('Preserved empty role');
+  await page.getByLabel('Nom de la catégorie', { exact: true }).press('Enter');
   await page.getByRole('button', { name: 'Annuler', exact: true }).click();
   assert.equal(await page.locator('[data-rename]').evaluateAll(inputs => inputs.some(input => input.value === 'Preserved empty role')), false);
   await page.getByRole('button', { name: 'Rétablir', exact: true }).click();
   assert.equal(await page.locator('[data-rename]').evaluateAll(inputs => inputs.some(input => input.value === 'Preserved empty role')), true);
-  await page.getByRole('button', { name: 'Table V2', exact: true }).click();
+  await page.locator('[data-view=table]').click();
   await page.locator('.dt-create summary').click();
-  await page.getByLabel('New zone name', { exact: true }).fill('Preserved empty zone');
-  await page.getByLabel('New zone name', { exact: true }).press('Enter');
+  await page.getByLabel('Nom de la nouvelle zone', { exact: true }).fill('Preserved empty zone');
+  await page.getByLabel('Nom de la nouvelle zone', { exact: true }).press('Enter');
   const zoneId = await page.locator('.dt-zone input').evaluateAll(inputs => inputs.find(input => input.value === 'Preserved empty zone')?.closest('[data-dt-zone]')?.dataset.dtZone);
   assert.ok(zoneId, 'new zone has a stable identity');
   await page.locator('.dt-canvas').press('Control+z');
@@ -95,10 +97,10 @@ try {
   await page.locator('.dt-canvas').press('Control+Shift+z');
   assert.equal(await page.locator(`[data-dt-zone="${zoneId}"]`).count(), 1);
   // One history is shared by both builders, including actions absent from V1's UI.
-  await page.getByLabel('Table tools', { exact: true }).click();
-  await page.getByRole('button', { name: 'Builder V1', exact: true }).click();
+  await page.locator('.dt-menu summary').click();
+  await page.locator('[data-dt=legacy]').click();
   await page.getByRole('button', { name: 'Annuler', exact: true }).click();
-  await page.getByRole('button', { name: 'Table V2', exact: true }).click();
+  await page.locator('[data-view=table]').click();
   assert.equal(await page.locator(`[data-dt-zone="${zoneId}"]`).count(), 0);
   await page.getByRole('button', { name: 'Rétablir', exact: true }).click();
   assert.equal(await page.locator(`[data-dt-zone="${zoneId}"]`).count(), 1);
@@ -206,16 +208,17 @@ try {
   const rescue = JSON.parse(await readFile(join(userData, 'backups', rescueNames[0]), 'utf8'));
   assert.equal(rescue.library.decks.find(d => d.id === id).name, 'Changed after backup');
   assert.equal((await readdir(userData)).includes('pending-library-restore.json'), false);
-  await page.getByRole('button', { name: 'Builder', exact: true }).click();
+  await page.locator('#nav-deck-lab').click();
   await page.locator(`[data-open-deck="saved:${recovered[0].id}"]`).click();
+  await page.locator('.dt-menu summary').click();
+  await page.locator('[data-dt=legacy]').click();
   await page.getByRole('button', { name: 'Exporter', exact: true }).click();
   assert.match(await page.getByLabel('Liste du deck à exporter', { exact: true }).inputValue(), /^Commander\n/);
   assert.equal(await page.locator('[data-export-candidates]').isChecked(), false);
   await page.getByRole('button', { name: 'Fermer l’export', exact: true }).click();
   // Real seeded cards exercise pile rendering, pointer capture and persisted state.
-  await page.getByRole('button', { name: 'Back to all decks', exact: true }).click();
+  await page.locator('[data-action=close-sheet]').click();
   await page.locator(`[data-open-deck="saved:${id}"]`).click();
-  await page.getByRole('button', { name: 'Table V2', exact: true }).click();
   await page.locator('.lab-table [data-save-status][data-status=saved]').waitFor();
   await page.locator('[data-dt-card]').first().press('Enter');
   await page.getByRole('button', {name:'Inspecter',exact:true}).click();

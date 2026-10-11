@@ -1,0 +1,145 @@
+/* App-wide layout and finishing. Game geometry, model state and card transforms stay authoritative. */
+html,body { color:var(--ui-ink);background:var(--ui-surface-muted);font-family:var(--asphodel-font); }
+body { background:var(--ui-surface-muted); }
+button,input,select,textarea { font-family:var(--asphodel-font); }
+button:disabled { cursor:default; }
+button { transition:background-color 120ms ease,border-color 120ms ease,box-shadow 120ms ease; }
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible { outline:2px solid var(--ui-accent);outline-offset:3px; }
+button:not(:disabled):active:not(.table-card):not(.dt-card):not(.lab-inspect-card) { box-shadow:inset 0 1px 3px #20324e18; }
+input[type=checkbox],input[type=radio],progress { accent-color:var(--ui-accent); }
+::selection { background:#dbe6fa;color:var(--ui-ink); }
+.app-header { min-height:52px;padding:0 24px;background:#fff;border-bottom:1px solid var(--ui-border);backdrop-filter:none;gap:24px; }
+.brand-button { font-size:16px;color:var(--ui-ink);letter-spacing:-.4px;gap:9px; }
+.brand-mark { width:27px;height:27px;border-radius:3px;background:var(--ui-accent-soft);border-color:var(--ui-border);color:var(--ui-accent);font:700 16px var(--asphodel-font); }
+.app-nav { gap:5px; }
+.nav-button { padding:7px 12px;font-size:12px;border-radius:3px;color:var(--ui-muted);background:transparent; }
+.nav-button:hover { color:var(--ui-ink);background:var(--ui-accent-soft); }
+.nav-button[aria-pressed=true] { color:var(--ui-accent);background:var(--ui-accent-soft);box-shadow:inset 0 -2px var(--ui-accent); }
+.header-actions { gap:12px; }
+.backend-state { font-size:10px; }
+.primary-button { background:var(--ui-accent);border-color:var(--ui-accent);color:#fff;border-radius:4px; }
+.primary-button:hover:not(:disabled) { background:#19365f;color:#fff; }
+.secondary-button,.ghost-button { background:#fff;color:var(--ui-ink);border-color:var(--ui-border);border-radius:4px; }
+.danger-button { background:var(--ui-danger-soft);color:var(--ui-danger);border-color:#dab4bc; }
+.app-main { padding:24px; }
+.content-area { width:min(100%,1440px); }
+body:has(#deck-lab-view:not([hidden])) { background:var(--ui-surface-muted); }
+body:has(#deck-lab-view:not([hidden])) .app-main { padding:24px; }
+body:has(#deck-lab-view:not([hidden])) .content-area { width:min(100%,1440px); }
+body:has(#deck-lab-view:not([hidden])) .app-header { background:#fff;border-color:var(--ui-border); }
+#deck-lab-view { --lab-border:var(--ui-border);--lab-muted:var(--ui-muted);color:var(--ui-ink); }
+#deck-lab-view h1,#deck-lab-view h2,#deck-lab-view h3 { font-family:var(--asphodel-font); }
+#deck-lab-view h1 { font-size:25px;font-weight:650;letter-spacing:-.6px; }
+#deck-lab-view button { background:#fff;border-color:var(--ui-border);color:var(--ui-ink);border-radius:4px; }
+#deck-lab-view button:hover:not(:disabled) { background:var(--ui-accent-soft);border-color:#879cbf;color:var(--ui-ink); }
+#deck-lab-view input,#deck-lab-view select,#deck-lab-view textarea { background:#fff;color:var(--ui-ink);border-color:var(--ui-border); }
+#deck-lab-view .lab-primary { background:var(--ui-accent);border-color:var(--ui-accent);color:#fff; }
+#deck-lab-view .lab-primary:hover { background:#19365f;color:#fff; }
+.lab-heading { margin-bottom:18px;gap:20px; }
+.lab-eyebrow { color:var(--ui-muted);font-size:9px;letter-spacing:.12em; }
+.lab-prototype { font-size:10px;max-width:300px;text-align:right;border:0;color:var(--ui-muted); }
+.lab-workbar { margin-bottom:20px;gap:20px; }
+.lab-workbar>p { display:none; }
+#deck-lab-view .lab-tabs button { font-size:12px;padding:10px 1px 13px;background:transparent;border-bottom:2px solid transparent;border-radius:0; }
+#deck-lab-view .lab-tabs button[aria-pressed=true] { color:var(--ui-accent);border-bottom-color:var(--ui-accent); }
+.lab-tabs { gap:24px; }
+#deck-lab-view .lab-selection { font-size:11px;background:#fff;color:var(--ui-accent); }
+.lab-choose { padding:20px;background:#fff;border:1px solid var(--ui-border);border-radius:5px;margin-bottom:18px; }
+#deck-lab-view .lab-choose h2 { font-size:19px;font-weight:600;letter-spacing:-.3px; }
+.lab-choose p { max-width:700px;line-height:1.6; }
+.lab-choose button { margin-right:7px;min-height:32px;font-size:12px; }
+.library-tools { display:flex;align-items:end;justify-content:space-between;gap:20px;margin:20px 0 15px; }
+.library-tools label { display:grid;gap:7px;width:min(380px,70%);font-size:11px;color:var(--ui-muted); }
+.library-tools input { width:100%;padding:9px 11px; }
+.library-tools [data-deck-count] { color:var(--ui-muted);font-size:11px;white-space:nowrap; }
+.library-empty { padding:35px 20px;text-align:center;color:var(--ui-muted);border:1px dashed var(--ui-border);background:#fff; }
+.deck-library { grid-template-columns:repeat(auto-fill,minmax(225px,1fr));gap:18px; }
+#deck-lab-view .deck-tile { padding:0;overflow:hidden;background:#fff;border:1px solid var(--ui-border);border-radius:5px;text-align:left;transition:border-color 130ms ease,box-shadow 130ms ease; }
+#deck-lab-view .deck-tile:hover { background:#fff;box-shadow:0 5px 15px #20324e18;border-color:#879cbf;transform:none; }
+.deck-tile-visual { height:155px;background:var(--ui-accent-soft); }
+.deck-cover-image { height:100%;object-fit:cover;object-position:50% 28%; }
+.deck-tile-information { padding:15px; }
+#deck-lab-view .deck-tile-information h2 { font-size:15px;font-weight:600;letter-spacing:-.2px;color:var(--ui-ink); }
+.deck-count { background:#fff;color:var(--ui-accent);border:1px solid var(--ui-border);font-size:10px; }
+.deck-commander-name { font-size:11px;color:var(--ui-muted); }
+.lab-filters,.lab-stats,.lab-category,.lab-add-results { background:#fff;border-color:var(--ui-border); }
+#deck-lab-view .lab-deck-heading h2 { font-size:23px;font-weight:600;letter-spacing:-.4px; }
+.lab-deck-heading { gap:20px;align-items:flex-start; }
+.lab-deck-heading>div:last-child { max-width:58%;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px; }
+.lab-deck-heading>div:last-child>button,.lab-deck-heading select { font-size:11px;padding:7px 9px; }
+.lab-deck-heading [data-action=delete-deck] { color:var(--ui-danger); }
+.lab-builder-tools { gap:12px;align-items:center; }
+.lab-builder-warning { color:var(--ui-warning);background:var(--ui-warning-soft);border-color:#dbcbab;font-size:12px; }
+.lab-category>header { background:var(--ui-surface-muted); }
+.lab-stats h2 { font-size:19px!important;font-weight:600!important; }
+.lab-stat-list strong,.lab-type-counts strong,.lab-average,.dt-stat-list strong,.lab-role-counts strong,.table-life-value { font-variant-numeric:tabular-nums; }
+.lab-curve i { background:var(--ui-accent);border-top-color:var(--ui-accent); }
+.lab-mana-analysis { background:#fff;color:var(--ui-ink);border-color:var(--ui-border);border-radius:4px; }
+.lab-mana-analysis p,.lab-mana-analysis caption,.lab-mana-analysis li span { color:var(--ui-muted); }
+.lab-mana-analysis .lab-mana-notice { color:var(--ui-warning);background:var(--ui-warning-soft);border-left-color:var(--ui-warning); }
+/* Native and app dialogs share restrained surfaces, labels and focus feedback. */
+dialog { color:var(--ui-ink);background:#fff;border-color:var(--ui-border);border-radius:5px;box-shadow:0 16px 55px #20324e30; }
+dialog[class]::backdrop { background:#20324e55;backdrop-filter:blur(2px); }
+dialog[open] { animation:ui-dialog-in 150ms cubic-bezier(.2,.7,.2,1); }
+.desktop-settings,.artwork-dialog,.lab-tag-editor,.lab-versions,.lab-opening-hands,.project-versions-dialog,.opening-hand-dialog,.playtest-history-dialog { background:#fff;color:var(--ui-ink);border-radius:5px; }
+dialog h1,dialog h2,dialog h3 { font-family:var(--asphodel-font); }
+dialog input,dialog select,dialog textarea { background:#fff;color:var(--ui-ink);border-color:var(--ui-border); }
+.lab-tag-editor footer { background:#fff; }
+.lab-tag-editor [data-tag-save] { background:var(--ui-accent);color:#fff;border-color:var(--ui-accent); }
+.lab-tag-editor button { background:#fff;color:var(--ui-ink);border-color:var(--ui-border); }
+.lab-tag-error { color:var(--ui-danger); }
+.lab-tag-editor [data-tag-delete] { color:var(--ui-danger); }
+.playtest-setup { max-width:1040px;padding:8px 0 28px; }
+.playtest-setup h1 { font-size:25px;letter-spacing:-.6px;color:var(--ui-ink); }
+.playtest-setup-columns { gap:20px;margin-top:24px; }
+.deck-picker,.play-mode-picker { background:#fff;border-color:var(--ui-border);border-radius:5px; }
+.play-mode-option { background:#fff;border-color:var(--ui-border);border-radius:4px; }
+.play-mode-option:has(input:checked) { background:var(--ui-accent-soft);border-color:var(--ui-accent); }
+.playtest-setup select,.playtest-setup input { background:#fff;color:var(--ui-ink); }
+.playtest-end { background:#fff;color:var(--ui-ink); }
+/* One calm playing surface; card artwork provides the imagery in both modes. */
+.table-root,.table-root--physical,.table-root--physical[data-environment] { background:var(--ui-surface-muted);--surface:#fff;--surface-raised:var(--ui-accent-soft);--accent:var(--ui-accent);--accent-hover:#19365f;--border:var(--ui-border);color:var(--ui-ink); }
+.table-root::before,.table-root::after,.table-root--physical[data-environment]::before,.table-root--physical[data-environment]::after { background:none;border:0;box-shadow:none; }
+.table-battlefield-half::before,.table-battlefield-half[data-playmat]::before { background-image:none!important;opacity:0; }
+.table-hud,.table-menu,.table-history[open],.table-actions,.table-decision-dock,.physical-inspection,.physical-flow { background:#fff;color:var(--ui-ink);border-color:var(--ui-border);box-shadow:0 3px 12px #20324e18; }
+.table-root .table-decision-dock { background:#fff;border:1px solid var(--ui-border);border-radius:5px; }
+.table-root .table-menu { background:#fff;color:var(--ui-ink); }
+.table-menu-button { background:#fff;color:var(--ui-accent);border-color:var(--ui-border); }
+.table-root .table-hud { background:#fff;border:1px solid var(--ui-border);border-radius:4px; }
+.table-root .decision-option { background:#fff;color:var(--ui-ink);border-color:var(--ui-border);border-radius:4px; }
+.table-root .decision-option:hover { background:var(--ui-accent-soft);border-color:var(--ui-accent); }
+.table-root .decision-option--pass { background:var(--ui-accent-soft);color:var(--ui-accent); }
+.table-root .combat-flow-finish,.table-root .target-finish { background:var(--ui-accent);color:#fff;border-color:var(--ui-accent); }
+.table-root .table-card-back { background:#dce5f3;color:#254780;border-color:#9cacc5; }
+.table-root .table-card-caption,.table-root .table-card-stats,.table-root .table-card-count,.table-root .table-card-counter,.table-root .table-card-keyword,.table-root .table-card-keyword-overflow { background:#fff;color:var(--ui-ink);border-color:var(--ui-border);text-shadow:none; }
+.table-root .table-card--selectable { outline-color:var(--ui-accent); }
+.table-root .table-card--attacking { outline-color:var(--ui-danger); }
+.table-root .table-card--blocking { outline-color:var(--ui-accent); }
+.table-root .table-life-name,.table-root .table-pile-label,.table-root .physical-player-name,.table-root .physical-hand small { color:var(--ui-ink);text-shadow:none; }
+.physical-board,.physical-board[data-role=self] { background:#ffffffb8;border-color:var(--ui-border);border-radius:4px;box-shadow:none; }
+.physical-board[data-role=self]::before { color:var(--ui-muted); }
+.physical-board .physical-seat-plaque { background:#fff;box-shadow:none;border-radius:3px;color:var(--ui-ink); }
+.physical-board-focus,.physical-priority-marker { background:#fff;color:var(--ui-accent);border-color:var(--ui-border); }
+.table-root--physical .table-decision-dock { background:#fff; }
+.table-root [data-tone=raised] { color:var(--ui-success); }
+.table-root [data-tone=lowered] { color:var(--ui-danger); }
+.table-root [data-tone=neutral] { color:var(--ui-ink); }
+.table-root .target-flow,.table-root .combat-flow { color:var(--ui-ink); }
+.table-root button:focus-visible { outline:2px solid var(--ui-accent);outline-offset:3px; }
+/* The free table keeps its compact, full-window workspace. */
+body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .app-main { padding:0; }
+body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .content-area { width:100%;max-width:none; }
+body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .app-header { min-height:0; }
+#deck-lab-view .lab-table .dt-primary-tools .dt-test,#deck-lab-view .lab-table .dt-selection [data-dt=include],#deck-lab-view .lab-table .dt-search-form button { color:#fff;background:var(--ui-accent);border-color:var(--ui-accent); }
+@keyframes ui-dialog-in { from { opacity:0;translate:0 5px; } to { opacity:1;translate:0 0; } }
+@media(max-width:1000px) { .app-header { padding:0 16px;gap:14px; }.header-actions>[data-open-import] { display:none; }.app-main,body:has(#deck-lab-view:not([hidden])) .app-main { padding:20px 16px; }.lab-prototype { display:none; } }
+@media(max-width:700px) { .app-header { flex-wrap:wrap;padding:10px 12px;gap:10px; }.app-menu-content { display:contents; }.app-nav { flex-wrap:wrap; }.app-nav .nav-button { padding:6px 8px;font-size:11px; }.header-actions { margin-left:auto; }.backend-state { font-size:9px; }.app-main,body:has(#deck-lab-view:not([hidden])) .app-main { padding:18px 12px; }.lab-heading { margin-bottom:14px; }.lab-tabs { gap:18px; }.lab-workbar { gap:10px; }#deck-lab-view .lab-tabs button { font-size:11px; }.lab-choose { padding:16px; }#deck-lab-view .lab-choose h2 { font-size:17px; }.lab-deck-heading { flex-direction:column; }.lab-deck-heading>div:last-child { max-width:none;justify-content:flex-start; }.playtest-setup-columns { grid-template-columns:1fr;gap:16px; }.library-tools { gap:12px; }.desktop-settings { width:calc(100vw - 20px); }.desktop-settings header,.desktop-settings section { padding:18px; } }
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important;transition:none!important;scroll-behavior:auto!important; } }
+
+/* Mana identity remains distinct from interface action colors. */
+.lab-mana { color:var(--ui-ink);background:#e1e5eb; }
+.lab-mana[data-color=W] { background:#f3edce;color:#4f482e; }
+.lab-mana[data-color=U] { background:#c5e1f2;color:#1d526d; }
+.lab-mana[data-color=B] { background:#d5d0de;color:#42364f; }
+.lab-mana[data-color=R] { background:#f0cdc4;color:#823b2b; }
+.lab-mana[data-color=G] { background:#cde2cf;color:#315d3a; }

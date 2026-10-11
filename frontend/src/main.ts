@@ -6,6 +6,9 @@ import { initPlaytestView } from "./playtest/playtest-view.js";
 import { initVoiceMicTestView } from "./voice/voice-mic-test-view.js";
 import { initDesktopControls } from "./desktop-controls.js";
 
+import './styles/asphodel-theme.css';
+import './styles/app-refit.css';
+
 import { restoreLibraryStorage } from './library-storage';
 
 // A restore intent is acknowledged only after storage reaches disk. Until then no old
@@ -71,14 +74,14 @@ function showVoiceTestGroup(): void {
   navVoiceTest.setAttribute("aria-pressed", "true");
 }
 
-navLab.addEventListener("click", showLabGroup);
+navLab.addEventListener("click", () => { deckLab.openLibrary(); showLabGroup(); });
 navPlay.addEventListener("click", showPlayGroup);
 navVoiceTest.addEventListener("click", showVoiceTestGroup);
 
 const playtest = initPlaytestView(showPlayGroup,async review=>{await deckLab.returnFromReview(review);showLabGroup();});
 initVoiceMicTestView(voiceTestView);
 
-element<HTMLButtonElement>("#home-button").addEventListener("click", showLabGroup);
+element<HTMLButtonElement>("#home-button").addEventListener("click", () => { deckLab.openLibrary(); showLabGroup(); });
 
 async function checkBackend(): Promise<void> {
   try {

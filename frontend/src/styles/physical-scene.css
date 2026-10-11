@@ -1,10 +1,10 @@
 /* Physical composition. Shared primitives render cards; this file owns seat geometry only. */
 .table-root--physical { min-width: 0; min-height: 600px; }
-.table-play-mode { margin: 0 0 3px; font: 9px system-ui; letter-spacing: .12em; color: #b7ab8d; text-transform: uppercase; }
-.physical-scene { position: absolute; inset: 92px var(--edge-space) 116px; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; overflow: auto; scrollbar-color: #766c51 transparent; scrollbar-width: thin; }
+.table-play-mode { margin: 0 0 3px; font: 9px system-ui; letter-spacing: .12em; color: var(--ui-accent); text-transform: uppercase; }
+.physical-scene { position: absolute; inset: 92px var(--edge-space) 116px; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; overflow: auto; scrollbar-color: var(--ui-accent) transparent; scrollbar-width: thin; }
 .physical-board { --seat-card: clamp(124px,9vw,170px); --seat-land: 64px; min-width: 0; min-height: 0; position: relative; display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-rows: 72px minmax(130px,1fr) 104px; grid-template-areas: 'header header' 'permanents permanents' 'lands zones'; gap: 8px; padding: 10px 14px; border: 0; }
 .physical-board[data-density=primary] { grid-column: 1 / -1; --seat-card: clamp(164px,13vw,230px); --seat-land: clamp(64px,5.4vw,86px); }
-.physical-board[data-density=preview] { order: 1; --seat-card: 66px; --seat-land: 38px; grid-template-rows: 42px 62px 50px; gap: 4px; padding: 6px 9px; background: linear-gradient(135deg,#141b22c9,#20272d99); box-shadow: 0 8px 22px #0004; border-radius: 10px 10px 30px 10px; }
+.physical-board[data-density=preview] { order: 1; --seat-card: 66px; --seat-land: 38px; grid-template-rows: 42px 62px 50px; gap: 4px; padding: 6px 9px; background: linear-gradient(135deg,var(--ui-surface),color-mix(in srgb, var(--ui-accent) 9%, transparent)); box-shadow: 0 8px 22px color-mix(in srgb, var(--ui-shadow) 7%, transparent); border-radius: 10px 10px 30px 10px; }
 .physical-scene[data-count='2'], .physical-scene[data-count='3'], .physical-scene[data-focused=true] { grid-template-rows: minmax(320px,1fr) 174px; }
 .physical-scene[data-count='2'] .physical-board[data-density=preview] { grid-column: 1 / -1; width: min(560px,100%); justify-self: end; box-sizing: border-box; }
 .physical-scene[data-count='3'][data-focused=false] .physical-board[data-density=preview] { grid-column: 1 / -1; width: min(600px,100%); justify-self: end; }
@@ -24,12 +24,12 @@
 .table-card-caption, .table-card-stats { display: none; }
 [data-card-variant=battlefield] .table-card-face, [data-card-variant=land] .table-card-face { position: absolute; inset: 0; overflow: hidden; }
 .table-card-art { width: 100%; height: 100%; object-fit: cover; display: block; }
-[data-card-variant=battlefield] .table-card-caption, [data-card-variant=land] .table-card-caption { display: block; position: absolute; bottom: 0; left: 0; right: 0; padding: 14px 5px 5px; background: linear-gradient(transparent,#101613 40%); font: 11px system-ui; text-align: left; }
-[data-card-variant=battlefield] .table-card-stats { display: block; position: absolute; right: 3px; top: 3px; padding: 2px 5px; border-radius: 3px; background: #101613ee; color: #fff0cc; font-size: 13px; }
+[data-card-variant=battlefield] .table-card-caption, [data-card-variant=land] .table-card-caption { display: block; position: absolute; bottom: 0; left: 0; right: 0; padding: 14px 5px 5px; background: linear-gradient(transparent,var(--ui-surface) 40%); font: 11px system-ui; text-align: left; }
+[data-card-variant=battlefield] .table-card-stats { display: block; position: absolute; right: 3px; top: 3px; padding: 2px 5px; border-radius: 3px; background: var(--ui-surface); color: var(--ui-accent); font-size: 13px; }
 .physical-board[data-density=preview] .table-card-caption { font-size: 8px; padding: 7px 2px 2px; }
 .physical-board[data-density=preview] .table-card-stats { font-size: 9px; padding: 1px 2px; }
 [data-card-variant=land] .table-card-caption { font-size: 8px; }
-.physical-board[data-active=true] { background: radial-gradient(ellipse at 12% 8%,#bdb28c08,transparent 55%); }
+.physical-board[data-active=true] { background: radial-gradient(ellipse at 12% 8%,color-mix(in srgb, var(--ui-accent) 3%, transparent),transparent 55%); }
 
 /*
   --- Human digital twin framing (V2h "HUMAN DIGITAL TWIN MUST BE VISUALLY SEPARATE"): the human's
@@ -41,10 +41,10 @@
 
 .physical-board[data-role=self] {
   position: relative;
-  border: 1px solid var(--brass, #aa9062);
+  border: 1px solid var(--brass, var(--ui-accent));
   border-radius: 14px 14px 34px 14px;
-  background: linear-gradient(160deg, #262d33 0%, #171c20 78%);
-  box-shadow: 0 10px 26px #0007, inset 0 0 0 1px #00000055, inset 0 0 0 6px #ffffff08;
+  background: linear-gradient(160deg, var(--ui-surface-muted) 0%, var(--ui-surface) 78%);
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--ui-shadow) 13%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--ui-shadow) 9%, transparent), inset 0 0 0 6px color-mix(in srgb, var(--ui-shadow) 1%, transparent);
 }
 
 .physical-board[data-role=self]::before {
@@ -55,21 +55,21 @@
   z-index: 1;
   font: 8px system-ui;
   letter-spacing: .18em;
-  color: var(--brass-light, #dec899);
+  color: var(--brass-light, var(--ui-accent));
   opacity: .8;
   pointer-events: none;
 }
 
 .physical-board[data-density=preview][data-role=self]::before { content: 'YOU'; top: 4px; left: 9px; font-size: 7px; }
-.physical-identity--target { outline: 2px solid #e2a542; outline-offset: 4px; cursor: crosshair; }
-.physical-board .table-card--combat-selected { translate: 0 -10px; outline: 2px solid #d8b477; }
-.physical-life-delta { color: #e3c083; font: 15px Georgia,serif; animation: physical-life-delta 1.8s forwards; }
+.physical-identity--target { outline: 2px solid var(--ui-accent); outline-offset: 4px; cursor: crosshair; }
+.physical-board .table-card--combat-selected { translate: 0 -10px; outline: 2px solid var(--ui-accent); }
+.physical-life-delta { color: var(--ui-danger); font: 15px var(--asphodel-font); animation: physical-life-delta 1.8s forwards; }
 @keyframes physical-life-delta { 0% { opacity: 0; translate: 0 6px; } 15%,70% { opacity: 1; } 100% { opacity: 0; translate: 0 -12px; } }
 .table-stack-control { position: absolute; right: 28px; top: 82px; z-index: 9; }
-.table-stack-drawer { position: absolute; z-index: 10; inset: 120px 28px auto auto; width: min(350px,85vw); max-height: 65%; overflow: auto; background: #17201bf5; border: 1px solid #807358; padding: 18px; box-shadow: 0 20px 50px #0009; }
+.table-stack-drawer { position: absolute; z-index: 10; inset: 120px 28px auto auto; width: min(350px,85vw); max-height: 65%; overflow: auto; background: var(--ui-surface); border: 1px solid var(--ui-accent); padding: 18px; box-shadow: 0 20px 50px color-mix(in srgb, var(--ui-shadow) 16%, transparent); }
 .table-stack-drawer .table-stack { position: static; transform: none; max-width: none; display: grid; margin-top: 14px; }
-.physical-board-focus, .physical-overview, .table-stack-control, .table-stack-drawer > button { background: linear-gradient(#343b30,#20271f); border: 1px solid #a38b5b66; border-radius: 5px; color: #ded2b5; padding: 6px 12px; font: 10px system-ui; cursor: pointer; }
-.physical-board-focus:hover, .physical-overview:hover, .table-stack-control:hover { border-color: #ceb780; }
-.physical-board-focus:focus-visible, .physical-overview:focus-visible, .physical-identity:focus-visible, .table-stack-control:focus-visible { outline: 2px solid #e9ca8f; outline-offset: 3px; }
+.physical-board-focus, .physical-overview, .table-stack-control, .table-stack-drawer > button { background: linear-gradient(var(--ui-surface-muted),var(--ui-surface)); border: 1px solid color-mix(in srgb, var(--ui-accent) 40%, transparent); border-radius: 5px; color: var(--ui-accent); padding: 6px 12px; font: 10px system-ui; cursor: pointer; }
+.physical-board-focus:hover, .physical-overview:hover, .table-stack-control:hover { border-color: var(--ui-accent); }
+.physical-board-focus:focus-visible, .physical-overview:focus-visible, .physical-identity:focus-visible, .table-stack-control:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 3px; }
 @media(max-width:850px) { .physical-scene { inset-inline: 10px; } .physical-board { --seat-card: 100px; padding-inline: 6px; } .physical-board-header { gap: 6px; } .physical-board[data-density=preview] { --seat-card: 46px; } .physical-scene[data-count='4'], .physical-scene[data-count='3'][data-focused=false] { grid-template-columns: 1fr; } .table-root--physical .table-stack-control { right: 245px; } }
 @media(prefers-reduced-motion:reduce) { .physical-life-delta { animation: none; } }

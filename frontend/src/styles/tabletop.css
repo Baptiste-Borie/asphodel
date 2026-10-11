@@ -35,8 +35,8 @@ body.tabletop-active #play-view {
   height: 100vh;
   overflow: hidden;
   background:
-    radial-gradient(ellipse at 50% 0%, rgba(139, 124, 246, 0.05), transparent 55%),
-    #0c0e13;
+    radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--ui-accent) 3%, transparent), transparent 55%),
+    var(--ui-surface);
 }
 
 /* --- Battlefield: one top-down table, two halves facing each other --- */
@@ -55,7 +55,7 @@ body.tabletop-active #play-view {
   left: 200px;
   right: 200px;
   height: 1px;
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--ui-accent) 3%, transparent);
   content: "";
 }
 
@@ -75,8 +75,8 @@ body.tabletop-active #play-view {
 /* Whose turn it is, at a glance, even without reading the HUD — a tiny luminance lift and a very
    soft inset glow, no heavy border, nothing neon. */
 .table-battlefield-half--active {
-  background: rgba(139, 124, 246, 0.035);
-  box-shadow: inset 0 0 70px rgba(139, 124, 246, 0.07);
+  background: color-mix(in srgb, var(--ui-accent) 3%, transparent);
+  box-shadow: inset 0 0 70px color-mix(in srgb, var(--ui-shadow) 2%, transparent);
 }
 
 /* --- Commander dock: pinned next to the matching life total, never part of the battlefield row --- */
@@ -91,7 +91,7 @@ body.tabletop-active #play-view {
 
 .table-commander-dock:not(:empty) {
   padding-right: 16px;
-  border-right: 1px solid rgba(255, 255, 255, 0.07);
+  border-right: 1px solid color-mix(in srgb, var(--ui-border) 12%, transparent);
 }
 
 .table-battlefield-half--asphodel .table-commander-dock {
@@ -103,7 +103,7 @@ body.tabletop-active #play-view {
 }
 
 .table-card--commander:not(.table-card--tapped) {
-  border-color: rgba(232, 162, 58, 0.55);
+  border-color: color-mix(in srgb, var(--ui-accent) 55%, transparent);
 }
 
 /* Commander-dock cards keep a stable size of their own — never subject to the battlefield's
@@ -192,7 +192,7 @@ body.tabletop-active #play-view {
 }
 
 .table-land-zone:not(:empty) {
-  border-left: 1px solid rgba(255, 255, 255, 0.07);
+  border-left: 1px solid color-mix(in srgb, var(--ui-border) 12%, transparent);
 }
 
 .table-land-zone .table-card-slot {
@@ -281,12 +281,12 @@ body.tabletop-active #play-view {
   justify-content: center;
   gap: 6px;
   padding: 10px;
-  background: linear-gradient(160deg, rgba(232, 162, 58, 0.16), rgba(139, 124, 246, 0.12));
+  background: linear-gradient(160deg, color-mix(in srgb, var(--ui-accent) 3%, transparent), color-mix(in srgb, var(--ui-accent) 3%, transparent));
   text-align: center;
 }
 
 .table-card-token-name {
-  color: #f7f7f8;
+  color: var(--ui-ink);
   font-size: 0.78rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -300,7 +300,7 @@ body.tabletop-active #play-view {
 }
 
 .table-card-token-pt {
-  color: #f7f7f8;
+  color: var(--ui-ink);
   font-size: 0.92rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
@@ -343,7 +343,7 @@ body.tabletop-active #play-view {
 
 .table-card--summoning-sick {
   filter: saturate(0.7) brightness(0.93);
-  box-shadow: 0 0 0 2px rgba(232, 162, 58, 0.28);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-shadow) 8%, transparent);
   animation: table-card-sick-pulse 2.6s ease-in-out infinite;
 }
 
@@ -357,13 +357,13 @@ body.tabletop-active #play-view {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: rgba(232, 162, 58, 0.95);
-  box-shadow: 0 0 0 1px rgba(12, 14, 19, 0.6);
+  background: var(--ui-accent-soft);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ui-shadow) 16%, transparent);
 }
 
 @keyframes table-card-sick-pulse {
-  0%, 100% { box-shadow: 0 0 0 2px rgba(232, 162, 58, 0.2); }
-  50% { box-shadow: 0 0 0 3px rgba(232, 162, 58, 0.4); }
+  0%, 100% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-shadow) 5%, transparent); }
+  50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-shadow) 11%, transparent); }
 }
 
 /* Static distinction (desaturation, box-shadow ring, corner marker) stays; only the low-intensity pulse is disabled. */
@@ -382,8 +382,8 @@ body.tabletop-active #play-view {
   z-index: 2;
   padding: 2px 7px;
   border-radius: 999px;
-  background: rgba(12, 14, 19, 0.82);
-  color: #f7f7f8;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
   font-size: 0.74rem;
   font-weight: 750;
   font-variant-numeric: tabular-nums;
@@ -430,8 +430,8 @@ body.tabletop-active #play-view {
 .table-card-counter {
   padding: 1px 6px;
   border-radius: 999px;
-  background: rgba(12, 14, 19, 0.85);
-  color: #f7f7f8;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
   font-size: 0.62rem;
   font-weight: 750;
   font-variant-numeric: tabular-nums;
@@ -529,7 +529,7 @@ body.tabletop-active #play-view {
 
 .table-life-value {
   margin: 2px 0 0;
-  color: #f7f7f8;
+  color: var(--ui-ink);
   font-size: 2.3rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
@@ -557,11 +557,11 @@ body.tabletop-active #play-view {
 }
 
 .table-life-delta--gain {
-  color: #4ade80;
+  color: var(--ui-success);
 }
 
 .table-life-delta--loss {
-  color: #f87171;
+  color: var(--ui-danger);
 }
 
 @keyframes table-life-delta-float {
@@ -589,7 +589,7 @@ body.tabletop-active #play-view {
 
 .table-action-item {
   margin: 0;
-  color: #d7d7dc;
+  color: var(--ui-ink);
   font-size: 0.76rem;
   line-height: 1.35;
   /* Two lines allowed — a real card name is never truncated into something meaningless. */
@@ -600,7 +600,7 @@ body.tabletop-active #play-view {
 }
 
 .table-action-item--faded {
-  color: #565a66;
+  color: var(--ui-muted);
 }
 
 .table-action-turn {
@@ -637,7 +637,7 @@ body.tabletop-active #play-view {
 }
 
 .table-hud-turn {
-  color: #f7f7f8;
+  color: var(--ui-ink);
   font-size: 0.92rem;
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -671,7 +671,7 @@ body.tabletop-active #play-view {
   place-items: center;
   border: 1px solid var(--border);
   border-radius: 50%;
-  color: #f7f7f8;
+  color: var(--ui-ink);
   background: var(--surface-raised);
   font-size: 1.3rem;
   line-height: 1;
@@ -694,7 +694,7 @@ body.tabletop-active #play-view {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 24px 48px color-mix(in srgb, var(--ui-shadow) 12%, transparent);
 }
 
 .table-menu-deck-info {
@@ -740,22 +740,22 @@ body.tabletop-active #play-view {
   width: fit-content;
   margin: 14px auto 0;
   padding: 10px 22px;
-  border: 1px solid #e2a542;
+  border: 1px solid var(--ui-accent);
   border-radius: 8px;
-  background: linear-gradient(160deg, #2a2115, #171310);
-  color: #f2d9a3;
-  font: 13px/1.2 Georgia, serif;
+  background: linear-gradient(160deg, var(--ui-surface), var(--ui-surface));
+  color: var(--ui-accent);
+  font: 13px/1.2 var(--asphodel-font);
   letter-spacing: 0.03em;
   text-transform: uppercase;
   cursor: pointer;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--ui-shadow) 14%, transparent);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .table-preview-action:hover,
 .table-preview-action:focus-visible {
-  border-color: #f2c26b;
-  box-shadow: 0 0 0 2px rgba(242, 194, 107, 0.35), 0 8px 20px rgba(0, 0, 0, 0.5);
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-shadow) 9%, transparent), 0 8px 20px color-mix(in srgb, var(--ui-shadow) 14%, transparent);
 }
 
 /* --- Decision dock: lower-center, immediately above the hand --- */
@@ -833,13 +833,13 @@ body.tabletop-active #play-view {
 */
 .table-card--playable {
   cursor: pointer;
-  border-color: #e2a542;
-  box-shadow: 0 0 0 3px rgba(226, 165, 66, 0.35), 0 0 16px 2px rgba(226, 165, 66, 0.25);
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-shadow) 9%, transparent), 0 0 16px 2px color-mix(in srgb, var(--ui-shadow) 7%, transparent);
 }
 
 .table-card--playable:hover {
-  border-color: #f2c26b;
-  box-shadow: 0 0 0 3px rgba(242, 194, 107, 0.45), 0 0 20px 4px rgba(242, 194, 107, 0.3);
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-shadow) 12%, transparent), 0 0 20px 4px color-mix(in srgb, var(--ui-shadow) 8%, transparent);
 }
 
 /* --- Hand action menu: a small contextual menu anchored above a hand card with >1 legal action --- */
@@ -856,7 +856,7 @@ body.tabletop-active #play-view {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
-  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 44px color-mix(in srgb, var(--ui-shadow) 14%, transparent);
 }
 
 .table-hand-menu-option {
@@ -864,7 +864,7 @@ body.tabletop-active #play-view {
   padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  color: #f7f7f8;
+  color: var(--ui-ink);
   background: var(--surface-raised);
   font-size: 0.86rem;
   font-weight: 620;
@@ -873,7 +873,7 @@ body.tabletop-active #play-view {
 
 .table-hand-menu-option:hover {
   border-color: var(--accent);
-  background: rgba(139, 124, 246, 0.12);
+  background: color-mix(in srgb, var(--ui-accent) 3%, transparent);
 }
 
 /*
@@ -896,7 +896,7 @@ body.tabletop-active #play-view {
 .table-mana-overlay-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(6, 7, 10, 0.6);
+  background: color-mix(in srgb, var(--ui-accent) 9%, transparent);
   backdrop-filter: blur(6px);
   transition: opacity 220ms ease, backdrop-filter 220ms ease;
 }
@@ -926,7 +926,7 @@ body.tabletop-active #play-view {
 
 .table-mana-overlay-cost {
   margin: 0;
-  color: #f7f7f8;
+  color: var(--ui-ink);
   font-size: 2.1rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
@@ -978,7 +978,7 @@ body.tabletop-active #play-view {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface-raised);
-  color: #f7f7f8;
+  color: var(--ui-ink);
   font-size: 0.95rem;
   font-weight: 700;
 }
@@ -1038,10 +1038,10 @@ body.tabletop-active #play-view {
   z-index: 15;
   transform: translate(-50%, -50%) translateY(10px);
   padding: 10px 34px;
-  border-top: 1px solid rgba(226, 165, 66, 0.55);
-  border-bottom: 1px solid rgba(226, 165, 66, 0.55);
-  color: #f2dfae;
-  font: 22px/1 Georgia, serif;
+  border-top: 1px solid color-mix(in srgb, var(--ui-accent) 55%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--ui-accent) 55%, transparent);
+  color: var(--ui-accent);
+  font: 22px/1 var(--asphodel-font);
   letter-spacing: 0.28em;
   text-align: center;
   text-transform: uppercase;
@@ -1075,7 +1075,7 @@ body.tabletop-active #play-view {
   display: grid;
   place-items: center;
   cursor: pointer;
-  background: radial-gradient(ellipse at 50% 50%, rgba(0, 0, 0, 0.45), transparent 62%);
+  background: radial-gradient(ellipse at 50% 50%, color-mix(in srgb, var(--ui-accent) 7%, transparent), transparent 62%);
   opacity: 0;
   /*
     Not shown right now (including the very first, pre-reveal state before any `show()` call): must
@@ -1164,9 +1164,9 @@ body.tabletop-active #play-view {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  color: #1b1710;
-  background: rgba(226, 165, 66, 0.92);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  color: var(--ui-danger);
+  background: var(--ui-accent-soft);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--ui-shadow) 16%, transparent);
 }
 
 /*
@@ -1183,8 +1183,8 @@ body.tabletop-active #play-view {
   padding: 2px 9px;
   border: 1px solid var(--accent);
   border-radius: 999px;
-  background: rgba(12, 14, 19, 0.9);
-  color: #f2e6c8;
+  background: var(--ui-surface);
+  color: var(--ui-ink);
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -1217,12 +1217,12 @@ body.tabletop-active #play-view {
   padding: 2px 7px;
   border: 1px solid var(--accent);
   border-radius: 999px;
-  background: linear-gradient(160deg, #3d3120, #1c150c);
-  color: #f2dfae;
+  background: linear-gradient(160deg, var(--ui-surface-muted), var(--ui-surface));
+  color: var(--ui-accent);
   font-size: 0.72rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--ui-shadow) 16%, transparent);
 }
 
 @media (max-width: 900px) {

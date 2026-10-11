@@ -29,7 +29,7 @@
 .physical-board .table-pile-face--empty {
   border: 0;
   background: none;
-  color: #a99b7880;
+  color: color-mix(in srgb, var(--ui-accent) 50%, transparent);
 }
 .physical-board .table-pile-face--empty::before {
   content: "◇";
@@ -60,17 +60,16 @@
   height: 68px;
   box-sizing: border-box;
   border-radius: 50%;
-  border: 2px solid #a795704d;
+  border: 2px solid color-mix(in srgb, var(--ui-accent) 30%, transparent);
   font:
-    40px Georgia,
-    serif;
-  color: #eee9dd;
-  background: radial-gradient(circle at 38% 28%, #454b4d, #20262b 55%, #12191f);
+    40px var(--asphodel-font);
+  color: var(--ui-ink);
+  background: radial-gradient(circle at 38% 28%, var(--ui-surface-muted), var(--ui-surface) 55%, var(--ui-surface));
   box-shadow:
-    0 6px 12px #0009,
-    inset 0 0 0 4px #10171b,
-    inset 0 0 0 5px #8c79584d;
-  text-shadow: 0 2px 3px #000;
+    0 6px 12px color-mix(in srgb, var(--ui-shadow) 16%, transparent),
+    inset 0 0 0 4px color-mix(in srgb, var(--ui-shadow) 27%, transparent),
+    inset 0 0 0 5px color-mix(in srgb, var(--ui-shadow) 8%, transparent);
+  text-shadow: none;
 }
 .physical-seat-plaque {
   display: flex;
@@ -78,12 +77,11 @@
   gap: 4px;
   padding: 10px 10px 10px 0;
   min-width: 80px;
-  border-bottom: 1px solid #a6946a50;
+  border-bottom: 1px solid color-mix(in srgb, var(--ui-accent) 31%, transparent);
 }
 .physical-player-name {
   font:
-    21px Georgia,
-    serif;
+    21px var(--asphodel-font);
   letter-spacing: 0.02em;
 }
 .physical-seat-state {
@@ -93,17 +91,17 @@
 .physical-priority-marker {
   width: 6px;
   height: 6px;
-  background: #c1c9b7;
+  background: var(--ui-surface-muted);
   rotate: 45deg;
-  box-shadow: 0 0 6px #d1dbc344;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--ui-shadow) 7%, transparent);
 }
 .physical-board[data-active="true"] .physical-life {
-  border-color: #c6af78;
+  border-color: var(--ui-accent);
   box-shadow:
-    0 6px 14px #0009,
-    0 0 24px #d0b87e20,
-    inset 0 0 0 4px #10171b,
-    inset 0 0 0 5px #b7a37980;
+    0 6px 14px color-mix(in srgb, var(--ui-shadow) 16%, transparent),
+    0 0 24px color-mix(in srgb, var(--ui-shadow) 3%, transparent),
+    inset 0 0 0 4px color-mix(in srgb, var(--ui-shadow) 27%, transparent),
+    inset 0 0 0 5px color-mix(in srgb, var(--ui-shadow) 14%, transparent);
 }
 .physical-board[data-density="preview"] .physical-life {
   width: 40px;
@@ -163,16 +161,16 @@
   border-radius: 5px;
   margin-left: -24px;
   transform: rotate(var(--fan-angle));
-  background: radial-gradient(ellipse, #384447, #14212a);
-  border-color: #968267;
-  color: #c0ac80;
+  background: radial-gradient(ellipse, var(--ui-surface-muted), var(--ui-surface));
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
 }
 .physical-hand small {
   white-space: nowrap;
   margin-left: 14px;
   padding-top: 9px;
   font: 10px system-ui;
-  color: #c8c6b6;
+  color: var(--ui-muted);
 }
 .physical-board[data-density="preview"] .physical-hand {
   padding: 8px 4px 0;
@@ -208,9 +206,8 @@
   right: 0;
   text-align: center;
   font:
-    9px Georgia,
-    serif;
-  color: #bdb39a;
+    9px var(--asphodel-font);
+  color: var(--ui-accent);
 }
 .physical-board .table-commander-dock .table-card,
 .physical-board .table-commander-dock .table-card-slot {
@@ -227,20 +224,19 @@
   height: 71px;
   border-radius: 5px;
   box-shadow:
-    2px 2px #20272a,
-    3px 3px #8c8267,
-    5px 5px #171f24,
-    6px 6px #8c826766,
-    0 9px 12px #0007;
+    2px 2px color-mix(in srgb, var(--ui-shadow) 27%, transparent),
+    3px 3px color-mix(in srgb, var(--ui-shadow) 27%, transparent),
+    5px 5px color-mix(in srgb, var(--ui-shadow) 27%, transparent),
+    6px 6px color-mix(in srgb, var(--ui-shadow) 11%, transparent),
+    0 9px 12px color-mix(in srgb, var(--ui-shadow) 13%, transparent);
 }
 .physical-board .table-pile-label {
   font:
-    9px Georgia,
-    serif;
-  color: #d4cdb8;
+    9px var(--asphodel-font);
+  color: var(--ui-muted);
 }
 .physical-board .table-pile-face--empty {
-  box-shadow: inset 0 -1px #aca08533;
+  box-shadow: inset 0 -1px color-mix(in srgb, var(--ui-shadow) 5%, transparent);
   border-radius: 0;
   opacity: 0.65;
 }

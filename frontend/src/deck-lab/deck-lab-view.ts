@@ -75,7 +75,7 @@ function deckCardToLabCard(c: DeckCardView): Card {
 }
 const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const mana = (s: string | null) => (s ?? '').replace(/\{([^}]+)\}/g, (_, x: string) => `<span class="lab-mana" data-color="${esc(x)}">${esc(x)}</span>`);
-const cardImg = (c: {name: string; image: string}, w = 488, h = 680) => c.image ? `<img src="${esc(c.image)}" alt="${esc(c.name)}" loading="lazy" width="${w}" height="${h}" />` : `<div class="lab-no-image">${esc(c.name)}<span>Image unavailable</span></div>`;
+const cardImg = (c: {name: string; image: string}, w = 488, h = 680) => c.image ? `<img src="${esc(c.image)}" alt="${esc(c.name)}" loading="lazy" width="${w}" height="${h}" />` : `<div class="lab-no-image">${esc(c.name)}<span>Image indisponible</span></div>`;
 const image = (c: Card) => cardImg(c);
 const printingImage = (p: {image: string; set_name: string}) => cardImg({name: p.set_name, image: p.image}, 244, 340);
 /** Wraps a card's art; when both faces have their own image (transform/MDFC), it becomes a click-to-flip button. */
@@ -119,7 +119,8 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
   let currentQuery: LabSearchQuery = {};
   let debounce: ReturnType<typeof setTimeout> | undefined;
   let mode = 'images';
-  let view = 'search';
+  let view = 'builder';
+  let libraryQuery = '';
   let query = '';
   let typeFilters: string[] = [];
   let setFilters: string[] = [];
@@ -144,11 +145,11 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
     return { name: 'Growing wild · sample', cuts: [], groups: [commanderGroup(), ...sections.map(([name, start, end]) => ({ name, entries: sampleCards.slice(start, end).map(card => ({ card, quantity: card.name === 'Forest' ? 40 : 1 })) }))] };
   };
   root.innerHTML = `
-    <div class="lab-heading"><div><p class="lab-eyebrow">ASPHODEL / DECK LAB</p><h1>A place to think in cards.</h1></div><span class="lab-prototype">Catalogue local · Decks et tables enregistrés automatiquement</span></div>
+    <div class="lab-heading"><div><p class="lab-eyebrow">ASPHODEL / BIBLIOTHÈQUE</p><h1>Mes decks</h1></div><span class="lab-prototype">Decks et modifications enregistrés automatiquement</span></div>
     <div class="lab-recovery" role="status" hidden></div>
-    <div class="lab-workbar"><div class="lab-tabs"><button data-view="search" aria-pressed="true">Search</button><button data-view="builder" aria-pressed="false">Builder</button><button data-view="table" aria-pressed="false">Table V2</button></div><p>Discover. Collect. Make it yours.</p><button class="lab-selection" data-action="selection">Selection <span data-count>0</span> ↗</button></div>
-    <section class="lab-search">
-      <form class="lab-query"><span aria-hidden="true">⌕</span><input aria-label="Search card name or Oracle text" placeholder="Search card name or Oracle text…" /><button type="submit" class="lab-primary">Search</button><button type="button" data-action="filters" aria-expanded="false">Filters <span>⌄</span></button><button type="button" data-action="advanced" aria-expanded="false">Advanced</button></form>
+    <div class="lab-workbar"><div class="lab-tabs"><button data-view="builder" aria-pressed="true">Mes decks</button><button data-view="search" aria-pressed="false">Catalogue</button><button data-view="table" aria-pressed="false" disabled>Table</button></div><p>Construire et tester tes decks.</p><button class="lab-selection" data-action="selection">Réserve <span data-count>0</span> ↗</button></div>
+    <section class="lab-search" hidden>
+      <form class="lab-query"><span aria-hidden="true">⌕</span><input aria-label="Nom de carte ou texte de règles" placeholder="Nom de carte ou texte de règles…" /><button type="submit" class="lab-primary">Rechercher</button><button type="button" data-action="filters" aria-expanded="false">Filtres <span>⌄</span></button><button type="button" data-action="advanced" aria-expanded="false">Syntaxe avancée</button></form>
       <div class="lab-filters" hidden>
         <label>Card name<input data-search-field="name" placeholder="Any name" /></label>
         <label>Oracle text<input data-search-field="oracle" placeholder="Words in card text" /></label>
@@ -165,13 +166,13 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
       <div class="lab-results-bar"><div><strong data-results></strong><span data-catalog-scope></span></div><div class="lab-result-controls"><div class="lab-modes"><button data-mode="images" aria-pressed="true">▦ Images</button><button data-mode="full" aria-pressed="false">☰ Full</button></div></div></div>
       <p class="lab-search-status" role="status" hidden></p>
       <div class="lab-results"></div>
-      <div class="lab-end"><button data-action="load-more" hidden>Load 60 more</button><p data-loaded></p><span>Selection stays with you as you explore.</span></div>
+      <div class="lab-end"><button data-action="load-more" hidden>Afficher 60 cartes de plus</button><p data-loaded></p><span>Ta réserve est conservée pendant la navigation.</span></div>
     </section>
-    <section class="lab-builder" hidden></section>
+    <section class="lab-builder"></section>
     <section class="lab-table" hidden></section>
-    <dialog class="lab-drawer" aria-labelledby="lab-selection-title"><div class="lab-drawer-head"><div><p class="lab-eyebrow">YOUR WORKING POOL</p><h2 id="lab-selection-title">Selection <span data-count>0</span></h2></div><button data-action="close" aria-label="Close selection">✕</button></div><p class="lab-muted">Collected ideas, independent of any deck.</p><div class="lab-pool"></div><form class="lab-transfer"><label>New deck name<input name="deckName" placeholder="Untitled exploration" /></label><button class="lab-primary" type="submit">Create a new deck from these cards</button><div class="lab-or">or add to a deck sheet</div><select aria-label="Choose destination deck"><option value="">Choose a deck explicitly…</option></select><button type="button" data-action="transfer">Add Selection to chosen deck</button><small>Cards stay in Selection until you remove them.</small></form></dialog>
-    <dialog class="lab-inspect" aria-labelledby="lab-inspection-title"><button data-action="close-inspect" aria-label="Close card inspection">✕</button><div></div></dialog>
-    <dialog class="lab-triage" aria-labelledby="lab-triage-title"><div class="lab-triage-head"><div><p class="lab-eyebrow" data-triage-category></p><h2 id="lab-triage-title">How interesting is this card?</h2></div><button data-action="triage-cancel" aria-label="Close sorting">✕</button></div><div class="lab-triage-body"></div></dialog>
+    <dialog class="lab-drawer" aria-labelledby="lab-selection-title"><div class="lab-drawer-head"><div><p class="lab-eyebrow">RÉSERVE DE CARTES</p><h2 id="lab-selection-title">Réserve <span data-count>0</span></h2></div><button data-action="close" aria-label="Fermer la réserve">✕</button></div><p class="lab-muted">Cartes mises de côté, indépendantes de tes decks.</p><div class="lab-pool"></div><form class="lab-transfer"><label>Nom du nouveau deck<input name="deckName" placeholder="Nouveau deck" /></label><button class="lab-primary" type="submit">Créer un deck avec ces cartes</button><div class="lab-or">ou ajouter à un deck existant</div><select aria-label="Choisir le deck de destination"><option value="">Choisir un deck…</option></select><button type="button" data-action="transfer">Ajouter la réserve à ce deck</button><small>Les cartes restent dans la réserve jusqu’à leur retrait.</small></form></dialog>
+    <dialog class="lab-inspect" aria-labelledby="lab-inspection-title"><button data-action="close-inspect" aria-label="Fermer les détails de la carte">✕</button><div></div></dialog>
+    <dialog class="lab-triage" aria-labelledby="lab-triage-title"><div class="lab-triage-head"><div><p class="lab-eyebrow" data-triage-category></p><h2 id="lab-triage-title">Comment classer cette carte ?</h2></div><button data-action="triage-cancel" aria-label="Fermer le tri">✕</button></div><div class="lab-triage-body"></div></dialog>
     <p class="lab-toast" role="status" hidden></p>`;
   const exportDialog = document.createElement('dialog');
   exportDialog.className = 'lab-export';
@@ -431,7 +432,7 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
   }
   function renderPool() {
     get('.lab-pool').innerHTML = [...knownCards.values()].filter(c => selection.has(c.name)).map(c => `<div class="lab-pool-card">${image(c)}<div><strong>${esc(c.name)}</strong><span>${esc(c.type_line)}</span></div><button data-remove="${esc(c.name)}" aria-label="Remove ${esc(c.name)} from Selection">−</button></div>`).join('') || '<div class="lab-empty"><h3>Keep a thought for later.</h3><p>Add cards from Search in one click. They will wait here while you browse or build.</p></div>';
-    get<HTMLSelectElement>('.lab-transfer select').innerHTML = '<option value="">Choose a deck explicitly…</option>' + sheets.map((s, i) => `<option value="${i}">${esc(s.name)}</option>`).join('');
+    get<HTMLSelectElement>('.lab-transfer select').innerHTML = '<option value="">Choisir un deck…</option>' + sheets.map((s, i) => `<option value="${i}">${esc(s.name)}</option>`).join('');
     counts();
   }
   async function loadSavedDecks() {
@@ -487,12 +488,12 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
     active = existing ?? sheetFromDeckDetail(deck);
     if (!existing) sheets.push(active);
     scheduleAutoSave(active);
-    switchView('builder');
+    switchView('table');
   }
   async function openSavedDeck(id: number) {
     if (recovery.drafts.some(d => d.backendId === id)) { recoveryBanner.hidden = false; recoveryBanner.scrollIntoView(); toast('Un brouillon attend ta récupération avant l’ouverture de ce deck.'); return; }
     const existing = sheets.find(s => s.backendId === id);
-    if (existing) { active = existing; switchView('builder'); return; }
+    if (existing) { active = existing; switchView('table'); return; }
     try {
       const deck = await apiRequest<DeckDetailView>(`/decks/${id}`);
       openDeckDetail(deck);
@@ -501,11 +502,15 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
     }
   }
   function switchView(next: string) {
-    if (next === 'table' && !active) { next = 'builder'; toast('Open a deck, then choose Table V2.'); }
+    if (next === 'table' && !active) { next = 'builder'; toast('Ouvre un deck pour accéder à sa table.'); }
     scrollPositions[view] = window.scrollY;
     const previous = view;
     if (previous === 'table' && next !== 'table') table?.checkpoint();
     view = next;
+    root.dataset.screen = view;
+    get<HTMLButtonElement>('[data-view=table]').disabled = !active;
+    get('[data-view=builder]').textContent = active ? 'Catégories' : 'Mes decks';
+    get('.lab-heading h1').textContent = view === 'search' ? 'Catalogue de cartes' : active ? active.name : 'Mes decks';
     get('.lab-search').hidden = view !== 'search'; get('.lab-builder').hidden = view !== 'builder';
     root.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
     get('.lab-table').hidden = view !== 'table';
@@ -524,16 +529,16 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
     const sortButton = (!g.commander && !g.maybeboard && g.entries.length > 0)
       ? `<button data-triage="${gi}" aria-label="Sort ${esc(g.name)}" title="Keep or set aside, one card at a time">⇄</button>`
       : '';
-    const stack = g.entries.map((e, ei) => `<div class="lab-stack-card" draggable="true" data-drag-group="${gi}" data-drag-entry="${ei}"><button class="lab-inspect-card" data-inspect="${esc(e.card.name)}" aria-label="Inspect ${esc(e.card.name)}">${image(e.card)}${tagBadges(active!, e.card.name)}</button><label class="lab-card-quantity">×<input type="number" min="1" max="999" step="1" value="${e.quantity}" data-quantity="${gi}:${ei}" aria-label="Quantité de ${esc(e.card.name)}"></label><select data-move="${gi}:${ei}" aria-label="Move or cut ${esc(e.card.name)}"><option value="">•••</option>${active!.groups.map((dest, di) => di !== gi ? `<option value="${di}">Move to ${esc(dest.name)}</option>` : '').join('')}<option value="cut">Cut card</option></select></div>`).join('') || '<p class="lab-category-empty">Room for a new idea.<br>Search or drag a card in.</p>';
+    const stack = g.entries.map((e, ei) => `<div class="lab-stack-card" draggable="true" data-drag-group="${gi}" data-drag-entry="${ei}"><button class="lab-inspect-card" data-inspect="${esc(e.card.name)}" aria-label="Inspect ${esc(e.card.name)}">${image(e.card)}${tagBadges(active!, e.card.name)}</button><label class="lab-card-quantity">×<input type="number" min="1" max="999" step="1" value="${e.quantity}" data-quantity="${gi}:${ei}" aria-label="Quantité de ${esc(e.card.name)}"></label><select data-move="${gi}:${ei}" aria-label="Move or cut ${esc(e.card.name)}"><option value="">•••</option>${active!.groups.map((dest, di) => di !== gi ? `<option value="${di}">Déplacer vers ${esc(dest.name)}</option>` : '').join('')}<option value="cut">Écarter la carte</option></select></div>`).join('') || '<p class="lab-category-empty">Aucune carte.<br>Rechercher ou déposer une carte ici.</p>';
     const classes = ['lab-category', g.commander && 'lab-category--commander', g.maybeboard && 'lab-category--maybeboard'].filter(Boolean).join(' ');
-    return `<section class="${classes}"><header>${header}<span>${countLabel}</span>${sortButton}<button data-reorder="${gi}" aria-label="Move ${esc(g.name)} category left" ${lockedFirst ? 'disabled' : ''}>←</button></header><div class="lab-category-add"><input type="text" data-add-search="${gi}" placeholder="Add a card…" autocomplete="off" aria-label="Add a card to ${esc(g.name)}" /><div class="lab-add-results" data-add-results="${gi}" hidden></div></div><div class="lab-stack" data-drop-group="${gi}">${stack}</div></section>`;
+    return `<section class="${classes}"><header>${header}<span>${countLabel}</span>${sortButton}<button data-reorder="${gi}" aria-label="Move ${esc(g.name)} category left" ${lockedFirst ? 'disabled' : ''}>←</button></header><div class="lab-category-add"><input type="text" data-add-search="${gi}" placeholder="Ajouter une carte…" autocomplete="off" aria-label="Add a card to ${esc(g.name)}" /><div class="lab-add-results" data-add-results="${gi}" hidden></div></div><div class="lab-stack" data-drop-group="${gi}">${stack}</div></section>`;
   }
   /** A saved-deck / in-progress-sheet tile — reuses the app shell's own .deck-tile styling (frontend/src/style.css) so browsing decks looks the same here as the old Decks page did. */
   function deckTileHtml(key: string, name: string, totalCards: number, commanderName: string, commanderImage: string | null): string {
     const visual = commanderImage
       ? `<img class="deck-cover-image" src="${esc(commanderImage)}" alt="" loading="lazy" />`
       : `<div class="card-image-fallback">${esc((commanderName || name).slice(0, 1).toUpperCase())}</div>`;
-    return `<button type="button" class="deck-tile" data-open-deck="${esc(key)}"><div class="deck-tile-visual">${visual}<span class="deck-count">${totalCards} cards</span></div><div class="deck-tile-information"><h2>${esc(name)}</h2><p class="deck-commander-name">${esc(commanderName || 'No commander set')}</p></div></button>`;
+    return `<button type="button" class="deck-tile" data-open-deck="${esc(key)}"><div class="deck-tile-visual">${visual}<span class="deck-count">${totalCards} cartes</span></div><div class="deck-tile-information"><h2>${esc(name)}</h2><p class="deck-commander-name">${esc(commanderName || 'Commandant à définir')}</p></div></button>`;
   }
   function renderTable() {
     if (!active) return;
@@ -565,7 +570,19 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
         deckTileHtml(`saved:${d.id}`, d.name, d.totalCards, d.commanders.map(c => c.name).join(' & '), d.commanders[0]?.imageUri ?? null),
       ).join('');
       const tiles = localTiles + savedTiles;
-      get('.lab-builder').innerHTML = `<div class="lab-choose"><p class="lab-eyebrow">YOUR DECKS</p><h2>Every deck starts with your idea.</h2><p>Open one of your decks below, explore the sample workspace,<br>or begin with an empty sheet and your own categories.</p><button class="lab-primary" data-action="sample">Open sample · 140 candidates</button><button data-action="new">New empty sheet</button><button data-action="import">Import a deck</button></div>${tiles ? `<div class="deck-library">${tiles}</div>` : ''}`;
+      get('.lab-builder').innerHTML = `<div class="lab-choose"><p class="lab-eyebrow">CONSTRUIRE · TESTER · AJUSTER</p><h2>Ton espace de construction.</h2><p>Ouvre un deck pour reprendre sa table, crée une nouvelle liste ou importe depuis Archidekt.</p><button class="lab-primary" data-action="new">+ Nouveau deck</button><button data-action="import">Importer un deck</button><button data-action="sample">Explorer le deck de démonstration</button></div><div class="library-tools"><label>Rechercher dans mes decks<input data-deck-filter type="search" placeholder="Nom du deck ou commandant…" value="${esc(libraryQuery)}" autocomplete="off"></label><span data-deck-count role="status"></span></div><div class="deck-library">${tiles}</div><p class="library-empty" data-library-empty hidden>Aucun deck ne correspond à cette recherche.</p>`;
+      const filter = get<HTMLInputElement>('[data-deck-filter]');
+      const applyFilter = () => {
+        const query = libraryQuery.trim().toLocaleLowerCase('fr');
+        const decks = [...root.querySelectorAll<HTMLElement>('.deck-library .deck-tile')];
+        let visible = 0;
+        for (const deck of decks) { deck.hidden = !(deck.textContent ?? '').toLocaleLowerCase('fr').includes(query); if (!deck.hidden) visible++; }
+        get('[data-deck-count]').textContent = `${visible} / ${decks.length} decks`;
+        get('[data-library-empty]').hidden = visible !== 0;
+        get('[data-library-empty]').textContent = decks.length ? 'Aucun deck ne correspond à cette recherche.' : 'Ta bibliothèque est vide. Crée ou importe ton premier deck.';
+      };
+      filter.addEventListener('input', () => { libraryQuery = filter.value; applyFilter(); });
+      applyFilter();
       return;
     }
     // Maybeboard is deliberately "not really in the deck" — excluded from the count, the mana
@@ -573,12 +590,12 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
     const { entries, total, nonlands, spells, curve } = deckStatistics(active.groups);
     const commanderCount = active.groups.find(g => g.commander)!.entries.reduce((n,e) => n+e.quantity, 0);
     const commanderWarning = commanderCount === 0
-      ? '<p class="lab-builder-warning" role="status">No commander yet — search or drag a card into the <strong>Commander</strong> category.</p>'
-      : commanderCount > 2 ? `<p class="lab-builder-warning" role="status">The Commander category has <strong>${commanderCount}</strong> cards — most decks run just one (two with Partner).</p>` : '';
-    const warning = total !== 100 ? `<p class="lab-builder-warning" role="status">This sheet has <strong>${total}</strong> card${total === 1 ? '' : 's'} — a Commander deck needs exactly 100.</p>` : '';
+      ? '<p class="lab-builder-warning" role="status">Commandant absent : ajoute une carte dans la catégorie <strong>Commander</strong>.</p>'
+      : commanderCount > 2 ? `<p class="lab-builder-warning" role="status">La catégorie Commandant contient <strong>${commanderCount}</strong> cartes. Un deck en utilise généralement une, ou deux avec Partenariat.</p>` : '';
+    const warning = total !== 100 ? `<p class="lab-builder-warning" role="status">Ce deck contient <strong>${total}</strong> carte${total === 1 ? '' : 's'} — un deck Commander doit en contenir 100.</p>` : '';
     const saveStatus = '<span class="lab-save-status" data-save-status role="status"></span><button data-action="retry-save" hidden>Réessayer</button>';
-    const deckActions = (options.testDeck ? '<button type="button" data-action="test-deck">Tester ce deck</button>' : '') + '<button type="button" data-action="reviews">Mes essais</button><button type="button" data-action="versions">Versions</button><button type="button" data-action="opening-hands">Mains de départ</button>' + historyButtons + (window.asphodelDesktop ? '<button data-action="prepare-artwork">Préparer hors ligne</button>' : '') + '<button data-action="export-deck">Exporter</button><button data-action="rename-deck">Rename</button><button data-action="delete-deck">Delete</button>';
-    get('.lab-builder').innerHTML = `${commanderWarning}${warning}<div class="lab-deck-heading"><div><button class="lab-back" data-action="close-sheet" aria-label="Back to all decks">← All decks</button><p class="lab-eyebrow">COMMANDER / CANDIDATE SHEET</p><h2>${esc(active.name)}${saveStatus}</h2><p><strong>${total}</strong> candidate cards <span> / 100 final deck target</span></p></div><div><select class="lab-sheet-picker" aria-label="Open deck sheet">${sheets.map((s,i) => `<option value="${i}" ${s === active ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><button data-action="new">+ New sheet</button><button data-action="selection">+ From Selection</button>${deckActions}</div></div><div class="lab-builder-tools"><button type="button" data-action="manage-tags">Tags et cibles</button><span>Manual categories <span class="lab-muted">· drag a card, use its menu, or search a category to add one</span></span><form class="lab-new-category"><input aria-label="New category name" placeholder="Name your category" required maxlength="60" /><button>+ New category</button></form></div><div class="lab-categories">${active.groups.map(categoryHtml).join('')}</div><details class="lab-cuts"><summary>Cuts · ${active.cuts.length} <span>Keep discarded ideas nearby</span></summary>${active.cuts.map((c,i) => `<button data-restore="${i}">↶ ${esc(c.name)}</button>`).join('') || '<p>No cuts yet. Cut a card using its menu to keep it here.</p>'}</details><section class="lab-stats"><div><p class="lab-eyebrow">DECK STATISTICS</p><h2>The shape of your sheet.</h2><p class="lab-muted">All candidates · cuts excluded<br>Card types may overlap.</p><div class="lab-type-counts">${['Creature','Instant','Sorcery','Artifact','Enchantment','Planeswalker','Land'].map(type => `<div><span>${type}</span><strong>${entries.filter(e => e.card.type_line.includes(type)).reduce((n,e) => n+e.quantity,0)}</strong></div>`).join('')}</div></div><div><div class="lab-curve-heading"><h3>Mana curve</h3><span>${spells} nonland spells</span></div><div class="lab-curve">${curve.map((n,i) => `<div><span>${n}</span><i style="height:${n / Math.max(...curve,1) * 150}px"></i><label>${i === 7 ? '7+' : i}</label></div>`).join('')}</div><p class="lab-average">${spells ? (nonlands.reduce((n,e) => n+e.card.cmc*e.quantity,0)/spells).toFixed(2) : '—'} <span>Average mana value · nonlands</span></p></div></section>${commanderSummary(active, commanderCatalog.state(active))}${manaSummary(active, commanderCatalog.state(active))}${roleSummary(active)}`;
+    const deckActions = (options.testDeck ? '<button type="button" data-action="test-deck">Tester ce deck</button>' : '') + '<button type="button" data-action="reviews">Mes essais</button><button type="button" data-action="versions">Versions</button><button type="button" data-action="opening-hands">Mains de départ</button>' + historyButtons + (window.asphodelDesktop ? '<button data-action="prepare-artwork">Préparer hors ligne</button>' : '') + '<button data-action="export-deck">Exporter</button><button data-action="rename-deck">Renommer</button><button data-action="delete-deck">Supprimer</button>';
+    get('.lab-builder').innerHTML = `${commanderWarning}${warning}<div class="lab-deck-heading"><div><button class="lab-back" data-action="close-sheet" aria-label="Retour à la bibliothèque">← Mes decks</button><p class="lab-eyebrow">CONSTRUCTION / COMMANDER</p><h2>${esc(active.name)}${saveStatus}</h2><p><strong>${total}</strong> cartes dans le deck <span> / 100 cartes attendues</span></p></div><div><select class="lab-sheet-picker" aria-label="Ouvrir un deck">${sheets.map((s,i) => `<option value="${i}" ${s === active ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select><button data-action="new">+ Nouveau deck</button><button data-action="selection">+ Depuis la réserve</button>${deckActions}</div></div><div class="lab-builder-tools"><button type="button" data-action="manage-tags">Tags et cibles</button><span>Catégories manuelles <span class="lab-muted">· déplace une carte ou utilise la recherche d’une catégorie</span></span><form class="lab-new-category"><input aria-label="Nom de la catégorie" placeholder="Nom de la catégorie" required maxlength="60" /><button>+ Catégorie</button></form></div><div class="lab-categories">${active.groups.map(categoryHtml).join('')}</div><details class="lab-cuts"><summary>Cartes écartées · ${active.cuts.length} <span>Conserver les idées pour plus tard</span></summary>${active.cuts.map((c,i) => `<button data-restore="${i}">↶ ${esc(c.name)}</button>`).join('') || '<p>Aucune carte écartée. Utilise le menu d’une carte pour la conserver ici.</p>'}</details><section class="lab-stats"><div><p class="lab-eyebrow">ANALYSE DU DECK</p><h2>Composition et courbe</h2><p class="lab-muted">Cartes incluses · réserve et coupes exclues<br>Les types peuvent se recouvrir.</p><div class="lab-type-counts">${['Creature','Instant','Sorcery','Artifact','Enchantment','Planeswalker','Land'].map(type => `<div><span>${type}</span><strong>${entries.filter(e => e.card.type_line.includes(type)).reduce((n,e) => n+e.quantity,0)}</strong></div>`).join('')}</div></div><div><div class="lab-curve-heading"><h3>Courbe de mana</h3><span>${spells} sorts hors terrains</span></div><div class="lab-curve">${curve.map((n,i) => `<div><span>${n}</span><i style="height:${n / Math.max(...curve,1) * 150}px"></i><label>${i === 7 ? '7+' : i}</label></div>`).join('')}</div><p class="lab-average">${spells ? (nonlands.reduce((n,e) => n+e.card.cmc*e.quantity,0)/spells).toFixed(2) : '—'} <span>Valeur de mana moyenne · hors terrains</span></p></div></section>${commanderSummary(active, commanderCatalog.state(active))}${manaSummary(active, commanderCatalog.state(active))}${roleSummary(active)}`;
     setSaveStatus(persistence.status(active)); updateHistoryControls();
   }
   /** Debounced per-category "search the catalog, click to add" — lets you build a category without detouring through Search/Selection. */
@@ -595,10 +612,10 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
       for (const card of data.cards) knownCards.set(card.name, card);
       resultsEl.innerHTML = data.cards.length
         ? data.cards.map(c => `<button type="button" class="lab-add-result" data-add-card-name="${esc(c.name)}" data-add-card-group="${gi}"><span>${esc(c.name)}</span><small>${esc(c.type_line)}</small></button>`).join('')
-        : '<p class="lab-add-empty">No matches.</p>';
+        : '<p class="lab-add-empty">Aucun résultat.</p>';
       resultsEl.hidden = false;
     } catch {
-      if (!controller.signal.aborted) { resultsEl.innerHTML = '<p class="lab-add-empty">Search failed.</p>'; resultsEl.hidden = false; }
+      if (!controller.signal.aborted) { resultsEl.innerHTML = '<p class="lab-add-empty">La recherche a échoué.</p>'; resultsEl.hidden = false; }
     }
   }
   function addCardToGroup(gi: number, cardName: string) {
@@ -685,7 +702,7 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
    *  instead of another sheet group, without leaving the recap. */
   function triageBucketHtml(key: TriageCategoryKey, label: string): string {
     const items = triage!.buckets[key];
-    const stack = items.map((e, ei) => `<div class="lab-stack-card"><button class="lab-inspect-card" data-inspect="${esc(e.card.name)}" aria-label="Inspect ${esc(e.card.name)}">${image(e.card)}</button><select data-triage-move="${key}:${ei}" aria-label="Move ${esc(e.card.name)} to another category"><option value="">•••</option>${TRIAGE_CATEGORIES.filter(c => c.key !== key).map(c => `<option value="${c.key}">Move to ${esc(c.label)}</option>`).join('')}</select></div>`).join('')
+    const stack = items.map((e, ei) => `<div class="lab-stack-card"><button class="lab-inspect-card" data-inspect="${esc(e.card.name)}" aria-label="Inspect ${esc(e.card.name)}">${image(e.card)}</button><select data-triage-move="${key}:${ei}" aria-label="Move ${esc(e.card.name)} to another category"><option value="">•••</option>${TRIAGE_CATEGORIES.filter(c => c.key !== key).map(c => `<option value="${c.key}">Déplacer vers ${esc(c.label)}</option>`).join('')}</select></div>`).join('')
       || '<p class="lab-category-empty">None</p>';
     return `<div class="lab-triage-recap-col" data-triage-col="${key}"><p class="lab-eyebrow">${esc(label)} · ${items.length}</p><div class="lab-stack">${stack}</div></div>`;
   }
@@ -694,7 +711,7 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
     const body = get('.lab-triage-body');
     triageDialog.classList.toggle('lab-triage--recap', triage.position >= triage.queue.length);
     if (triage.position >= triage.queue.length) {
-      body.innerHTML = `<div class="lab-triage-recap"><h3>Sorted ${triage.queue.length} card${triage.queue.length === 1 ? '' : 's'}</h3><div class="lab-triage-recap-cols">${TRIAGE_CATEGORIES.map(c => triageBucketHtml(c.key, c.label)).join('')}</div><button class="lab-primary" data-action="triage-apply">Done</button></div>`;
+      body.innerHTML = `<div class="lab-triage-recap"><h3>${triage.queue.length} carte${triage.queue.length === 1 ? '' : 's'}</h3><div class="lab-triage-recap-cols">${TRIAGE_CATEGORIES.map(c => triageBucketHtml(c.key, c.label)).join('')}</div><button class="lab-primary" data-action="triage-apply">Done</button></div>`;
       return;
     }
     const entry = triage.queue[triage.position]!;
@@ -771,7 +788,7 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
     if (b.dataset.addCardName) addCardToGroup(Number(b.dataset.addCardGroup), b.dataset.addCardName);
     if (b.dataset.openDeck) {
       const [kind, key] = b.dataset.openDeck.split(':');
-      if (kind === 'local') { active = sheets[Number(key)]; switchView('builder'); }
+      if (kind === 'local') { active = sheets[Number(key)]; switchView('table'); }
       else if (kind === 'saved') void openSavedDeck(Number(key));
     }
     switch (b.dataset.action) {
@@ -782,8 +799,8 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
       case 'triage-apply': applyTriage(); break;
       case 'triage-cancel': cancelTriage(); break;
       case 'filters': case 'advanced': { const panel = get(`.lab-${b.dataset.action}`); panel.hidden = !panel.hidden; b.setAttribute('aria-expanded',String(!panel.hidden)); break; }
-      case 'sample': active = sample(); sheets.push(active); scheduleAutoSave(); renderBuilder(); break;
-      case 'new': active = { name: `Untitled exploration ${sheets.length+1}`, groups: [commanderGroup(), {name:'Unsorted', entries:[]}], cuts:[] }; sheets.push(active); scheduleAutoSave(); switchView('builder'); break;
+      case 'sample': active = sample(); sheets.push(active); scheduleAutoSave(); switchView('table'); break;
+      case 'new': active = { name: `Nouveau deck ${sheets.length+1}`, groups: [commanderGroup(), {name:'Unsorted', entries:[]}], cuts:[] }; sheets.push(active); scheduleAutoSave(); switchView('table'); break;
       case 'verify-commander': {
         if (active) { const sheet = active; void commanderCatalog.refresh(sheet, () => {
           if (active !== sheet) return;
@@ -809,7 +826,7 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
       case 'transfer': { const value = get<HTMLSelectElement>('.lab-transfer select').value; if (!value) { toast('Choose a destination deck first.'); break; } if (!selection.size) { toast('Add cards to Selection first.'); break; } active = sheets[Number(value)]!; transfer(false); break; }
       case 'rename-deck': {
         if (!active) break;
-        const name = window.prompt('New deck name', active.name)?.trim();
+        const name = window.prompt('Nom du nouveau deck', active.name)?.trim();
         if (!name || name === active.name) break;
         editSheet('Renommer le deck', () => { active!.name = name; });
         break;
@@ -887,7 +904,7 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
         editSheet('Créer une catégorie', () => { active!.groups.push(name.toLowerCase() === MAYBEBOARD_NAME.toLowerCase() ? maybeGroup() : { name, entries: [] }); });
       }
     }
-    if (form.matches('.lab-transfer')) { if (!selection.size) { toast('Add cards to Selection first.'); return; } active = {name: form.querySelector('input')!.value.trim() || `Untitled exploration ${sheets.length+1}`, groups:[commanderGroup(),{name:'Unsorted',entries:[]}],cuts:[]}; sheets.push(active); transfer(true); form.reset(); }
+    if (form.matches('.lab-transfer')) { if (!selection.size) { toast('Add cards to Selection first.'); return; } active = {name: form.querySelector('input')!.value.trim() || `Nouveau deck ${sheets.length+1}`, groups:[commanderGroup(),{name:'Unsorted',entries:[]}],cuts:[]}; sheets.push(active); transfer(true); form.reset(); }
   });
   root.addEventListener('change', event => {
     const el = event.target as HTMLInputElement;
@@ -962,7 +979,7 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
   function renderImportError(error: ApiError) {
     importFeedback.replaceChildren();
     importFeedback.className = 'import-feedback import-feedback--error';
-    const title = document.createElement('h3'); title.textContent = 'Import failed';
+    const title = document.createElement('h3'); title.textContent = 'Import impossible';
     const message = document.createElement('p'); message.textContent = error.message;
     importFeedback.append(title, message);
     const items = [
@@ -983,10 +1000,10 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
     const isUrl = importMode.value === 'url';
     if (isUrl ? !urlInput.value.trim() : (!name || !decklist)) return;
     importFeedback.className = 'import-feedback import-feedback--loading';
-    importFeedback.textContent = 'Resolving cards with Scryfall and saving…';
+    importFeedback.textContent = 'Identification des cartes et enregistrement…';
     importFeedback.hidden = false;
     saveDeckButton.disabled = true;
-    saveDeckButton.textContent = 'Importing…';
+    saveDeckButton.textContent = 'Import en cours…';
     try {
       const deck = await apiRequest<DeckDetailView>(isUrl ? '/decks/import/archidekt' : '/decks', {
         method: 'POST',
@@ -999,10 +1016,10 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
       void loadSavedDecks();
       openDeckDetail(deck);
     } catch (error) {
-      renderImportError(error instanceof ApiError ? error : new ApiError({ message: 'The backend is unreachable.' }));
+      renderImportError(error instanceof ApiError ? error : new ApiError({ message: 'Le moteur local est indisponible.' }));
     } finally {
       saveDeckButton.disabled = false;
-      saveDeckButton.textContent = 'Import and save';
+      saveDeckButton.textContent = 'Importer et enregistrer';
     }
   });
   document.querySelectorAll<HTMLButtonElement>('[data-open-import]').forEach(button => button.addEventListener('click', openImportModal));
@@ -1012,9 +1029,9 @@ export function initDeckLabView(root: HTMLElement, options: {testDeck?: (deck: D
 
   let retired = false;
   window.addEventListener('pagehide', () => { if (retired) return; table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); });
-  return { returnFromReview, retire() { retired = true; reviewsDialog?.close(); versionsDialog?.close(); openingHands?.close(); commanderCatalog.retire(); }, async flush() { if (retired) return true; table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); return persistence.flush(); }, activate() {
+  return { returnFromReview, openLibrary() { active = undefined; switchView('builder'); }, retire() { retired = true; reviewsDialog?.close(); versionsDialog?.close(); openingHands?.close(); commanderCatalog.retire(); }, async flush() { if (retired) return true; table?.checkpoint(); for (const sheet of sheets) scheduleAutoSave(sheet); return persistence.flush(); }, activate() {
     void loadCatalog();
     void loadSavedDecks();
-    if (!activated) { activated = true; void renderSearch(); }
+    if (!activated) { activated = true; switchView('builder'); void renderSearch(); }
   } };
 }

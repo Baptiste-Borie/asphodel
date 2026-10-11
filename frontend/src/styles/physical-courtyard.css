@@ -1,27 +1,27 @@
 /* Original environment, independent of player count and layout. */
 .table-root--physical[data-environment=courtyard] {
-  --stone: #20262b;
-  --stone-raised: #30363b;
-  --stone-deep: #11181d;
-  --brass: #aa9062;
-  --brass-light: #dec899;
-  --ink: #ece5d4;
-  --ink-muted: #b4b5aa;
+  --stone: var(--ui-surface);
+  --stone-raised: var(--ui-surface-muted);
+  --stone-deep: var(--ui-surface);
+  --brass: var(--ui-accent);
+  --brass-light: var(--ui-accent);
+  --ink: var(--ui-ink);
+  --ink-muted: var(--ui-muted);
   --edge-space: clamp(60px, 7vw, 140px);
   --accent: var(--brass-light);
-  --accent-hover: #f0dfb9;
+  --accent-hover: var(--ui-accent);
   --surface: var(--stone-deep);
   --surface-raised: var(--stone-raised);
   --text-muted: var(--ink-muted);
   color: var(--ink);
-  background: #171d22;
+  background: var(--ui-surface);
 }
 .table-root--physical[data-environment=courtyard]::before {
   inset: 0; border: 0; border-radius: 0; box-shadow: none;
-  background: radial-gradient(ellipse at 50% 40%, transparent 20%, #080e1430 70%, #060b114d);
+  background: radial-gradient(ellipse at 50% 40%, transparent 20%, color-mix(in srgb, var(--ui-accent) 3%, transparent) 70%, color-mix(in srgb, var(--ui-accent) 5%, transparent));
 }
 .table-root--physical[data-environment=courtyard]::after {
   inset: 0; opacity: 1;
-  background: linear-gradient(0deg, #060c1440, transparent 25% 85%, #060c1420);
+  background: linear-gradient(0deg, color-mix(in srgb, var(--ui-accent) 4%, transparent), transparent 25% 85%, color-mix(in srgb, var(--ui-accent) 3%, transparent));
 }
 .table-root--physical button, .table-root--physical input { font-family: ui-sans-serif, system-ui, sans-serif; }

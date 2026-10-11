@@ -17,7 +17,15 @@ try {
   await electron.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];w.setFullScreen(false);w.setContentSize(1366,768);});
   await page.waitForFunction(()=>innerWidth===1366&&innerHeight===768);
   const data=await builderFixture();await page.evaluate(installBuilderFixture,data);await page.locator('#nav-deck-lab').click();
-  await page.locator('[data-view=builder]').click();await page.locator('[data-open-deck="saved:1"]').click();await page.locator('[data-view=table]').click();
+  assert.equal(await page.locator('.lab-builder').isVisible(),true,'library is the entry point');
+  await page.locator('[data-deck-filter]').fill('introuvable');
+  assert.equal(await page.locator('[data-open-deck="saved:1"]').isVisible(),false);
+  assert.equal(await page.locator('[data-library-empty]').isVisible(),true);
+  await page.locator('[data-deck-filter]').fill('Kodama');
+  assert.equal(await page.locator('[data-open-deck="saved:1"]').isVisible(),true);
+  await page.locator('[data-deck-filter]').fill('');
+  assert.equal(await page.evaluate(()=>getComputedStyle(document.body).backgroundColor),'rgb(243, 246, 250)');
+  await page.locator('[data-open-deck="saved:1"]').click();
   const table=page.locator('.lab-table');await table.locator('.dt-card').first().waitFor();await table.locator('[data-dt=fit]').click();
   if(process.env.ASPHODEL_BUILDER_SCREENSHOT)await page.screenshot({path:`${process.env.ASPHODEL_BUILDER_SCREENSHOT}-initial.png`});
   const world=table.locator('.dt-world'),camera=await world.getAttribute('style');
@@ -80,7 +88,7 @@ try {
   await page.waitForFunction(()=>window.builderSmoke.project.workspace.zones.some(z=>z.name==='Protection'));
   const snapshot=await page.evaluate(()=>window.builderSmoke.project);
   await page.reload();await page.waitForFunction(()=>window.asphodelDesktop&&document.querySelector('#backend-status')?.textContent==='Prêt');
-  await page.evaluate(installBuilderFixture,{...data,project:snapshot});await page.locator('#nav-deck-lab').click();await page.locator('[data-view=builder]').click();await page.locator('[data-open-deck="saved:1"]').click();await page.locator('[data-view=table]').click();
+  await page.evaluate(installBuilderFixture,{...data,project:snapshot});await page.locator('#nav-deck-lab').click();await page.locator('[data-view=builder]').click();await page.locator('[data-open-deck="saved:1"]').click();
   await page.locator('.dt-pile').waitFor();assert.equal(await page.locator('[data-note-text]').first().inputValue(),'Protéger Kodama');
   assert.equal(await page.locator('.dt-world').evaluate((el,camera)=>{const reference=document.createElement('div');reference.style.transform=`translate(${camera.x}px,${camera.y}px) scale(${camera.zoom})`;return el.style.transform===reference.style.transform;},snapshot.workspace.camera),true,'reload restores the camera transform');
   assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('asphodel.builder-draft.v1.builder-smoke')||'null')?.project?.workspace.camera??window.builderSmoke.project.workspace.camera),snapshot.workspace.camera,'reload keeps the saved camera');

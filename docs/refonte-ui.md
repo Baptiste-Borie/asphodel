@@ -1,21 +1,21 @@
-# Asphodel — refonte UI progressive
+# Asphodel — refonte globale / 0.1.20
 
-Direction retenue avec Baptiste : interface blanche, nette et professionnelle ; police sans-serif lisible ; bleu encre posé. Le caractère doit surtout venir des finitions et de la fluidité. Éviter les titres littéraires, les grands headers, le beige/écru et les décors RP.
+Direction retenue avec Baptiste : blanc neutre, surfaces froides, bleu encre et sans-serif. Le caractère vient de la densité, des interactions et des finitions ; pas de décor RP, de beige ni de titres littéraires.
 
-## Patch 16 / 0.1.19 — table du builder
+## Parcours
 
-- Header de 48 px et barre d’outils de 36 px ; actions principales visibles, actions secondaires dans le menu.
-- Actions de sélection dans un espace réservé ; table stable lors des sélections.
-- Recherche et analyse à droite, avec espace réservé sur desktop ; overlay dans les fenêtres étroites.
-- Focus explicite, Échap, états de sélection/déplacement/destination ; entrée de panneau à 150 ms avec respect de la réduction des animations.
-- Polices système et chiffres tabulaires ; images absentes lisibles par nom/type.
+La bibliothèque devient l’entrée du builder et le point de retour depuis la navigation principale. Elle réunit création, import, recherche dans les decks et ouverture des projets. Un deck s’ouvre directement sur la table ; la vue par catégories reste accessible dans son menu. Le catalogue conserve son onglet et ses filtres.
 
-Le modèle de projet, les coordonnées, les piles, les notes, l’historique, le cache et Forge ne changent pas. Aucun rangement automatique ajouté.
+## Interface commune
 
-## Suite à valider dans l’app
+- Header compact, titres contextuels et navigation Bibliothèque / Jouer / Microphone.
+- Bibliothèque, catalogue, catégories, table libre, analyse, mains de départ et versions partagent les mêmes surfaces, textes, bordures et états d’action.
+- Préparation de partie, jeu numérique et compagnon physique utilisent le même langage visuel. Les cartes, zones et interactions de jeu restent identifiables ; attaque, blocage et erreurs conservent des couleurs sémantiques.
+- Paramètres, imports, inspection et autres dialogues adoptent le thème clair.
+- Focus visible, transitions courtes, chiffres tabulaires et respect des animations réduites.
 
-1. Utiliser le builder avec de vrais decks et ajuster densité, dispositions et accès aux actions.
-2. Étendre les composants visuels à la bibliothèque, aux détails de carte et aux paramètres.
-3. Revoir l’interface en partie : hiérarchie plateau/décision, transitions d’état et interactions.
+Les jetons communs sont définis dans `frontend/src/styles/asphodel-theme.css`. Les ajustements de disposition et de finition se trouvent dans `app-refit.css`, chargé après les composants. Les règles locales utilisent ces jetons pour éviter plusieurs palettes concurrentes.
 
-Ne pas copier la mise en page de la table dans toutes les vues : chaque écran doit garder l’espace nécessaire à sa tâche. Les démos sont une référence d’exploration, pas un cahier des charges figé.
+## Validation
+
+Les tests frontend et desktop vérifient les modèles et les comportements existants. Le smoke builder couvre les interactions de la table et le parcours bibliothèque → deck ; les contrôles natifs doivent être exécutés dans un environnement disposant d’un affichage Electron. La géométrie du jeu et les contrats Forge ne sont pas modifiés.

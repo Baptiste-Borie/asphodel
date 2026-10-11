@@ -85,7 +85,7 @@ function createDeckPicker(labelText: string): { element: HTMLElement; getValue: 
   select.className = "text-input";
   const fixtureOption = document.createElement("option");
   fixtureOption.value = "fixture";
-  fixtureOption.textContent = "Fixture (default)";
+  fixtureOption.textContent = "Deck de démonstration";
   select.append(fixtureOption);
   label.append(select);
   wrap.append(label);
@@ -93,10 +93,10 @@ function createDeckPicker(labelText: string): { element: HTMLElement; getValue: 
   const details = document.createElement("details");
   details.className = "deck-picker-advanced";
   const summary = document.createElement("summary");
-  summary.textContent = "Use an Archidekt URL instead";
+  summary.textContent = "Utiliser une URL Archidekt";
   const urlLabel = document.createElement("label");
   urlLabel.className = "field-label field-label--spaced";
-  urlLabel.textContent = "Archidekt deck URL";
+  urlLabel.textContent = "URL du deck Archidekt";
   const urlInput = document.createElement("input");
   urlInput.type = "text";
   urlInput.className = "text-input";
@@ -125,19 +125,14 @@ function createDeckPicker(labelText: string): { element: HTMLElement; getValue: 
   };
 }
 
-/**
- * V2g "Physical Companion": a first-class Play Mode choice on the setup screen — Digital (today's
- * fully symmetric Obsidian Table, still the default/pre-selected option so nothing changes for
- * someone who doesn't notice this control) or Physical Companion (the human plays a real deck;
- * Asphodel's board dominates and the human's own half becomes a compact synchronized mirror).
- */
+/** Both modes share the same setup; digital remains the default. */
 function createPlayModePicker(): { element: HTMLElement; getValue: () => "digital" | "physical" } {
   const wrap = document.createElement("div");
   wrap.className = "play-mode-picker";
 
   const heading = document.createElement("h3");
   heading.className = "deck-picker-heading";
-  heading.textContent = "Play Mode";
+  heading.textContent = "Mode de jeu";
   wrap.append(heading);
 
   const options = document.createElement("div");
@@ -169,11 +164,11 @@ function createPlayModePicker(): { element: HTMLElement; getValue: () => "digita
     return label;
   }
 
-  const digitalOption = buildOption("digital", "Digital", "Both boards fully digital, side by side — the Obsidian Table.");
+  const digitalOption = buildOption("digital", "Numérique", "Les deux plateaux et toutes les cartes sont affichés dans l’application.");
   const physicalOption = buildOption(
     "physical",
-    "Physical Companion",
-    "Play your real deck on the table. Asphodel's board takes center stage; declare your draws, mills and scry reveals as you go.",
+    "Cartes physiques",
+    "Joue avec ton deck physique et déclare tes cartes révélées. Asphodel affiche le plateau adverse.",
   );
   options.append(digitalOption, physicalOption);
 
@@ -441,7 +436,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     }
     if(navigation!==setupNavigation) return;
     showSetup();
-    const retry = document.createElement('button'); retry.type='button'; retry.className='secondary-button'; retry.textContent='Resume active game';
+    const retry = document.createElement('button'); retry.type='button'; retry.className='secondary-button'; retry.textContent='Reprendre la partie en cours';
     retry.onclick=()=>void resumeActivePlaytestIfAny(); setupSection.append(retry);
   }
 
@@ -459,7 +454,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
 
     const columns = document.createElement("div");
     columns.className = "playtest-setup-columns";
-    const humanPicker = createDeckPicker("YOU");
+    const humanPicker = createDeckPicker("TON DECK");
     const agentPicker = createDeckPicker("ASPHODEL");
     const secondAgentPicker = createDeckPicker("ASPHODEL 2");
     secondAgentPicker.element.hidden = true;
@@ -543,7 +538,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
 
   async function startGame(request: StartPlaytestRequest, button: HTMLButtonElement, feedback: HTMLParagraphElement): Promise<void> {
     button.disabled = true;
-    button.textContent = "Starting Forge…";
+    button.textContent = "Démarrage du moteur…";
     feedback.hidden = true;
     try {
       const started = await startPlaytest(request);
@@ -1034,7 +1029,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
         physicalScene.focusPlayer(state.observation.selfPlayerId);
       }
     }
-    // V2g.1: which of `active`'s mapped items belong in the dock depends on Play Mode — see
+    // V2g.1: which of `active`'s mapped items belong in the dock depends on Mode de jeu — see
     // `buildDockItems`'s doc comment for the exact Digital/Physical rule.
     renderDecisionIfChanged(state, active ? buildDockItems(active, currentPlayMode) : null);
     // Voice Intent Resolver (V0): this is exactly "the new authoritative state" a running compound
@@ -1176,7 +1171,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     decisionDock.replaceChildren();
     decisionDock.classList.remove("table-decision-dock--targets", "table-decision-dock--combat", "table-decision-dock--complex", "table-decision-dock--cards", "physical-declaration");
     const text = submitting ? "Submitting choice…" : {
-      starting: "Starting Forge…", running: "Asphodel is thinking…",
+      starting: "Démarrage du moteur…", running: "Asphodel réfléchit…",
       waiting_for_human: "", completed: "", ended_by_human: "", failed: "",
     }[status];
     if (!text) return;
@@ -1289,7 +1284,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
       // The hint only makes sense when something was ACTUALLY left off the dock in favor of a
       // clickable card — in Physical mode that's board/commander cards only (hand actions are back
       // in `dockItems`, see `buildDockItems`), so comparing against `dockItems.length` (rather than
-      // the old bare `unmapped`) keeps the hint accurate in both Play Modes.
+      // the old bare `unmapped`) keeps the hint accurate in both Mode de jeus.
       if (dockItems && state.pendingDecision.rendered.kind === 'menu' && dockItems.length < state.pendingDecision.rendered.items.length) {
         const hint = document.createElement('p'); hint.className = 'table-action-hint'; hint.textContent = 'Choose a highlighted card, or an action below.';
         decisionDock.querySelector('.decision-title')?.after(hint);
@@ -1340,7 +1335,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     endSection.replaceChildren();
     endSection.className = "playtest-end";
     const heading = document.createElement("h1");
-    heading.textContent = state.endedByHuman ? "PLAYTEST ENDED" : "GAME OVER";
+    heading.textContent = state.endedByHuman ? "ESSAI TERMINÉ" : "PARTIE TERMINÉE";
     endSection.append(heading);
 
     if (state.endedByHuman) {

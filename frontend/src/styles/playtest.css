@@ -15,8 +15,8 @@
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
-  --asphodel: #e8a23a;
-  --asphodel-dim: rgba(232, 162, 58, 0.14);
+  --asphodel: var(--ui-accent);
+  --asphodel-dim: color-mix(in srgb, var(--ui-accent) 14%, transparent);
 }
 
 /* --- Setup screen --- */
@@ -29,7 +29,7 @@
 
 .playtest-setup h1 {
   margin: 0;
-  color: #f7f7f8;
+  color: var(--ui-ink);
   font-size: clamp(1.65rem, 3vw, 2.2rem);
 }
 
@@ -67,7 +67,7 @@
 }
 
 .deck-picker-advanced summary:hover {
-  color: #d7d7dc;
+  color: var(--ui-ink);
 }
 
 .playtest-setup-seed {
@@ -104,7 +104,7 @@
 
 .decision-title {
   margin: 0 0 var(--space-3);
-  color: #f7f7f8;
+  color: var(--ui-ink);
   font-size: 1.15rem;
   font-weight: 750;
 }
@@ -121,7 +121,7 @@
   padding: 0 var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  color: #f7f7f8;
+  color: var(--ui-ink);
   background: var(--surface-raised);
   font-size: 0.9rem;
   font-weight: 620;
@@ -130,7 +130,7 @@
 
 .decision-option:hover {
   border-color: var(--accent);
-  background: rgba(139, 124, 246, 0.12);
+  background: color-mix(in srgb, var(--ui-accent) 3%, transparent);
 }
 
 .decision-option:active {
@@ -148,13 +148,13 @@
 }
 
 .decision-option--pass:hover {
-  color: #d7d7dc;
+  color: var(--ui-ink);
 }
 
 .decision-option--confirm {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--ui-ink);
 }
 
 .decision-option--confirm:hover {
@@ -179,7 +179,7 @@
   height: 40px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  color: #f7f7f8;
+  color: var(--ui-ink);
   background: var(--surface-raised);
   font-size: 1.1rem;
 }
@@ -190,7 +190,7 @@
 
 .decision-value-display {
   min-width: 36px;
-  color: #f7f7f8;
+  color: var(--ui-ink);
   font-size: 1.2rem;
   font-weight: 750;
   font-variant-numeric: tabular-nums;
@@ -220,7 +220,7 @@
 }
 
 .playtest-end-winner {
-  color: #f7f7f8 !important;
+  color: var(--ui-ink) !important;
   font-size: 1.1rem;
   font-weight: 700;
 }
@@ -278,7 +278,7 @@
 }
 
 .card-search-result--active {
-  background: rgba(139, 124, 246, 0.18);
+  background: color-mix(in srgb, var(--ui-accent) 3%, transparent);
 }
 
 .card-search-remaining {

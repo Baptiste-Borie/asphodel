@@ -37,7 +37,8 @@ try {
   assert.equal(JSON.parse(await readFile(join(userData, 'display-preferences.json'), 'utf8')).fullscreen, false);
   // Text editing remains available after removing the native Edit menu.
   await page.keyboard.press('Escape');
-  const query = page.getByLabel('Search card name or Oracle text');
+  await page.locator('[data-view=search]').click();
+  const query = page.getByLabel('Nom de carte ou texte de règles');
   await query.fill('Sol Ring');
   await query.press('ControlOrMeta+A');
   await query.press('Backspace');

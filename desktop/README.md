@@ -1,4 +1,4 @@
-# Asphodel Desktop 0.1.19
+# Asphodel Desktop 0.1.20
 
 Desktop wrapper around the existing TypeScript/Vite frontend, Node backend and pinned Forge bridge. No stack migration. Launch Asphodel, choose a saved deck, play locally, close the application. The packaged app includes Chromium/Node, Java and Forge's resources; no terminal, Node installation, Java installation or remote server is needed to run it.
 
@@ -10,13 +10,13 @@ Close Asphodel, then from the repository root:
 npm --prefix desktop run install:local
 ```
 
-This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.19-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
+This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.20-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
 
 Afterwards, open **Asphodel** from Ubuntu's application menu and pin it to your dock if desired. The package installs the app in `/opt/Asphodel`, the desktop entry `Asphodel.desktop`, the existing icon and the `asphodel` command. This launch uses the installed app, independent of the checkout, and needs no local server command. The normal desktop settings, fullscreen preference and Quitter button remain available.
 
 To update after a new patch/pull, close Asphodel and run the same command again. Decks, cached images, drafts and display settings remain in the existing `~/.config/Asphodel` profile; the package contains no home-directory files. Package removal (`sudo apt-get remove asphodel-desktop`) leaves this profile in place. Backup/restore is available in settings; abrupt-crash recovery still depends on a persisted draft.
 
-To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.19-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
+To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.20-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
 
 ## Automated Linux packages
 
@@ -330,6 +330,12 @@ No database migration, runtime dependency, Java source or Forge JAR change. The 
 
 The free table now uses a white/cool-gray palette, ink-blue actions and system sans-serif typography. A 48px deck header keeps search, analysis and play visible; secondary actions move into the deck menu. A compact workbar contains zone/note creation, history and counts. Selection actions have a reserved row so selecting a card neither covers the canvas nor resizes it. Desktop search/analysis panels reserve their own space; narrow windows use an overlay. Opening a panel preserves the camera and moves focus into it; Escape closes it and returns focus to the canvas.
 
-Panel entrances last 150ms and honor reduced-motion preferences. Hover, selection, dragging and drop destinations have distinct feedback. Coordinates never animate during gestures. Cancellation clears transient drag styles and rolls the gesture back through existing history. Failed artwork retains the card name/type. Deck membership, piles, notes, saving, Forge and playtest behavior are unchanged. This patch starts the app-wide refit with the free builder; library and game screens are later steps.
+Panel entrances last 150ms and honor reduced-motion preferences. Hover, selection, dragging and drop destinations have distinct feedback. Coordinates never animate during gestures. Cancellation clears transient drag styles and rolls the gesture back through existing history. Failed artwork retains the card name/type. Deck membership, piles, notes, saving, Forge and playtest behavior are unchanged. This was the first stage of the refit; patch 17 extends the shared presentation across the app.
 
 Validation: frontend build, 423 frontend tests, 51 desktop tests and a DOM check of panels/focus, reduced motion, selection, drag/cancel/history, inspection, notes and candidates passed. This environment could not open Electron because local display sockets are blocked, so the new native test was not run here; pixel/layout verification and a `.deb` build remain local checks. The Desktop workflow runs the native test with Xvfb. Run `npm --prefix desktop run smoke:builder` after building the frontend, with a display, or `xvfb-run -a -s "-screen 0 1600x1000x24" npm --prefix desktop run smoke:builder`.
+
+## Global interface refit (patch 17 / 0.1.20)
+
+The library is now the builder entry point, with local filtering by deck or commander and a clear empty state. Opening or creating a deck leads straight to its free table; the category view remains available in the deck menu. Library, catalogue, category builder, table, analysis dialogs, setup, Digital and Physical play, microphone and desktop settings share a neutral white/cool-gray palette, ink-blue actions and system sans-serif typography. The app header is compact and decorative game environments are replaced by a calm playing surface. Card artwork and semantic game feedback remain distinct.
+
+Validation: frontend build and 474 unit tests passed. DOM checks cover library filtering, deck/table/category navigation, sample and empty decks, persistence flush, mode selection, table gestures and history. Stylesheets parse, shared tokens resolve and the core text palette meets 4.5:1 contrast against its white/cool surfaces. Native Electron pixel checks and the full packaged Forge runtime must be checked locally; display sockets are unavailable in the editing environment. `smoke:builder` now also checks the library entry point, filtering and its light background.

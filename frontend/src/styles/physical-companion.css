@@ -49,7 +49,7 @@
 }
 
 .table-compact-hand-verify summary:hover {
-  color: #d7d7dc;
+  color: var(--ui-ink);
 }
 
 .table-compact-hand-list {
@@ -63,8 +63,8 @@
 
 .table-compact-hand-list li {
   padding: 3px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  color: #d7d7dc;
+  border-bottom: 1px solid color-mix(in srgb, var(--ui-border) 12%, transparent);
+  color: var(--ui-ink);
   font-size: 0.82rem;
 }
 
@@ -99,7 +99,7 @@
 
 .play-mode-option--selected {
   border-color: var(--accent);
-  background: rgba(139, 124, 246, 0.1);
+  background: color-mix(in srgb, var(--ui-accent) 3%, transparent);
 }
 
 .play-mode-option input {
@@ -109,7 +109,7 @@
 }
 
 .play-mode-option-title {
-  color: #f7f7f8;
+  color: var(--ui-ink);
   font-size: 0.95rem;
   font-weight: 700;
 }
@@ -148,7 +148,7 @@
   justify-content: space-between;
   border-color: var(--accent);
   border-style: solid;
-  color: #f7f7f8;
+  color: var(--ui-ink);
 }
 
 .physical-declare-slot-remove {
@@ -162,7 +162,7 @@
 }
 
 .physical-declare-slot-remove:hover {
-  color: #f87171;
+  color: var(--ui-danger);
 }
 
 .physical-declare-search {

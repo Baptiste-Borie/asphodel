@@ -1,8 +1,8 @@
 .artwork-dialog { width:min(660px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:0;border:1px solid var(--border);color:inherit;background:var(--surface-raised);overflow:auto; }
-.artwork-dialog::backdrop { background:#08090bb3; }
+.artwork-dialog::backdrop { background:var(--ui-surface); }
 .artwork-dialog header { display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 24px;border-bottom:1px solid var(--border); }
 .artwork-dialog header p { margin:0 0 5px;color:var(--text-muted);font-size:11px;letter-spacing:.12em; }
-.artwork-dialog h2 { margin:0;font:24px Georgia,serif;overflow-wrap:anywhere; }
+.artwork-dialog h2 { margin:0;font:24px var(--asphodel-font);overflow-wrap:anywhere; }
 .artwork-dialog header button { padding:4px 10px;font-size:24px; }
 .artwork-dialog section { padding:20px 24px;border-bottom:1px solid var(--border); }
 .artwork-dialog section p,.artwork-dialog .artwork-hint { font-size:13px;line-height:1.7;color:var(--text-muted); }
