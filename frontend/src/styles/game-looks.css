@@ -1,0 +1,105 @@
+/* Experimental game surfaces. The rest of the application retains its current theme. */
+.game-look-picker { display:grid;gap:8px;margin:12px 0;padding:12px;border:1px solid var(--ui-border);border-radius:8px; }
+.game-look-picker legend { font-weight:700;font-size:12px; }
+.game-look-picker p { font-size:11px;color:var(--ui-muted);margin:0 0 4px; }
+.game-look-picker button { text-align:left; }
+.game-look-picker button[aria-pressed=true] { outline:2px solid var(--ui-accent);outline-offset:1px; }
+.table-root:is([data-look=luminous],[data-look=strategy]) {
+  --look-edge:#98b0bb;--look-panel:#f0f6f8;--look-board:#c3d4da;--look-depth:#294e6440;
+  --ui-ink:#182e3b;--ui-muted:#435e6b;--ui-border:#9fb5bf;--ui-surface:var(--look-panel);
+  --ui-surface-muted:#cbdbe1;--ui-accent:#176984;--ui-accent-soft:#d8eaf0;--ui-shadow:#142e40;
+  --accent:var(--ui-accent);--border:var(--ui-border);--surface:var(--look-panel);--surface-raised:var(--ui-accent-soft);
+  color:var(--ui-ink);background:radial-gradient(ellipse at 40% 0%,#eff8fa 0%,#bed0d8 55%,#90aab8 100%);
+}
+.table-root[data-look=strategy] {
+  color-scheme:dark;--look-edge:#40596c;--look-panel:#1b2a3a;--look-board:#142431;--look-depth:#0009;
+  --ui-ink:#ecf3f8;--ui-muted:#b0c3d3;--ui-border:#40596c;--ui-surface-muted:#13202e;
+  --ui-accent:#63c9d6;--ui-accent-soft:#284353;--ui-shadow:#000;
+  background:radial-gradient(ellipse at 45% 0%,#304b61 0%,#152535 55%,#0a1420 100%);
+}
+.table-root:is([data-look=luminous],[data-look=strategy])::after,
+.table-root.table-root--physical:is([data-look=luminous],[data-look=strategy])::after {
+  opacity:.3;background:repeating-linear-gradient(115deg,transparent 0 3px,#ffffff09 3px 4px);border:0;
+}
+.table-root:is([data-look=luminous],[data-look=strategy]) :is(.physical-board,.table-battlefield-half) {
+  background:radial-gradient(ellipse at 50% 25%,color-mix(in srgb,var(--look-board),white 9%),var(--look-board));
+  border:1px solid var(--look-edge);border-radius:12px;
+  box-shadow:inset 0 1px 0 #ffffff35,inset 0 0 28px #00000012,0 8px 20px var(--look-depth);
+}
+.table-root:is([data-look=luminous],[data-look=strategy]) :is(.physical-board[data-active=true],.table-battlefield-half--active) {
+  border-color:var(--ui-accent);box-shadow:inset 0 2px 0 var(--ui-accent),0 8px 20px var(--look-depth);
+}
+.table-root:is([data-look=luminous],[data-look=strategy]) :is(.table-hud,.table-menu-panel,.table-decision-dock,.voice-panel,.physical-seat-plaque,.table-life,.table-preview,.table-stack-drawer,.table-zone-inspector) {
+  background:linear-gradient(145deg,color-mix(in srgb,var(--look-panel),white 4%),var(--look-panel));
+  color:var(--ui-ink);border:1px solid var(--look-edge);border-radius:10px;
+  box-shadow:inset 0 1px 0 #ffffff25,0 6px 16px var(--look-depth);
+}
+.table-root:is([data-look=luminous],[data-look=strategy]) :is(button,input,select,textarea) {
+  background:var(--look-panel);color:var(--ui-ink);border-color:var(--look-edge);
+}
+.table-root:is([data-look=luminous],[data-look=strategy]) button:not(:disabled):hover {
+  background:var(--ui-accent-soft);border-color:var(--ui-accent);
+}
+.table-root:is([data-look=luminous],[data-look=strategy]) :is(.decision-option,.combat-finish,.target-finish) {
+  background:var(--ui-accent);color:var(--look-panel);border:1px solid var(--ui-accent);border-radius:6px;font-weight:700;
+  box-shadow:inset 0 1px 0 #ffffff40,0 3px 8px var(--look-depth);
+}
+.table-root:is([data-look=luminous],[data-look=strategy]) :is(.table-card-caption,.table-card-stats,.table-card-counter,.table-card-keyword,.table-card-count) {
+  background:var(--look-panel);color:var(--ui-ink);border-color:var(--look-edge);
+}
+.table-root:is([data-look=luminous],[data-look=strategy]) .table-card {
+  border-color:var(--look-edge);box-shadow:0 4px 6px #0003,0 12px 20px var(--look-depth);border-radius:6px;
+}
+.table-root:is([data-look=luminous],[data-look=strategy]) .table-card--playable {
+  outline:2px solid var(--ui-accent);outline-offset:2px;
+}
+.table-root:is([data-look=luminous],[data-look=strategy]) .table-card-back {
+  background:repeating-linear-gradient(45deg,transparent 0 8px,#ffffff09 8px 9px),linear-gradient(145deg,#244b62,#132c41);
+  color:#9dd4e0;border-color:#75a5b7;box-shadow:inset 0 0 0 3px #183244,inset 0 0 0 4px #75a5b7,0 4px 8px #0004;
+}
+.table-root:is([data-look=luminous],[data-look=strategy]) .table-pile-face { border-color:var(--look-edge); }
+.table-root:is([data-look=luminous],[data-look=strategy]) :is(.physical-board-name,.table-life-value,.table-hud-phase) { color:var(--ui-ink)!important;font-family:inherit;font-weight:750; }
+.table-root:is([data-look=luminous],[data-look=strategy]) .table-hud { padding:10px 16px; }
+.table-root:is([data-look=luminous],[data-look=strategy]) .physical-board-header { border-bottom:1px solid color-mix(in srgb,var(--look-edge),transparent 50%); }
+/* Priority does not need a full-height empty panel. Complex choices retain their workspace. */
+.table-root--physical:is([data-look=luminous],[data-look=strategy]) .table-decision-dock:not(.table-decision-dock--combat):not(.table-decision-dock--targets) { bottom:auto;max-height:calc(100% - 282px); }
+/* Digital gets the same fixed decision rail as Physical: hands and choices cannot overlap. */
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) { --look-rail:290px; }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-battlefield {
+  margin:98px calc(var(--look-rail) + 32px) 24px 24px;gap:12px;min-height:0;
+}
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-hud { top:18px;left:24px;right:auto;align-items:flex-start; }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-decision-dock {
+  inset:98px 24px auto auto;width:var(--look-rail);box-sizing:border-box;max-height:calc(100% - 170px);padding:16px;min-width:0;
+}
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) :is(.combat-columns,.target-groups) { grid-template-columns:1fr; }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-battlefield-half {
+  min-height:0;grid-template-columns:64px minmax(0,1fr) 60px;grid-template-rows:minmax(60px,1fr) 64px;padding:8px;gap:4px 8px;
+}
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-battlefield-half--asphodel { grid-template-rows:46px minmax(60px,1fr); }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-battlefield-cards { justify-content:flex-start; }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-battlefield-cards .table-card-slot { width:64px;flex-shrink:0; }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-battlefield-cards .table-card { width:64px; }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-commander-dock .table-card { width:48px; }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-viewport-hand { max-width:52%;margin-top:0;overflow-x:auto;overflow-y:hidden;padding:4px; }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-viewport-hand .table-card--hand { width:48px;margin-left:-16px;flex-shrink:0; }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-viewport-hand .table-card-back { width:24px;height:34px;margin-left:-10px; }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-public-zones { gap:3px; }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-pile-face { width:28px;height:34px;margin:auto; }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-land-zone .table-card { width:34px; }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-life { top:4px;left:4px;padding:2px 5px; }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-life-value { font-size:16px; }
+@media(max-width:900px) {
+  .table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) { --look-rail:240px; }
+  .table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-battlefield { margin-left:12px;margin-right:calc(var(--look-rail) + 20px); }
+}
+@media(prefers-reduced-motion:reduce) {
+  .table-root:is([data-look=luminous],[data-look=strategy]) * { transition:none!important;animation:none!important; }
+}
+
+.table-root:is([data-look=luminous],[data-look=strategy]) .table-menu-panel { max-height:calc(100dvh - 80px);overflow-y:auto; }
+.table-root:is([data-look=luminous],[data-look=strategy]) :is(.table-actions,.table-history[open]) { background:var(--look-panel);color:var(--ui-ink); }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) { display:flex;padding:8px;flex-basis:140px; }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-battlefield--focused .table-battlefield-half--focused { grid-template-rows:minmax(90px,1fr) 100px; }
+.table-root:not(.table-root--physical):is([data-look=luminous],[data-look=strategy]) .table-battlefield--focused .table-battlefield-half--asphodel.table-battlefield-half--focused { grid-template-rows:100px minmax(90px,1fr); }
+.table-root:is([data-look=luminous],[data-look=strategy]) .table-menu-end-button { color:var(--ui-danger); }

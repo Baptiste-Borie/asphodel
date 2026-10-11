@@ -1,3 +1,4 @@
+import {mountGameLook} from './game-look';
 import {targetDecisionModel} from './target-decision';
 import {createTargetDecisionView} from './target-decision-view';
 import {combatDecisionModel} from './combat-decision';
@@ -711,7 +712,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     endButton.textContent = "Terminer la partie";
     endButton.addEventListener("click", () => { menuPanel.hidden = true; void endGame(); });
     const presentationSettings=document.createElement('section');gamePresentation=mountPresentationSettings(presentationSettings,preferences);
-    menuPanel.append(menuDeckInfo,presentationSettings,createPlaybackControl(),endButton);
+    menuPanel.append(menuDeckInfo,mountGameLook(gameSection),presentationSettings,createPlaybackControl(),endButton);
     menuButton.addEventListener("click", (event) => { event.stopPropagation(); menuPanel.hidden = !menuPanel.hidden; });
     document.addEventListener("click", () => { menuPanel.hidden = true; });
     menuPanel.addEventListener("click", (event) => event.stopPropagation());

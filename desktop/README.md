@@ -353,3 +353,16 @@ For each UX iteration, examine the captures and actual paths first, rank concret
 The first local UI review completed with 17 captures and no renderer errors. It exposed a horizontal document overflow in builder analysis and several initial screenshots taken before artwork loaded. The table now retains readable name/type placeholders while artwork is loading and on failure, hides them only after successful loading, and confines analysis content to the panel. Target/combat headings retain their height while option lists scroll. UI review waits up to three seconds for visible image decoding and distinguishes pending images from failed images in its report.
 
 Build and DOM behavior checks pass; the next native review must confirm geometry and compare before/after captures. See `docs/revue-ui-01.md` for observed problems and the remaining design work.
+
+## Comparer les deux pistes visuelles (0.1.24)
+
+Dans une partie, ouvrir **Menu → Exploration visuelle** pour passer entre
+**Table lumineuse**, **Stratégie contrastée** et l'interface actuelle. Le choix est
+limité à la session ; il ne change aucune décision ni préférence permanente.
+
+`npm run review:looks` compile le frontend et ouvre la fenêtre Electron de test.
+Il capture les deux pistes sur les mêmes tables illustrées physiques et numériques
+(six captures, dont deux vues physiques agrandies). Les images et le rapport sont
+dans `desktop/review-looks/`. Les états sont publics et synthétiques : aucune
+partie Forge ni bibliothèque personnelle n'est ouverte. Les images utilisent le
+cache d'illustrations de test et peuvent nécessiter une connexion.

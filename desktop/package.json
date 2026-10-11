@@ -1,11 +1,11 @@
 {
   "name": "asphodel-desktop",
   "productName": "Asphodel",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "private": true,
   "type": "module",
   "main": "src/main.mjs",
-  "description": "Asphodel — Magic Commander on your desktop",
+  "description": "Asphodel \u2014 Magic Commander on your desktop",
   "author": "Baptiste Borie",
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -25,7 +25,8 @@
     "smoke:art-headers": "electron scripts/art-header-smoke.mjs",
     "smoke:runtime": "node scripts/runtime-smoke.mjs",
     "smoke:builder": "node scripts/builder-smoke.mjs",
-    "review:ui": "npm --prefix ../frontend run build && node scripts/ui-review.mjs"
+    "review:ui": "npm --prefix ../frontend run build && node scripts/ui-review.mjs",
+    "review:looks": "npm --prefix ../frontend run build && node scripts/look-review.mjs"
   },
   "engines": {
     "node": ">=22.16.0"
