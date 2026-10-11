@@ -39,6 +39,8 @@ async function capture(name,task) {
     const images=[...document.images].filter(el=>{const r=el.getBoundingClientRect();return !el.closest('[hidden]')&&r.width>0&&r.height>0&&r.right>0&&r.left<innerWidth&&r.bottom>0&&r.top<innerHeight});
     await Promise.race([Promise.all(images.map(img=>img.decode().catch(()=>{}))),new Promise(resolve=>setTimeout(resolve,3000))]);
   });
+  // Finish finite layout animations before measuring the same settled frame we capture.
+  await page.evaluate(async()=>{await Promise.all(document.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})));});
   const metrics=await page.evaluate(()=>{
     const visible=el=>{const r=el.getBoundingClientRect(),style=getComputedStyle(el);return r.width>0&&r.height>0&&style.visibility!=='hidden'&&style.display!=='none'&&!el.closest('[hidden]')};
     const controls=[...document.querySelectorAll('button,input,select,textarea,summary')].filter(visible);
@@ -58,11 +60,17 @@ try {
     await capture(`strategy-${count}-players`,'Comparer la composition, les cartes engagées, la main et la place des décisions.');
     if(count===2) {
       const frames=[];report.motionChecks=[];
+      await page.evaluate(()=>{window.combatSmoke.holdChoice=true;});
       for(let i=0;i<12;i++) {
         const file=`motion-${String(i).padStart(2,'0')}.jpg`;
         await page.screenshot({path:join(output,file),type:'jpeg',quality:75,animations:'allow'});frames.push(file);
         report.motionChecks.push({file,presentationGeometry:await page.evaluate(presentationGeometry)});
-        if(i===0)await page.locator('.decision-option--pass').click();
+        if(i===0) {
+          await page.locator('.decision-option--pass').click();
+          await page.waitForFunction(()=>typeof window.combatSmoke.releaseChoice==='function'&&document.querySelector('.table-status-line'));
+          await capture('strategy-priority-pending','Vérifier le message affiché pendant une réponse en attente.');
+          await page.evaluate(()=>{window.combatSmoke.holdChoice=false;window.combatSmoke.releaseChoice();});
+        }
         await page.waitForTimeout(90);
       }
       report.motionFrames=frames;
@@ -78,9 +86,29 @@ try {
     }
     if(count===4) {
       await page.locator('.table-battlefield-half--human').click({position:{x:160,y:30}});
-      await capture('strategy-four-player-focus','Agrandir un siège en conservant les trois aperçus adverses dans une colonne.');
+      await capture('strategy-four-player-focus','Agrandir un siège et garder trois résumés publics sans scroll imbriqué.');
+      const preview=page.locator('.table-battlefield-half:not(.table-battlefield-half--focused) .table-seat-summary').first();
+      const playerId=await preview.locator('..').getAttribute('data-player-id');
+      await preview.click();
+      assert.equal(await page.locator('.table-battlefield-half--focused').getAttribute('data-player-id'),playerId);
+      assert.equal(await page.evaluate(()=>window.combatSmoke.choices.length),0);
+      await capture('strategy-opponent-focus','Le résumé agrandit le plateau adverse sans envoyer de choix de jeu.');
     }
   }
+  // A submitted priority is replaced by status text, not a disabled pass button.
+  // Use the real value renderer at its lower bound to inspect a disabled control.
+  await launch();
+  const valueFixture=await strategyFixture(2);
+  const valuePending=valueFixture.states[0].pendingDecision;
+  valuePending.type='value_selection';
+  valuePending.rendered={kind:'value',title:'Choisir une valeur',decisionId:valuePending.decisionId,min:0,max:3,suggested:[0]};
+  await page.evaluate(installCombatFixture,valueFixture);
+  await page.locator('#nav-play').click();
+  await page.locator('.decision-value-step:disabled').waitFor();
+  await capture('strategy-disabled-value','Contraste réel du bouton de diminution désactivé à la valeur minimale.');
+  const disabled=report.captures.at(-1).presentationGeometry.disabledControls;
+  assert.ok(disabled.length>0,'disabled contrast scenario must actually contain a disabled control');
+  assert.ok(disabled.every(control=>control.contrast>=4.5&&Number(control.opacity)===1),'disabled controls must remain legible');
   await launch();await page.evaluate(installCombatFixture,await populatedTableFixture('physical'));
   await page.locator('#nav-play').click();await page.locator('.table-card-art').first().waitFor();
   await capture('strategy-physical','Vérifier les cadres et le défilement de la table physique.');
