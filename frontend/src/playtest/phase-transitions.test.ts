@@ -37,7 +37,7 @@ it("is null for every other ordinary phase/step change (upkeep, draw, end step, 
 });
 
 it("phaseTransitionLabel: exact, restrained text for each transition", () => {
-  assert.equal(phaseTransitionLabel("your_turn", "Asphodel"), "YOUR TURN");
-  assert.equal(phaseTransitionLabel("opponent_turn", "Asphodel"), "ASPHODEL'S TURN");
-  assert.equal(phaseTransitionLabel("combat", "Asphodel"), "COMBAT");
+  assert.equal(phaseTransitionLabel("your_turn", "Asphodel"), "À ton tour");
+  assert.equal(phaseTransitionLabel("opponent_turn", "Asphodel"), "Tour de Asphodel");
+  assert.equal(phaseTransitionLabel("combat", "Asphodel"), "Combat");
 });

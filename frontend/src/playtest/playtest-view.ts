@@ -22,7 +22,7 @@ import { apiRequest } from "../api/api-client.js";
 import { endPlaytest, getActivePlaytest, getPlaytestState, startPlaytest, submitPlaytestChoice } from "../api/playtest-api.js";
 import { appendPlaytestDiagnostic } from './playtest-failure-view';
 import { element } from "../dom.js";
-import { collectVisibleCardNames, commandZoneCards, formatHudPhase, opponentPlayer, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
+import { collectVisibleCardNames, commandZoneCards, formatHudPhase, selfPlayer, type BoardCallbacks, type HandActionCallbacks } from "./board-renderer.js";
 import { createCardPreviewPanel } from "./card-preview.js";
 import { createHoverPreview } from "./hover-preview.js";
 import { attachStateTooltip } from './state-tooltip.js';
@@ -802,7 +802,8 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
   function renderHud(observation: AgentObservation): void {
     const activePlayer = observation.players.find(p => p.playerId === observation.game.activePlayerId);
     const activeLabel = activePlayer ? activePlayer.role === 'self' ? 'Toi' : seatName(activePlayer, observation) : 'Joueur';
-    updateHudLine(hudTurnEl, `Tour ${observation.game.turn} · ${activeLabel}`);
+    hudTurnEl.dataset.selfTurn = String(observation.game.activePlayerId === observation.selfPlayerId);
+    updateHudLine(hudTurnEl, `Tour ${observation.game.turn} · ${observation.game.activePlayerId === observation.selfPlayerId ? 'À ton tour' : `Tour de ${activeLabel}`}`);
     updateHudLine(hudPhaseEl, formatHudPhase(observation.game.phase));
 
     // V2h "MAJOR PHASE / CHAPTER TRANSITIONS": only the handful of genuinely major beats — see
@@ -813,8 +814,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     const transition = detectMajorPhaseTransition(lastPhaseState, phaseState, observation.selfPlayerId);
     lastPhaseState = phaseState;
     if (transition) {
-      const opponent = opponentPlayer(observation);
-      phaseBanner.show(transition, phaseTransitionLabel(transition, opponent ? seatName(opponent, observation) : "Opponent"));
+      phaseBanner.show(transition, phaseTransitionLabel(transition, activeLabel));
     }
   }
 

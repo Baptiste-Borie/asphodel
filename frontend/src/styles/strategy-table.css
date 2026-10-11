@@ -96,3 +96,15 @@ body.play-reduced-motion .table-root[data-look=strategy] *,body.play-reduced-mot
 
 .table-root:not(.table-root--physical)[data-look=strategy][data-player-count="4"] .table-battlefield:not(.table-battlefield--focused) { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr)); }
 .table-root:not(.table-root--physical)[data-look=strategy][data-player-count="4"] .table-battlefield:not(.table-battlefield--focused) .table-battlefield-half { --strategy-card:64px;--strategy-hand:44px;--strategy-band:86px; }
+
+/* Turn information must remain readable independently of the illustration beneath it. */
+.table-root[data-look=strategy] .table-phase-banner {
+  background:#101923;color:#f8fafc;border:1px solid #728898;border-left:5px solid #bccbd6;border-radius:10px;
+  padding:16px 24px;max-width:calc(100% - 48px);box-sizing:border-box;white-space:normal;
+  box-shadow:0 10px 28px #0008;font:750 21px/1.3 system-ui;letter-spacing:.02em;text-transform:none;
+}
+.table-root[data-look=strategy] .table-phase-banner[data-transition=your_turn] { border-left-color:#f0c879;color:#ffe3a8; }
+.table-root[data-look=strategy] .table-phase-banner[data-transition=combat] { border-left-color:#f49a89; }
+.table-root[data-look=strategy] .table-hud-turn { color:#e1eaf0;font-size:12px;font-weight:650;letter-spacing:.01em; }
+.table-root[data-look=strategy] .table-hud-turn[data-self-turn=true] { color:#ffe3a8; }
+.table-root[data-look=strategy] .table-hud-phase { color:#f8fafc!important; }

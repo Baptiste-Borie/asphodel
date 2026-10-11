@@ -32,9 +32,9 @@ export function detectMajorPhaseTransition(
 /** Pure. The exact banner text for one transition — `opponentLabel` is the already-resolved seat name (see player-seat.ts's `seatName`), never re-derived here. */
 export function phaseTransitionLabel(transition: MajorPhaseTransition, opponentLabel: string): string {
   switch (transition) {
-    case "your_turn": return "YOUR TURN";
-    case "opponent_turn": return `${opponentLabel.toUpperCase()}'S TURN`;
-    case "combat": return "COMBAT";
+    case "your_turn": return "À ton tour";
+    case "opponent_turn": return `Tour de ${opponentLabel}`;
+    case "combat": return "Combat";
   }
 }
 
