@@ -4,9 +4,11 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {_electron} from 'playwright';
-import {combatFixture,installCombatFixture} from './fixtures/combat-flow.mjs';
+import {installCombatFixture} from './fixtures/combat-flow.mjs';
 import {physicalGeometry} from './fixtures/physical-geometry.mjs';
 import {populatedTableFixture} from './fixtures/populated-table.mjs';
+import {strategyFixture} from './fixtures/strategy-flow.mjs';
+import {digitalGeometry} from './fixtures/digital-geometry.mjs';
 
 // Captures the compiled app in its production window with public deterministic DTOs.
 // No Forge, personal library, real match or database is opened.
@@ -18,7 +20,7 @@ const report={version:2,createdAt:new Date().toISOString(),scope:'Compiled Elect
 let electron,page;
 await mkdir(output,{recursive:true});
 // Only remove generated review outputs, so changed capture counts cannot mix two runs.
-for(const file of await readdir(output))if(/^\d{2}-.+\.png$/.test(file)||file==='report.json'||file==='index.html')await rm(join(output,file));
+for(const file of await readdir(output))if(/^\d{2}-.+\.png$/.test(file)||file==='report.json'||file==='index.html'||/^motion-\d+\.jpg$/.test(file))await rm(join(output,file));
 async function launch() {
   if(electron)await electron.close();
   electron=await _electron.launch({args:[...flags,fixture],env:{...process.env,ASPHODEL_TEST_USER_DATA:profile},timeout:20_000});
@@ -46,26 +48,37 @@ async function capture(name,task) {
   });
   const file=`${String(report.captures.length+1).padStart(2,'0')}-${name}.png`;
   await page.screenshot({path:join(output,file),animations:'disabled'});
-  report.captures.push({name,task,file,...metrics,physicalGeometry:await page.evaluate(physicalGeometry)});
+  report.captures.push({name,task,file,...metrics,physicalGeometry:await page.evaluate(physicalGeometry),digitalGeometry:await page.evaluate(digitalGeometry)});
 }
 try {
-  for(const mode of ['physical','digital']) {
-    await launch();await page.evaluate(installCombatFixture,await populatedTableFixture(mode));
+  for(const count of [2,3,4]) {
+    await launch();await page.evaluate(installCombatFixture,await strategyFixture(count));
     await page.locator('#nav-play').click();await page.locator('.table-card-art').first().waitFor();
-    for(const look of ['luminous','strategy']) {
-      await page.locator('.table-menu-button').click();
-      await page.locator(`[data-game-look=${look}]`).click();
-      await page.locator('.table-menu-button').click();
-      assert.equal(await page.locator('.table-root').getAttribute('data-look'),look);
-      await capture(`${mode}-${look}`,'Même table illustrée, mêmes cartes et même décision : comparer matière, profondeur et lisibilité.');
-      if(mode==='physical') {
-        await page.locator('.physical-board[data-role=self] .physical-board-focus').click();
-        await capture(`${mode}-${look}-self-focus`,'Comparer la table agrandie et les commandes sans changer la partie.');
-        await page.locator('.physical-board[data-role=opponent] .physical-board-focus').first().click();
+    await capture(`strategy-${count}-players`,'Comparer la composition, les cartes engagées, la main et la place des décisions.');
+    if(count===2) {
+      const frames=[];
+      for(let i=0;i<12;i++) {
+        const file=`motion-${String(i).padStart(2,'0')}.jpg`;
+        await page.screenshot({path:join(output,file),type:'jpeg',quality:75,animations:'allow'});frames.push(file);
+        if(i===0)await page.locator('.decision-option--pass').click();
+        await page.waitForTimeout(90);
       }
+      report.motionFrames=frames;
+      assert.equal(await page.evaluate(()=>window.combatSmoke.index),1);
+      assert.equal(await page.evaluate(()=>window.combatSmoke.choices.length),1);
+      await capture('strategy-state-change','Arrivée depuis la main, engagement, perte de trois PV et changement de joueur actif.');
+      await page.locator('.table-battlefield-half--human').click({position:{x:160,y:30}});
+      await capture('strategy-self-focus','Agrandir son plateau en gardant les commandes et les sièges adverses.');
+      await page.locator('.table-focus-return').click();
+      await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(960,640));
+      await page.waitForFunction(()=>innerWidth===960);await capture('strategy-compact','Vérifier la composition à 960 × 640.');
     }
-    assert.equal(await page.evaluate(()=>window.combatSmoke.choices.length),0,'Changing looks must not submit a game choice');
   }
+  await launch();await page.evaluate(installCombatFixture,await populatedTableFixture('physical'));
+  await page.locator('#nav-play').click();await page.locator('.table-card-art').first().waitFor();
+  await capture('strategy-physical','Vérifier les cadres et le défilement de la table physique.');
+  await page.locator('.physical-board[data-role=self] .physical-board-focus').click();
+  await capture('strategy-physical-self','Vérifier la table physique agrandie.');
   assert.deepEqual(report.errors,[],'renderer errors');
 } catch(error) {
   report.errors.push(error.stack||String(error));process.exitCode=1;
@@ -73,7 +86,7 @@ try {
 } finally {
   const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   await writeFile(join(output,'report.json'),JSON.stringify(report,null,2)+'\n');
-  await writeFile(join(output,'index.html'),`<!doctype html><meta charset="utf-8"><title>Asphodel — exploration visuelle</title><style>body{font:15px system-ui;margin:30px;background:#f3f6fa;color:#182238}main{max-width:1400px;margin:auto}section{margin:32px 0}img{display:block;width:100%;border:1px solid #cbd4e1}p{line-height:1.6}pre{white-space:pre-wrap}a{color:#254780}</style><main><h1>Asphodel — exploration visuelle</h1><p>${esc(report.scope)} Les métriques signalent des éléments à examiner ; elles ne remplacent pas une critique UX ou une vérification du rendu.</p>${report.errors.length?`<pre>${esc(report.errors.join('\n'))}</pre>`:''}${report.captures.map(c=>`<section><h2>${esc(c.name)}</h2><p>${esc(c.task)} · ${c.viewport.width} × ${c.viewport.height} · ${c.controlsOutsideViewport.length} contrôles hors cadre · ${c.brokenImages} images indisponibles · ${c.pendingImages} images en attente</p><a href="${esc(c.file)}"><img src="${esc(c.file)}" alt="${esc(c.name)}"></a></section>`).join('')}</main>`);
+  await writeFile(join(output,'index.html'),`<!doctype html><meta charset="utf-8"><title>Asphodel — exploration visuelle</title><style>body{font:15px system-ui;margin:30px;background:#f3f6fa;color:#182238}main{max-width:1400px;margin:auto}section{margin:32px 0}img{display:block;width:100%;border:1px solid #cbd4e1}p{line-height:1.6}pre{white-space:pre-wrap}a{color:#254780}</style><main><h1>Asphodel — exploration visuelle</h1><p>${esc(report.scope)} Les métriques signalent des éléments à examiner ; elles ne remplacent pas une critique UX ou une vérification du rendu.</p>${report.errors.length?`<pre>${esc(report.errors.join('\n'))}</pre>`:''}${report.motionFrames?.length?`<section><h2>Mouvement — échantillonnage</h2><p>Suite de captures, pas une vidéo fluide. Cliquer pour revoir la séquence.</p><button id=motion-play>Rejouer</button><img id=motion alt="Changement d’état" src="${esc(report.motionFrames[0])}"><script>const frames=${JSON.stringify(report.motionFrames)};let timer;document.getElementById('motion-play').onclick=()=>{clearInterval(timer);let i=0;timer=setInterval(()=>{document.getElementById('motion').src=frames[i++];if(i===frames.length)clearInterval(timer)},130)}</script></section>`:''}${report.captures.map(c=>`<section><h2>${esc(c.name)}</h2><p>${esc(c.task)} · ${c.viewport.width} × ${c.viewport.height} · ${c.controlsOutsideViewport.length} contrôles hors cadre · ${c.brokenImages} images indisponibles · ${c.pendingImages} images en attente</p><a href="${esc(c.file)}"><img src="${esc(c.file)}" alt="${esc(c.name)}"></a></section>`).join('')}</main>`);
   if(electron)await electron.close();await rm(profile,{recursive:true,force:true});
 }
 console.log(`Exploration visuelle : ${report.captures.length} captures, ${report.errors.length} erreurs. ${output}`);

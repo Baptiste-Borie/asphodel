@@ -9,6 +9,7 @@ import { initDesktopControls } from "./desktop-controls.js";
 import './styles/asphodel-theme.css';
 import './styles/app-refit.css';
 import './styles/game-looks.css';
+import './styles/strategy-table.css';
 
 import { restoreLibraryStorage } from './library-storage';
 

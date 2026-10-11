@@ -92,6 +92,11 @@ export function renderDigitalBoardSlot(
   handActions?: HandActionCallbacks,
 ): void {
   slot.half.dataset.playerId = player.playerId;
+  slot.half.dataset.role = player.role;
+  slot.commanderDock.setAttribute('aria-label', 'Zone de commandement');
+  slot.battlefieldCards.setAttribute('aria-label', 'Permanents');
+  slot.landZone.setAttribute('aria-label', 'Terrains');
+  slot.hand.setAttribute('aria-label', player.role === 'self' ? 'Ta main' : 'Main adverse');
   slot.half.classList.toggle('table-battlefield-half--active', player.playerId === observation.game.activePlayerId);
   renderPublicZones(slot.publicZones, player, get, inspect);
   renderCommanderDock(slot.commanderDock, player, callbacks, expand);

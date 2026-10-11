@@ -1,0 +1,98 @@
+/* The contrast direction is developed as a game surface, scoped to the table. */
+.table-root[data-look=strategy] {
+  --look-board:#172a36;--look-panel:#182733;--look-edge:#3a5564;
+  background:radial-gradient(ellipse at 50% 42%,#243b48 0%,#10212e 58%,#080f17 100%);
+}
+.table-root[data-look=strategy] :is(.physical-board,.table-battlefield-half) {
+  background:radial-gradient(ellipse at 50% 50%,#29414b66,transparent 70%),repeating-linear-gradient(0deg,#ffffff02 0 1px,transparent 1px 4px),#142631;
+  border-radius:16px;box-shadow:inset 0 0 0 4px #0d1a2444,inset 0 0 55px #0003,0 10px 24px #0004;
+  transition:border-color 220ms ease,box-shadow 220ms ease;
+}
+.table-root[data-look=strategy] :is(.physical-board[data-active=true],.table-battlefield-half--active) {
+  border-color:#65c6cf;box-shadow:inset 0 2px 0 #65c6cf,inset 0 0 40px #63c9d610,0 10px 24px #0004;
+}
+.table-root[data-look=strategy] :is(.table-hud,.table-decision-dock,.voice-panel) { border-radius:12px;border-top-color:#64808e; }
+.table-root[data-look=strategy] .table-card {
+  border:1px solid #5a7888;box-shadow:0 2px 0 #070e16,0 5px 10px #0005;transition:transform 240ms cubic-bezier(.2,.7,.2,1),box-shadow 180ms ease,border-color 180ms ease;
+}
+.table-root[data-look=strategy] .table-card:hover { border-color:#b4e7ed;box-shadow:0 0 0 1px #b4e7ed66,0 8px 18px #0006; }
+.table-root[data-look=strategy] .table-card-caption {
+  background:linear-gradient(#1c3042ef,#10202ded);border-top:1px solid #ffffff1a;line-height:1.2;
+}
+.table-root[data-look=strategy] .table-card-stats { background:#10202e;box-shadow:0 1px 4px #0006;border:1px solid #779cab;font-weight:750; }
+.table-root[data-look=strategy] .table-card--playable { outline-color:#a0e8d0;box-shadow:0 0 12px #66ddbb40,0 5px 10px #0005; }
+.table-root[data-look=strategy] :is(.decision-option,.combat-finish,.target-finish) { background:linear-gradient(#83dde1,#48aeba);color:#092731;border-top-color:#b7f6f4;min-height:40px; }
+.table-root[data-look=strategy] :is(.table-decision-dock,.table-menu-panel):not([hidden]) { animation:strategy-panel-in 180ms ease-out; }
+.table-root[data-look=strategy] :is(.table-battlefield-cards,.table-land-zone,.physical-hand,.table-viewport-hand) { scrollbar-width:thin;scrollbar-color:#557580 transparent; }
+.table-root[data-look=strategy] :is(.table-battlefield-cards,.table-land-zone)::-webkit-scrollbar { height:5px;width:5px; }
+.table-root[data-look=strategy] :is(.table-battlefield-cards,.table-land-zone)::-webkit-scrollbar-thumb { background:#557580;border-radius:5px; }
+.table-root[data-look=strategy] .table-pile-label { color:#c4d6de;letter-spacing:.06em; }
+.table-root[data-look=strategy] .table-pile-face { box-shadow:2px 2px #080f18,4px 4px #2a4350; }
+/* Physical retains its tested composition, with quieter scrolling and properly sized materials. */
+.table-root.table-root--physical[data-look=strategy] .physical-board[data-density=primary] { --seat-card:clamp(76px,8vw,120px); }
+.table-root.table-root--physical[data-look=strategy] .physical-board .table-battlefield-cards { gap:12px; }
+/* Reserve the command column, central play area and public piles; the personal band owns hand/lands. */
+.table-root:not(.table-root--physical)[data-look=strategy] { --strategy-card:60px;--strategy-hand:42px;--strategy-band:78px; }
+.table-root:not(.table-root--physical)[data-look=strategy][data-player-count="2"] { --strategy-card:104px;--strategy-hand:74px;--strategy-band:136px; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield { margin-top:90px;gap:14px; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-hud { left:50%;top:18px;transform:translateX(-50%);align-items:center;min-width:180px; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield-half {
+  grid-template-columns:74px minmax(0,1fr) 64px;grid-template-rows:minmax(70px,1fr) var(--strategy-band);gap:4px 12px;padding:12px;
+}
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield-half--asphodel { grid-template-rows:54px minmax(70px,1fr); }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield-cards {
+  position:relative;gap:12px;padding:20px 8px 8px;align-items:center;border-radius:40% / 20%;
+  background:radial-gradient(ellipse,#49667515,transparent 70%);min-width:0;
+}
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield-cards::before {
+  content:'PERMANENTS';position:absolute;top:5px;left:8px;font-size:8px;letter-spacing:.16em;color:#9bb5c1;pointer-events:none;
+}
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield-cards .table-card-slot {
+  width:var(--strategy-card);aspect-ratio:1;min-width:var(--strategy-card);margin-left:0;
+}
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield-cards .table-card-slot:first-of-type { margin-left:auto; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield-cards .table-card-slot:last-child { margin-right:auto; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield-cards .table-card { width:var(--strategy-card);aspect-ratio:1 / .9; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-card-caption { font-size:10px;padding:5px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-commander-dock { padding-top:26px!important; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-commander-dock .table-card { width:58px; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-life { top:9px;left:9px;padding:4px 8px;background:#11202a; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-life-value { font-size:23px; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-life-name { font-size:9px;letter-spacing:.03em; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-public-zones { gap:7px;padding:6px;background:#07172255;border-radius:9px; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-pile-face { width:30px;height:38px; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-land-zone {
+  position:relative;max-width:34%;padding:18px 6px 6px;align-self:end;border-radius:9px;background:#07172255;min-width:0;overflow-x:auto;overflow-y:hidden;
+}
+.table-root:not(.table-root--physical)[data-look=strategy] .table-land-zone::before {
+  content:'TERRAINS';position:absolute;top:4px;left:8px;font-size:8px;letter-spacing:.12em;color:#9bb5c1;pointer-events:none;
+}
+.table-root:not(.table-root--physical)[data-look=strategy] .table-land-zone .table-card-slot { width:42px;aspect-ratio:1; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-land-zone .table-card { width:42px;aspect-ratio:1.1; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-land-zone .table-card-slot:not(:first-child) { margin-left:-10px; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-land-zone:is(:hover,:focus-within) .table-card-slot:not(:first-child) { margin-left:0; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-viewport-hand {
+  max-width:62%;padding:18px 8px 5px;align-self:end;align-items:flex-end;min-width:0;border-radius:12px;background:linear-gradient(transparent,#06131d88);overflow-x:auto;overflow-y:hidden;
+}
+.table-root:not(.table-root--physical)[data-look=strategy] .table-viewport-hand .table-card--hand { width:var(--strategy-hand);margin-left:calc(var(--strategy-hand) * -.38); }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-viewport-hand .table-card--hand:first-child { margin-left:0; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-viewport-hand .table-card--hand:is(:hover,:focus-visible) { transform:translateY(-8px) rotate(0) scale(1.03);z-index:5; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield-half--asphodel .table-viewport-hand { align-self:start;padding:4px 8px; }
+/* Enlarged board and compact previews use the same rules without growing every seat. */
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half--focused { --strategy-card:104px;--strategy-hand:82px;grid-template-rows:minmax(90px,1fr) 140px; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half--asphodel.table-battlefield-half--focused { grid-template-rows:70px minmax(90px,1fr); }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) { --strategy-card:46px;--strategy-hand:38px;flex-basis:150px;gap:8px; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) :is(.table-land-zone,.table-viewport-hand) { max-width:100%; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-public-zones { flex-direction:row;flex-wrap:wrap; }
+@keyframes strategy-panel-in { from { opacity:0;translate:0 6px; } to { opacity:1;translate:0 0; } }
+@media(max-height:700px),(max-width:1100px) {
+  .table-root:not(.table-root--physical)[data-look=strategy][data-player-count="2"] { --strategy-card:82px;--strategy-hand:64px;--strategy-band:116px; }
+  .table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield-half { gap:4px 8px;padding:8px; }
+}
+body.play-reduced-motion .table-root[data-look=strategy] *,body.play-reduced-motion .table-root[data-look=strategy] *::before { animation:none!important;transition:none!important; }
+@media(prefers-reduced-motion:reduce) {
+  .table-root[data-look=strategy] *,.table-root[data-look=strategy] *::before { animation:none!important;transition:none!important; }
+}
+
+.table-root:not(.table-root--physical)[data-look=strategy][data-player-count="4"] .table-battlefield:not(.table-battlefield--focused) { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr)); }
+.table-root:not(.table-root--physical)[data-look=strategy][data-player-count="4"] .table-battlefield:not(.table-battlefield--focused) .table-battlefield-half { --strategy-card:64px;--strategy-hand:44px;--strategy-band:86px; }

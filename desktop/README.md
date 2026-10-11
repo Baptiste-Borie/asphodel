@@ -366,3 +366,20 @@ Il capture les deux pistes sur les mêmes tables illustrées physiques et numér
 dans `desktop/review-looks/`. Les états sont publics et synthétiques : aucune
 partie Forge ni bibliothèque personnelle n'est ouverte. Les images utilisent le
 cache d'illustrations de test et peuvent nécessiter une connexion.
+
+## Plateau contrasté et mouvement (0.1.25)
+
+La table démarre désormais sur la piste contrastée retenue comme base de travail.
+Le menu permet toujours de comparer les autres apparences pour la session.
+La vue numérique à deux joueurs réserve une bande plus grande à la main, utilise
+des permanents condensés et réserve l'espace des cartes engagées. Quatre joueurs
+sont disposés en grille en vue d'ensemble. Les transitions de focus numérique,
+les changements de joueur actif et de PV respectent les réglages de présentation
+et de réduction des animations déjà présents.
+
+`npm run review:looks` produit maintenant huit captures : deux, trois et quatre
+joueurs, changement d'état, focus, fenêtre compacte et deux vues physiques. Il
+ajoute douze images JPEG de la transition synthétique ; `review-looks/index.html`
+permet de rejouer cet échantillonnage. Il s'agit de captures successives, pas d'une
+vidéo à cadence garantie. Le rapport comprend aussi les collisions de permanents
+numériques et les éventuels chevauchements entre plateau et décisions.

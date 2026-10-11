@@ -3,7 +3,7 @@ import {combatFixture} from './combat-flow.mjs';
 
 // A populated presentation fixture, not a simulated/legal Forge match.
 // Uses the existing bundled public card catalog and its actual illustrations.
-export async function populatedTableFixture(mode='physical') {
+export async function populatedTableFixture(mode='physical', playerCount) {
   const cards=JSON.parse(await readFile(new URL('../../../frontend/src/deck-lab/cards.json',import.meta.url),'utf8'));
   const find=name=>{const card=cards.find(card=>card.name===name);if(!card)throw new Error(`Missing public fixture card: ${name}`);return card;};
   const observationCard=(name,ref,playerId,zone='battlefield',tapped=false)=>{
@@ -13,6 +13,13 @@ export async function populatedTableFixture(mode='physical') {
   };
   const fixture=combatFixture(mode),state=fixture.states[0];
   fixture.states=[state];fixture.transition=[];
+  if(playerCount) {
+    state.observation.players=state.observation.players.slice(0,playerCount);
+    while(state.observation.players.length<playerCount) {
+      const extra=structuredClone(state.observation.players[1]);extra.playerId=`ai${state.observation.players.length}`;
+      state.observation.players.push(extra);
+    }
+  }
   state.observation.game.phase='main1';
   state.pendingDecision={decisionId:'populated-priority',type:'priority_action',context:{...state.observation.game,stackSize:0},selectedCardRefs:null,combatPairings:null,
     rendered:{kind:'menu',title:'Choisir une action',items:[{label:'Passer la priorité',control:'pass',cardRef:null,choice:{decisionId:'populated-priority',kind:'action',choice:'pass',reason:'human_choice'}}]}};

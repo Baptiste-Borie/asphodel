@@ -11,11 +11,11 @@ export function mountGameLook(root: HTMLElement): HTMLFieldSetElement {
   const title = document.createElement('legend');
   title.textContent = 'Exploration visuelle';
   const description = document.createElement('p');
-  description.textContent = 'Deux pistes à comparer. Ce choix ne dure que pour cette session.';
+  description.textContent = 'La piste contrastée est la base de travail. Tu peux comparer les autres pour cette session.';
   panel.append(title, description);
-  let selected = 'current';
+  let selected = 'strategy';
   try { selected = sessionStorage.getItem('asphodel-game-look') || selected; } catch { /* Storage can be unavailable. */ }
-  if (!looks.some(([id]) => id === selected)) selected = 'current';
+  if (!looks.some(([id]) => id === selected)) selected = 'strategy';
   root.dataset.look = selected;
   for (const [id, label] of looks) {
     const button = document.createElement('button');

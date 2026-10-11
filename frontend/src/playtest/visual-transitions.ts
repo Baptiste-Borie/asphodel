@@ -23,6 +23,18 @@ export function diffLocations(previous: AgentObservation, current: AgentObservat
   });
 }
 
+/** Public seat changes only; same-state polls and a new game produce no effects. */
+export function seatEffects(previous: AgentObservation | null, current: AgentObservation) {
+  if (!previous || previous.gameRef !== current.gameRef) return [];
+  return current.players.flatMap(player => {
+    const before = previous.players.find(candidate => candidate.playerId === player.playerId);
+    if (!before) return [];
+    const lifeDelta = player.life - before.life;
+    const activated = current.game.activePlayerId === player.playerId && previous.game.activePlayerId !== player.playerId;
+    return lifeDelta || activated ? [{playerId: player.playerId, lifeDelta, activated}] : [];
+  });
+}
+
 /** FLIP-style motion around authoritative paints. No timers, engine waits, or rule mutations.
  * Seat/zone anchors are player-ID based so the transition model is independent of seating. */
 export class VisualTransitions {
@@ -32,6 +44,24 @@ export class VisualTransitions {
   private animations = new Set<Animation>();
   cancelAnimations(): void {for (const animation of this.animations) animation.cancel();this.animations.clear();}
   reset(): void {this.previous=null;this.cancelAnimations();}
+  private play(node: HTMLElement, keyframes: Keyframe[], duration: number): void {
+    const animation = node.animate(keyframes, {duration, easing:'cubic-bezier(.2,.7,.2,1)'});
+    this.animations.add(animation);
+    void animation.finished.catch(() => {}).finally(() => this.animations.delete(animation));
+  }
+  /** Reflow immediately; motion never delays focus or blocks clicks. */
+  relayout(root: HTMLElement, render: () => void): void {
+    this.cancelAnimations();
+    const boards = [...root.querySelectorAll<HTMLElement>('.table-battlefield-half')];
+    const before = new Map(boards.map(node => [node, node.getBoundingClientRect()]));
+    render();
+    if (root.dataset.look !== 'strategy' || this.options.reducedMotion?.() || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    for (const node of boards) {
+      const from = before.get(node)!, to = node.getBoundingClientRect();
+      if (!from.width || !to.width) continue;
+      this.play(node, [{translate:`${from.left-to.left}px ${from.top-to.top}px`,opacity:.65},{translate:'0 0',opacity:1}], Math.min(260,(this.options.timing?.() ?? presentationTiming()).movement));
+    }
+  }
   paint(root: HTMLElement, observation: AgentObservation, render: () => void): void {
     const before = new Map<string, { rect: DOMRect; node: HTMLElement }>();
     for (const node of root.querySelectorAll<HTMLElement>('.table-battlefield [data-card-ref], .table-hand [data-card-ref], .physical-scene [data-card-ref], .table-stack [data-card-ref]')) {
@@ -39,10 +69,25 @@ export class VisualTransitions {
     }
     const anchors = new Map(Array.from(root.querySelectorAll<HTMLElement>('[data-zone]'), node => [node.dataset.zone === 'stack' ? 'stack' : `${node.dataset.playerId}:${node.dataset.zone}`, node.getBoundingClientRect()]));
     const changes = this.previous ? diffLocations(this.previous, observation) : [];
+    const effects = seatEffects(this.previous, observation);
     render();
     const hadPrevious = this.previous?.gameRef === observation.gameRef;
     this.previous = observation;
     if (this.options.reducedMotion?.() || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (root.dataset.look === 'strategy') for (const effect of effects) {
+      const board = [...root.querySelectorAll<HTMLElement>('.table-battlefield-half,.physical-board')].find(node => node.dataset.playerId === effect.playerId);
+      if (!board) continue;
+      if (effect.activated) this.play(board, [
+        {boxShadow:'inset 0 0 0 2px #78d9df, inset 0 0 70px #63c9d62b'},
+        {boxShadow:getComputedStyle(board).boxShadow},
+      ], Math.min(650,(this.options.timing?.() ?? presentationTiming()).settle));
+      const life = board.querySelector<HTMLElement>('.table-life,.physical-identity');
+      if (effect.lifeDelta && life) this.play(life, [
+        {scale:'1',boxShadow:'0 0 0 0 transparent'},
+        {scale:'1.08',boxShadow:`0 0 20px ${effect.lifeDelta > 0 ? '#7ee6a2' : '#f08478'}`},
+        {scale:'1',boxShadow:getComputedStyle(life).boxShadow},
+      ], Math.min(520,(this.options.timing?.() ?? presentationTiming()).settle));
+    }
     const after = new Map(Array.from(root.querySelectorAll<HTMLElement>('.table-battlefield [data-card-ref], .table-hand [data-card-ref], .physical-scene [data-card-ref], .table-stack [data-card-ref]'), node => [node.dataset.cardRef!, node]));
     if (hadPrevious) for (const [ref, node] of after) {
       if (before.has(ref) || changes.some(change => change.cardRef === ref)) continue;

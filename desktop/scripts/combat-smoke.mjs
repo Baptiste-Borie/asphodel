@@ -23,8 +23,8 @@ try {
     await page.evaluate(installCombatFixture,combatFixture(mode));
     await page.locator('#nav-play').click();
     const dock=page.locator('.table-decision-dock--combat');await dock.getByRole('heading',{name:'Déclarer les attaquants'}).waitFor();
-    assert.equal(await page.locator('.table-root').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(243, 246, 250)',`${mode} uses the common light playing surface`);
-    assert.equal(await dock.evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(255, 255, 255)',`${mode} decision dock stays readable`);
+    assert.equal(await page.locator('.table-root').getAttribute('data-look'),'strategy',`${mode} uses the selected contrast direction by default`);
+    assert.notEqual(await dock.evaluate(el=>getComputedStyle(el).color),await dock.evaluate(el=>getComputedStyle(el).backgroundColor),`${mode} decision text differs from its surface`);
     if(mode==='physical') {
       const geometry=await page.evaluate(physicalGeometry);
       assert.deepEqual(geometry.overlaps,[],'physical board, choices and voice occupy separate regions');

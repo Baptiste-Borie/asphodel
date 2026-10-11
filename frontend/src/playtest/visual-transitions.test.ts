@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { it } from 'node:test';
-import { cardLocations, diffLocations } from './visual-transitions.js';
+import { cardLocations, diffLocations, seatEffects } from './visual-transitions.js';
 import { visibleFace } from './table-scene.js';
 import { collectVisibleCardNames } from './board-renderer.js';
 import type { AgentObservation, AgentCardObservation, AgentSelfPlayerObservation } from './types.js';
@@ -38,4 +38,16 @@ it('hidden and face-down cards never request art, even if a name is present', ()
   self.hand[0]!.hidden=true; self.hand[1]!.faceDown=true;
   assert.deepEqual(collectVisibleCardNames(state),[]);
   assert.equal(visibleFace(self.hand[0]!),false); assert.equal(visibleFace(self.hand[1]!),false);
+});
+
+it('seat effects follow public player IDs and ignore initial/resumed or identical states', () => {
+  const before=observation(), after=structuredClone(before);
+  assert.deepEqual(seatEffects(null,after),[]);
+  assert.deepEqual(seatEffects(before,after),[]);
+  after.players[0]!.life=37;after.game.activePlayerId='b';
+  assert.deepEqual(seatEffects(before,after),[{playerId:'a',lifeDelta:-3,activated:false}]);
+  const next=structuredClone(after);next.players[0]!.life=42;next.game.activePlayerId='a';
+  assert.deepEqual(seatEffects(after,next),[{playerId:'a',lifeDelta:5,activated:true}]);
+  next.gameRef='new';assert.deepEqual(seatEffects(after,next),[]);
+  assert.equal(before.players[0]!.life,40);
 });

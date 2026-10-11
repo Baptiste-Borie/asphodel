@@ -596,6 +596,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     gameSection.className = "table-root";
     gameSection.dataset.environment = "courtyard";
     gameSection.dataset.playMode = currentPlayMode;
+    gameSection.dataset.playerCount = String(opponentCount + 1);
     // V2g: the ONE branch point for seat presentation (see seat-presentation.ts) — every rendering
     // function below stays exactly as seat-agnostic as before. Digital always resolves both seats to
     // "primary", and a "primary" seat's className is left byte-for-byte identical to before V2g
@@ -647,14 +648,14 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     tableViewButton.className = 'table-focus-return';
     tableViewButton.textContent = '← Vue d’ensemble';
     tableViewButton.hidden = true;
-    const applyDigitalFocus = () => {
+    const applyDigitalFocus = () => transitions.relayout(gameSection, () => {
       const focusedPlayerId = digitalView.mode === "focus" ? digitalView.playerId : null;
       battlefield.classList.toggle("table-battlefield--focused", focusedPlayerId !== null);
       for (const slot of digitalBoardSlots) {
         slot.half.classList.toggle("table-battlefield-half--focused", slot.half.dataset.playerId === focusedPlayerId);
       }
       tableViewButton.hidden = focusedPlayerId === null;
-    };
+    });
     for (const slot of digitalBoardSlots) {
       // The primary Digital focus interaction (replaces the old per-viewport Focus button): click
       // anywhere non-interactive on a viewport — overview or receded preview alike — to focus that
