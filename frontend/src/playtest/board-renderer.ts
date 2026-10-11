@@ -29,13 +29,21 @@ export function formatPhase(phase: string): string {
     .join(" ");
 }
 
-/** Concise combat-phase labels for the compact game HUD (V2e.6) — dropping the "Combat" prefix Forge's own phase names carry, per spec. Anything not explicitly listed falls back to the same general humanization as `formatPhase` (e.g. "main1" -> "Main 1", "upkeep" -> "Upkeep"). */
+/** French labels for known phases. Unknown engine identifiers remain readable through formatPhase. */
 const HUD_PHASE_LABELS: Readonly<Record<string, string>> = {
-  combat_begin: "Begin Combat",
-  combat_declare_attackers: "Declare Attackers",
-  combat_declare_blockers: "Declare Blockers",
-  combat_damage: "Combat Damage",
-  combat_end: "End of Combat",
+  untap: "Dégagement",
+  upkeep: "Entretien",
+  draw: "Pioche",
+  main1: "Principale 1",
+  main2: "Principale 2",
+  combat_begin: "Début du combat",
+  combat_declare_attackers: "Déclarer les attaquants",
+  combat_declare_blockers: "Déclarer les bloqueurs",
+  combat_first_strike_damage: "Blessures d’initiative",
+  combat_damage: "Blessures de combat",
+  combat_end: "Fin du combat",
+  end_of_turn: "Étape de fin",
+  cleanup: "Nettoyage",
 };
 
 /** Pure. The HUD's phase line — see HUD_PHASE_LABELS. Uses the actual current Forge phase (`observation.game.phase`), never a guess. */

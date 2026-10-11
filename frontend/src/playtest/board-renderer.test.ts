@@ -10,16 +10,17 @@ it("formats phase identifiers into readable labels", () => {
   assert.equal(formatPhase("end_of_turn"), "End Of Turn");
 });
 
-it("formatHudPhase (V2e.6): drops the \"Combat\" prefix for the compact HUD, per spec's exact examples", () => {
-  assert.equal(formatHudPhase("combat_declare_attackers"), "Declare Attackers");
-  assert.equal(formatHudPhase("combat_declare_blockers"), "Declare Blockers");
-  assert.equal(formatHudPhase("combat_damage"), "Combat Damage");
+it("formatHudPhase displays combat phases in French", () => {
+  assert.equal(formatHudPhase("combat_declare_attackers"), "Déclarer les attaquants");
+  assert.equal(formatHudPhase("combat_declare_blockers"), "Déclarer les bloqueurs");
+  assert.equal(formatHudPhase("combat_damage"), "Blessures de combat");
 });
 
-it("formatHudPhase falls back to the general phase humanization for anything not explicitly listed", () => {
-  assert.equal(formatHudPhase("main1"), "Main 1");
-  assert.equal(formatHudPhase("main2"), "Main 2");
-  assert.equal(formatHudPhase("upkeep"), "Upkeep");
+it("formatHudPhase translates ordinary phases and preserves unknown engine identifiers", () => {
+  assert.equal(formatHudPhase("main1"), "Principale 1");
+  assert.equal(formatHudPhase("main2"), "Principale 2");
+  assert.equal(formatHudPhase("upkeep"), "Entretien");
+  assert.equal(formatHudPhase("future_phase"), "Future Phase");
 });
 
 it("formatCompactHandLabel (V2g Physical Companion): a plain \"HAND · N\" count, never card names", () => {

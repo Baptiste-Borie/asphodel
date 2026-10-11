@@ -8,6 +8,7 @@ import {builderFixture,installBuilderFixture} from './fixtures/builder-flow.mjs'
 import {combatFixture,installCombatFixture} from './fixtures/combat-flow.mjs';
 import {targetFixture,installTargetFixture} from './fixtures/target-flow.mjs';
 import {physicalGeometry} from './fixtures/physical-geometry.mjs';
+import {populatedTableFixture} from './fixtures/populated-table.mjs';
 
 // Captures the compiled app in its production window with public deterministic DTOs.
 // No Forge, personal library, real match or database is opened.
@@ -89,6 +90,13 @@ try {
     await launch();await page.evaluate(installCombatFixture,fixture);await page.locator('#nav-play').click();await page.locator('.table-decision-dock--combat').waitFor();
     await page.getByRole('button',{name:'Vue d’ensemble',exact:true}).click();await capture(`physical-${count}-players`,'Read all public seats and retain the pending combat choice.');
     if(count===4){await page.locator('.physical-board[data-role=opponent] .physical-board-focus').first().click();await capture('physical-four-player-focus','Enlarge one opponent while retaining the other three seats.');}
+  }
+  for(const mode of ['physical','digital']) {
+    await launch();await page.evaluate(installCombatFixture,await populatedTableFixture(mode));await page.locator('#nav-play').click();
+    await page.locator('.table-card-art').first().waitFor();await capture(`${mode}-populated`,'Review actual public illustrations, lands, commander, hands and populated public piles.');
+    if(mode==='physical') {
+      await page.locator('.physical-board[data-role=self] .physical-board-focus').click();await capture('physical-populated-self-focus','Enlarge the populated physical mirror without obscuring its action or voice controls.');
+    }
   }
   await launch();await page.evaluate(installBuilderFixture,data);await page.locator('#nav-deck-lab').click();
   await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(960,640));await page.waitForFunction(()=>innerWidth===960);await capture('library-small-window','Use the library in a compact desktop window.');

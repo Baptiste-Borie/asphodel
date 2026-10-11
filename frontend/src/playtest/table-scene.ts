@@ -10,6 +10,7 @@ export function renderPublicZones(container: HTMLElement, player: AgentPlayerObs
   container.dataset.playerId = player.playerId;
   container.replaceChildren();
   for (const zone of ['library', 'graveyard', 'exile'] as const) {
+    const zoneName = {library: 'Pioche', graveyard: 'Cimetière', exile: 'Exil'}[zone];
     const cards = zone === 'library' ? [] : player[zone];
     const count = player[`${zone}Size`];
     const pile = document.createElement('button');
@@ -17,7 +18,7 @@ export function renderPublicZones(container: HTMLElement, player: AgentPlayerObs
     pile.className = `table-pile table-pile--${zone}`;
     pile.dataset.zone = zone;
     pile.dataset.playerId = player.playerId;
-    pile.setAttribute('aria-label', `${player.name}: ${zone}, ${count} cards`);
+    pile.setAttribute('aria-label', `${player.name} : ${zoneName}, ${count} cartes`);
     const top = cards.at(-1);
     const face = document.createElement('span');
     face.className = count ? 'table-pile-face table-card-back' : 'table-pile-face table-pile-face--empty';
@@ -28,11 +29,11 @@ export function renderPublicZones(container: HTMLElement, player: AgentPlayerObs
     } else face.textContent = count ? '◇' : '—';
     const label = document.createElement('span');
     label.className = 'table-pile-label';
-    label.textContent = `${zone} · ${count}`;
-    label.dataset.compact = `${{library: 'LIB', graveyard: 'GY', exile: 'EX'}[zone]} · ${count}`;
-    pile.append(face, label);
+    label.textContent = zoneName;
+    const countLabel = document.createElement('span'); countLabel.className = 'table-pile-count'; countLabel.textContent = String(count);
+    pile.append(face, label, countLabel);
     pile.disabled = zone === 'library' || !count;
-    if (zone !== 'library') pile.onclick = () => inspect(`${player.name} · ${zone}`, cards, {playerId: player.playerId, zone});
+    if (zone !== 'library') pile.onclick = () => inspect(`${player.name} · ${zoneName}`, cards, {playerId: player.playerId, zone});
     container.append(pile);
   }
 }
@@ -75,7 +76,7 @@ export function renderHiddenHand(container: HTMLElement, count: number): void {
     back.style.setProperty('--fan-angle', `${(i - (Math.min(count, 16) - 1) / 2) * 3}deg`);
     back.setAttribute('aria-hidden', 'true'); container.append(back);
   }
-  const label = document.createElement('small'); label.textContent = `${count} cards`; container.append(label);
+  const label = document.createElement('small'); label.textContent = `${count} carte${count === 1 ? '' : 's'}`; container.append(label);
 }
 
 export function renderStack(container: HTMLElement, observation: AgentObservation): void {

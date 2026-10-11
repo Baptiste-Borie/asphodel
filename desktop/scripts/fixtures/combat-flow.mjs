@@ -36,7 +36,10 @@ export function installCombatFixture(fixture) {
     const url=typeof input==='string'?input:input.url;
     const state=fixture.states[window.combatSmoke.index];
     if(url==='/playtests/active'||url==='/playtests/combat-session')return Response.json(state);
-    if(url==='/cards/presentation')return Response.json({cards:{}});
+    if(url==='/cards/presentation'){
+      const names=JSON.parse(options.body||'{}').names||[];
+      return Response.json({cards:Object.fromEntries(names.filter(name=>fixture.presentations?.[name]).map(name=>[name,fixture.presentations[name]]))});
+    }
     if(url==='/playtests/combat-session/choice'){
       const choice=JSON.parse(options.body);
       const legal=state.pendingDecision.rendered.items.some(item=>JSON.stringify(item.choice)===JSON.stringify(choice));

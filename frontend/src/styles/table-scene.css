@@ -95,6 +95,7 @@
 .table-pile-face img { width: 100%; height: 100%; object-fit: cover; }
 .table-pile-face--empty { border: 1px dashed color-mix(in srgb, var(--ui-border) 19%, transparent); box-shadow: none; color: color-mix(in srgb, var(--ui-accent) 27%, transparent); }
 .table-pile-label { display: block; margin-top: 4px; font-size: 7px; text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
+.table-pile-count { display: block; font-size: 10px; line-height: 1.2; }
 .table-pile:not(:disabled):hover .table-pile-face { outline: 1px solid var(--ui-accent); transform: translateY(-3px); }
 .table-card-back { display: grid; place-items: center; color: var(--ui-accent); background: radial-gradient(ellipse,var(--ui-surface-muted),var(--ui-surface) 65%); border: 1px solid var(--ui-accent); box-shadow: inset 0 0 0 5px color-mix(in srgb, var(--ui-shadow) 27%, transparent), inset 0 0 0 6px color-mix(in srgb, var(--ui-shadow) 10%, transparent); }
 /*

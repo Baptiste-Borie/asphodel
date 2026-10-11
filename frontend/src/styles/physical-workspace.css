@@ -38,7 +38,7 @@
   --seat-land: 58px;
 }
 .table-root--physical .physical-scene[data-count] .physical-board[data-density=preview] {
-  --seat-card: 42px;
+  --seat-card: 58px;
   --seat-land: 34px;
   width: 100%;
   grid-template-rows: 32px minmax(0, 1fr) 44px;
@@ -66,6 +66,25 @@
   overflow: auto;
 }
 .table-root--physical .physical-board[data-density=preview] .table-battlefield-cards { padding: 14px 4px 6px; }
+/* A compact card keeps both its name and statistics. The detail preview retains
+   the full printed card, while this thumbnail uses a wider art crop. */
+.table-root--physical .physical-board[data-density=preview] .table-battlefield-cards .table-card-slot,
+.table-root--physical .physical-board[data-density=preview] [data-card-variant=battlefield] { aspect-ratio: 1.1; }
+.table-root--physical .physical-board [data-card-variant=battlefield] .table-card-caption {
+  padding: 8px 4px 4px;
+  font-size: 11px;
+  line-height: 1.15;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.table-root--physical .physical-board [data-card-variant=battlefield]:has(.table-card-stats) .table-card-caption { padding-right: 4px; }
+.table-root--physical .physical-board [data-card-variant=battlefield] .table-card-stats { top: 3px; bottom: auto; right: 3px; }
+.table-root--physical .physical-board[data-density=preview] [data-card-variant=battlefield] .table-card-caption { font-size: 9px; padding: 5px 3px 3px; }
 .table-root--physical .physical-board .table-land-zone { padding: 8px; max-width: none; justify-self: stretch; }
 .table-root--physical .physical-board-header { gap: 8px; }
 .table-root--physical .physical-life { width: 44px; height: 44px; font-size: 28px; }
@@ -84,13 +103,18 @@
 .table-root--physical .physical-board .table-commander-dock::before { display: none; }
 .table-root--physical .physical-board .table-commander-dock .table-card,
 .table-root--physical .physical-board .table-commander-dock .table-card-slot { width: 44px; }
-.table-root--physical .physical-board .table-public-zones { gap: 6px; flex-direction: row; }
-.table-root--physical .physical-board .table-pile { width: 40px; }
+.table-root--physical .physical-board .table-public-zones { gap: 6px; flex-direction: row; padding: 0; }
+.table-root--physical .physical-board .table-pile { width: 58px; }
 .table-root--physical .physical-board .table-pile-face { width: 36px; height: 50px; }
 .table-root--physical .physical-board[data-density=preview] .table-commander-dock .table-card,
 .table-root--physical .physical-board[data-density=preview] .table-commander-dock .table-card-slot { width: 28px; }
-.table-root--physical .physical-board[data-density=preview] .table-pile { width: 28px; }
-.table-root--physical .physical-board[data-density=preview] .table-pile-face { width: 25px; height: 35px; }
+.table-root--physical .physical-board[data-density=preview] .table-pile { width: 48px; }
+.table-root--physical .physical-board[data-density=preview] .table-pile-face { width: 18px; height: 22px; }
+.table-root--physical .physical-board .table-pile-label { font-size: 9px; margin-top: 4px; white-space: nowrap; letter-spacing: 0; text-transform: none; }
+.table-root--physical .physical-board .table-pile-face { margin-inline: auto; }
+.table-root--physical .physical-board[data-density=preview] .table-pile-label { font-size: 8px; line-height: 1.1; margin-top: 2px; }
+.table-root--physical .physical-board[data-density=preview] .table-pile-label::before { display: none; }
+.table-root--physical .table-pile-count { font-size: 10px; line-height: 1; }
 .table-root--physical .voice-panel {
   inset: auto 24px 24px auto;
   width: var(--physical-rail);

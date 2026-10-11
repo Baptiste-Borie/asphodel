@@ -644,7 +644,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     const tableViewButton = document.createElement('button');
     tableViewButton.type = 'button';
     tableViewButton.className = 'table-focus-return';
-    tableViewButton.textContent = '← Table view';
+    tableViewButton.textContent = '← Vue d’ensemble';
     tableViewButton.hidden = true;
     const applyDigitalFocus = () => {
       const focusedPlayerId = digitalView.mode === "focus" ? digitalView.playerId : null;
@@ -678,12 +678,12 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     const historyTitle = document.createElement('summary'); historyTitle.textContent = 'Actions récentes';
     history.append(historyTitle, actionsEl); rail.append(history);
     stackEl = document.createElement('div'); stackEl.className = 'table-stack'; stackEl.hidden = true;
-    stackEl.setAttribute('aria-label', 'Spell stack');
+    stackEl.setAttribute('aria-label', 'Pile des sorts');
     const wordmark = document.createElement('div'); wordmark.className = 'table-wordmark'; wordmark.textContent = 'ASPHODEL';
     battlefield.append(wordmark);
-    stackControl = document.createElement('button'); stackControl.type = 'button'; stackControl.className = 'table-stack-control'; stackControl.textContent = 'Stack · 0';
-    const stackDrawer = document.createElement('aside'); stackDrawer.className = 'table-stack-drawer'; stackDrawer.hidden = true; stackDrawer.setAttribute('aria-label', 'Spell stack');
-    const closeStack = document.createElement('button'); closeStack.textContent = 'Close stack ×';
+    stackControl = document.createElement('button'); stackControl.type = 'button'; stackControl.className = 'table-stack-control'; stackControl.textContent = 'Pile · 0';
+    const stackDrawer = document.createElement('aside'); stackDrawer.className = 'table-stack-drawer'; stackDrawer.hidden = true; stackDrawer.setAttribute('aria-label', 'Pile des sorts');
+    const closeStack = document.createElement('button'); closeStack.textContent = 'Fermer la pile ×';
     const toggleStack = (open: boolean) => { stackDrawer.hidden = !open; stackControl.setAttribute('aria-expanded', String(open)); if (!open) stackControl.focus(); else closeStack.focus(); };
     stackControl.dataset.zone = 'stack';
     stackControl.setAttribute('aria-expanded', 'false'); stackControl.onclick = () => toggleStack(Boolean(stackDrawer.hidden));
@@ -708,7 +708,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     const endButton = document.createElement("button");
     endButton.type = "button";
     endButton.className = "danger-button table-menu-end-button";
-    endButton.textContent = "End Playtest";
+    endButton.textContent = "Terminer la partie";
     endButton.addEventListener("click", () => { menuPanel.hidden = true; void endGame(); });
     const presentationSettings=document.createElement('section');gamePresentation=mountPresentationSettings(presentationSettings,preferences);
     menuPanel.append(menuDeckInfo,presentationSettings,createPlaybackControl(),endButton);
@@ -872,7 +872,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     zoneInspector.refresh(observation);
     renderHud(observation);
     renderStack(stackEl, observation);
-    stackControl.textContent = `Stack · ${observation.stack.length}`;
+    stackControl.textContent = `Pile · ${observation.stack.length}`;
     if (physicalScene) { physicalScene.render(observation, boardCallbacksForThisRender, expand, livePlayerTargets, (items, anchor) => handleManaSourceActivate("", items, anchor)); return; }
 
     // Milestone 2/3: one loop over generic, self-contained viewports (see digital-board-slot.ts)

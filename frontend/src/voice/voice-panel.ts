@@ -7,7 +7,7 @@
  *
  * The transcript field doubles as the spec's "correct the interpretation" path: it is always a
  * plain editable text input (pre-filled with whatever the mic last heard), so retyping it and
- * pressing "Interpret" re-runs resolution on the corrected text — no separate UI needed for that.
+ * pressing "Interpréter" re-runs resolution on the corrected text — no separate UI needed for that.
  * It is also how this panel stays usable without a working microphone during early playtests.
  */
 import type { DictionaryProposal, VoiceCandidate, VoiceResolutionResult } from "./voice-types.js";
@@ -51,7 +51,7 @@ export function createVoicePanel(runner: VoiceRunner): VoicePanelHandle {
 
   const heading = document.createElement("p");
   heading.className = "voice-panel-heading";
-  heading.textContent = "Voice (V0)";
+  heading.textContent = "Commande vocale";
 
   const micButton = document.createElement("button");
   micButton.type = "button";
@@ -60,12 +60,13 @@ export function createVoicePanel(runner: VoiceRunner): VoicePanelHandle {
   const transcriptInput = document.createElement("input");
   transcriptInput.type = "text";
   transcriptInput.className = "voice-panel-input";
-  transcriptInput.placeholder = "Or type what you'd say…";
+  transcriptInput.placeholder = "Ou saisir une commande…";
+  transcriptInput.setAttribute('aria-label', 'Commande à interpréter');
 
   const interpretButton = document.createElement("button");
   interpretButton.type = "button";
   interpretButton.className = "voice-panel-interpret";
-  interpretButton.textContent = "Interpret";
+  interpretButton.textContent = "Interpréter";
 
   const inputRow = document.createElement("div");
   inputRow.className = "voice-panel-input-row";
@@ -89,8 +90,9 @@ export function createVoicePanel(runner: VoiceRunner): VoicePanelHandle {
 
   function setListening(value: boolean): void {
     listening = value;
-    micButton.textContent = listening ? "🛑 Stop listening" : "🎙 Start listening";
+    micButton.textContent = listening ? "Arrêter l’écoute" : "Activer le micro";
     micButton.classList.toggle("voice-panel-mic--active", listening);
+    micButton.setAttribute('aria-pressed', String(listening));
   }
 
   function updatePlanLine(): void {
@@ -100,7 +102,7 @@ export function createVoicePanel(runner: VoiceRunner): VoicePanelHandle {
       return;
     }
     planLine.hidden = false;
-    planLine.textContent = status.abortReason ? `Plan stopped: ${status.abortReason}` : `Plan in progress — next: ${status.remaining[0]}`;
+    planLine.textContent = status.abortReason ? `Plan arrêté : ${status.abortReason}` : `Plan en cours — suite : ${status.remaining[0]}`;
   }
 
   function renderProposal(proposal: DictionaryProposal | null, reExecute: () => void): void {
@@ -108,10 +110,10 @@ export function createVoicePanel(runner: VoiceRunner): VoicePanelHandle {
     proposalBox.hidden = !proposal;
     if (!proposal) return;
     const text = document.createElement("p");
-    text.textContent = `Unknown word "${proposal.term}" — looks like it means "${proposal.intent}" here (${proposal.context}).`;
+    text.textContent = `Mot inconnu « ${proposal.term} » — semble signifier « ${proposal.intent} » ici (${proposal.context}).`;
     const remember = document.createElement("button");
     remember.type = "button";
-    remember.textContent = "Execute & remember (this situation only)";
+    remember.textContent = "Exécuter et mémoriser ici";
     remember.addEventListener("click", () => {
       runner.approveDictionaryEntry(proposal, "context");
       reExecute();
@@ -119,14 +121,14 @@ export function createVoicePanel(runner: VoiceRunner): VoicePanelHandle {
     });
     const executeOnly = document.createElement("button");
     executeOnly.type = "button";
-    executeOnly.textContent = "Execute without learning";
+    executeOnly.textContent = "Exécuter sans mémoriser";
     executeOnly.addEventListener("click", () => {
       reExecute();
       proposalBox.hidden = true;
     });
     const cancel = document.createElement("button");
     cancel.type = "button";
-    cancel.textContent = "Cancel";
+    cancel.textContent = "Annuler";
     cancel.addEventListener("click", () => { proposalBox.hidden = true; });
     proposalBox.append(text, remember, executeOnly, cancel);
   }
@@ -135,51 +137,51 @@ export function createVoicePanel(runner: VoiceRunner): VoicePanelHandle {
     resultBox.replaceChildren();
     proposalBox.hidden = true;
     if (!result) {
-      normalizedLine.textContent = "(no pending decision to interpret against right now)";
+      normalizedLine.textContent = "Aucune décision en attente à interpréter.";
       return;
     }
-    normalizedLine.textContent = `Normalized: "${result.transcript.normalized}"`;
+    normalizedLine.textContent = `Commande normalisée : « ${result.transcript.normalized} »`;
     const resolution = result.resolution;
     const status = document.createElement("p");
     status.className = "voice-panel-status";
 
     if (resolution.kind === "resolved") {
-      status.textContent = `✓ Executed: ${result.candidates[0]?.label ?? "?"} (confidence ${resolution.confidence.toFixed(2)})`;
+      status.textContent = `✓ Exécuté : ${result.candidates[0]?.label ?? "?"} (confiance ${resolution.confidence.toFixed(2)})`;
       resultBox.append(status);
     } else if (resolution.kind === "plan") {
-      status.textContent = `✓ Executing plan (${resolution.steps.length} steps): ${resolution.steps.map((s) => s.label).join(" → ")}`;
+      status.textContent = `✓ Plan en cours (${resolution.steps.length} étapes) : ${resolution.steps.map((s) => s.label).join(" → ")}`;
       resultBox.append(status);
     } else if (resolution.kind === "confirm") {
-      status.textContent = `Did you mean this? (confidence ${resolution.confidence.toFixed(2)})`;
+      status.textContent = `Est-ce la bonne action ? (confiance ${resolution.confidence.toFixed(2)})`;
       resultBox.append(status, candidateRow(resolution.candidate));
       const confirm = document.createElement("button");
       confirm.type = "button";
-      confirm.textContent = "Confirm";
-      confirm.addEventListener("click", () => { runner.execute(resolution); updatePlanLine(); status.textContent = "✓ Executed."; });
+      confirm.textContent = "Confirmer";
+      confirm.addEventListener("click", () => { runner.execute(resolution); updatePlanLine(); status.textContent = "✓ Exécuté."; });
       const cancel = document.createElement("button");
       cancel.type = "button";
-      cancel.textContent = "Cancel";
+      cancel.textContent = "Annuler";
       cancel.addEventListener("click", () => resultBox.replaceChildren());
       resultBox.append(confirm, cancel);
     } else if (resolution.kind === "ambiguous") {
-      status.textContent = "Ambiguous — pick the one you meant:";
+      status.textContent = "Plusieurs actions possibles — choisir :";
       resultBox.append(status);
       for (const candidate of resolution.candidates) {
         resultBox.append(candidateRow(candidate, () => {
           runner.execute({ kind: "resolved", choice: candidate.choice, confidence: candidate.score });
           updatePlanLine();
-          status.textContent = "✓ Executed.";
+          status.textContent = "✓ Exécuté.";
         }));
       }
     } else {
-      status.textContent = "Unrecognized — nothing executed.";
+      status.textContent = "Commande non reconnue — aucune action exécutée.";
       resultBox.append(status);
     }
 
     if (result.unknownTerms.length > 0) {
       const unknown = document.createElement("p");
       unknown.className = "voice-panel-unknown";
-      unknown.textContent = `Unknown word(s): ${result.unknownTerms.join(", ")}`;
+      unknown.textContent = `Mots inconnus : ${result.unknownTerms.join(", ")}`;
       resultBox.append(unknown);
     }
 
@@ -189,7 +191,7 @@ export function createVoicePanel(runner: VoiceRunner): VoicePanelHandle {
   }
 
   function handleTranscript(transcript: string): void {
-    rawLine.textContent = `Heard: "${transcript}"`;
+    rawLine.textContent = `Commande entendue : « ${transcript} »`;
     transcriptInput.value = transcript;
     const result = runner.interpret(transcript);
     renderResult(result);
@@ -205,13 +207,13 @@ export function createVoicePanel(runner: VoiceRunner): VoicePanelHandle {
   setListening(false);
   micButton.addEventListener("click", () => {
     if (listening) { recognizer?.stop(); setListening(false); return; }
-    if (!isVoiceCaptureSupported()) { rawLine.textContent = "Speech recognition is not supported in this browser — type a transcript instead."; return; }
+    if (!isVoiceCaptureSupported()) { rawLine.textContent = "Micro indisponible ici. Saisir la commande dans le champ."; return; }
     recognizer = createVoiceRecognizer({
       onResult: handleTranscript,
-      onError: (err) => { rawLine.textContent = `Mic error: ${err}`; },
+      onError: (err) => { rawLine.textContent = `Erreur du micro : ${err}`; },
       onEnd: () => setListening(false),
     }, { vocabulary: runner.contextualVocabulary });
-    if (!recognizer) { rawLine.textContent = "Speech recognition is not supported in this browser — type a transcript instead."; return; }
+    if (!recognizer) { rawLine.textContent = "Micro indisponible ici. Saisir la commande dans le champ."; return; }
     recognizer.start();
     setListening(true);
   });
