@@ -37,3 +37,6 @@
 @media(max-width:650px) { .combat-columns { grid-template-columns:minmax(0,1fr); } .combat-creatures { max-height:110px; } }
 
 .table-root .table-decision-dock.table-decision-dock--combat::before { display:none; }
+
+.combat-flow>h2,.combat-hint { flex-shrink:0; }
+.combat-body { flex:1 1 auto; }

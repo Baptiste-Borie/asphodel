@@ -1,0 +1,159 @@
+/* Physical mode has a board and an action column. Neither covers the other.
+   These rules own composition; shared card rendering and Forge choices stay live. */
+.table-root--physical {
+  --physical-rail: clamp(300px, 27vw, 370px);
+  --physical-gap: 16px;
+  min-height: 0;
+}
+.table-root--physical .physical-scene,
+.table-root--physical.physical-inspection-pinned .physical-scene {
+  inset: 98px calc(var(--physical-rail) + 32px) 24px 24px;
+  gap: 12px;
+  overflow: auto;
+  align-content: stretch;
+}
+.table-root--physical .physical-scene[data-count='2'],
+.table-root--physical .physical-scene[data-count='3'],
+.table-root--physical .physical-scene[data-focused=true] {
+  grid-template-rows: minmax(300px, 1fr) 194px;
+}
+.table-root--physical .physical-scene[data-count='4'][data-focused=false] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(300px, 1fr));
+}
+.table-root--physical .physical-board {
+  --seat-card: clamp(56px, calc((100dvh - 420px) * .22), 120px);
+  --seat-land: 46px;
+  box-sizing: border-box;
+  grid-template-rows: 52px minmax(0, 1fr) 80px;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  box-shadow: none;
+}
+.table-root--physical .physical-board[data-density=primary] {
+  --seat-card: clamp(72px, calc((100dvh - 500px) * .52), 170px);
+  --seat-land: 58px;
+}
+.table-root--physical .physical-scene[data-count] .physical-board[data-density=preview] {
+  --seat-card: 42px;
+  --seat-land: 34px;
+  width: 100%;
+  grid-template-rows: 32px minmax(0, 1fr) 44px;
+  padding: 8px;
+  gap: 4px;
+}
+.table-root--physical .physical-scene[data-count] .physical-board[data-density=preview][data-role=self] { padding-top: 26px; }
+.table-root--physical .physical-board[data-role=self] {
+  padding-top: 26px;
+  border-color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+}
+.table-root--physical .physical-board[data-role=self]::before {
+  content: 'VOTRE TABLE PHYSIQUE';
+  top: 7px;
+  font-size: 8px;
+  letter-spacing: .08em;
+}
+.table-root--physical[data-connection=connected] .physical-board[data-role=self]::before { content: 'VOTRE TABLE PHYSIQUE · SYNCHRONISÉE'; }
+.table-root--physical[data-playback=playing] .physical-board[data-role=self]::before { content: 'VOTRE TABLE PHYSIQUE · RELECTURE'; }
+.table-root--physical[data-connection=disconnected] .physical-board[data-role=self]::before { content: 'VOTRE TABLE PHYSIQUE · CONNEXION PERDUE'; }
+.table-root--physical .physical-board .table-battlefield-cards {
+  padding: 14px 10px;
+  align-items: center;
+  overflow: auto;
+}
+.table-root--physical .physical-board[data-density=preview] .table-battlefield-cards { padding: 14px 4px 6px; }
+.table-root--physical .physical-board .table-land-zone { padding: 8px; max-width: none; justify-self: stretch; }
+.table-root--physical .physical-board-header { gap: 8px; }
+.table-root--physical .physical-life { width: 44px; height: 44px; font-size: 28px; }
+.table-root--physical .physical-identity { gap: 6px; padding-right: 0; }
+.table-root--physical .physical-seat-plaque { min-width: 0; max-width: 130px; padding: 4px 6px; }
+.table-root--physical .physical-player-name { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.table-root--physical .physical-board[data-density=preview] .physical-life { width: 32px; height: 32px; font-size: 22px; }
+.table-root--physical .physical-board[data-density=preview] .physical-seat-plaque { max-width: 90px; }
+.table-root--physical .physical-hand { padding: 0 4px; align-items: center; overflow-x: auto; }
+.table-root--physical .physical-hand > .table-card--hand { width: 36px; margin-left: -20px; }
+.table-root--physical .physical-hand > .table-card--hand:first-child { margin-left: 0; }
+.table-root--physical .physical-hand > .table-card-back { width: 27px; height: 38px; margin-left: -17px; }
+.table-root--physical .physical-hand small { font-size: 9px; margin-left: 6px; padding-top: 0; }
+.table-root--physical .physical-board-zones { gap: 10px; min-width: 0; }
+.table-root--physical .physical-board .table-commander-dock { padding-top: 0 !important; }
+.table-root--physical .physical-board .table-commander-dock::before { display: none; }
+.table-root--physical .physical-board .table-commander-dock .table-card,
+.table-root--physical .physical-board .table-commander-dock .table-card-slot { width: 44px; }
+.table-root--physical .physical-board .table-public-zones { gap: 6px; flex-direction: row; }
+.table-root--physical .physical-board .table-pile { width: 40px; }
+.table-root--physical .physical-board .table-pile-face { width: 36px; height: 50px; }
+.table-root--physical .physical-board[data-density=preview] .table-commander-dock .table-card,
+.table-root--physical .physical-board[data-density=preview] .table-commander-dock .table-card-slot { width: 28px; }
+.table-root--physical .physical-board[data-density=preview] .table-pile { width: 28px; }
+.table-root--physical .physical-board[data-density=preview] .table-pile-face { width: 25px; height: 35px; }
+.table-root--physical .voice-panel {
+  inset: auto 24px 24px auto;
+  width: var(--physical-rail);
+  height: 144px;
+  max-height: 144px;
+  box-sizing: border-box;
+  font-family: var(--asphodel-font);
+  font-size: 12px;
+}
+.table-root--physical .table-decision-dock,
+.table-root--physical .table-decision-dock.table-decision-dock--combat,
+.table-root--physical .table-decision-dock.table-decision-dock--targets {
+  position: absolute;
+  inset: 98px 24px 184px auto;
+  transform: none;
+  width: var(--physical-rail);
+  min-width: 0;
+  max-width: none;
+  max-height: none;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 14px;
+  overflow: auto;
+  text-align: left;
+  border-radius: 8px;
+}
+.table-root--physical .table-decision-dock:empty { display: none; }
+.table-root--physical .table-decision-dock::before { display: none; }
+.table-root--physical .combat-flow,
+.table-root--physical .target-flow { flex: 1; min-height: 0; max-height: none; }
+.table-root--physical .combat-columns,
+.table-root--physical .target-group { grid-template-columns: minmax(0, 1fr); }
+.table-root--physical .combat-creatures { max-height: none; overflow: visible; }
+.table-root--physical .table-picker-cards { max-height: none; overflow: visible; }
+.table-root--physical .table-decision-dock .decision-menu { flex-direction: column; align-items: stretch; }
+.table-root--physical .table-decision-dock .decision-option { width: 100%; margin-left: 0; }
+.table-root--physical .table-preview { right: 24px; top: 98px; width: var(--physical-rail); max-height: calc(100% - 282px); }
+.table-root--physical .table-rail-left { bottom: 2px; left: 24px; }
+/* In narrow windows use two reserved rows, rather than an overlay on the board. */
+@media (max-width: 849px) {
+  .table-root--physical .physical-scene,
+  .table-root--physical.physical-inspection-pinned .physical-scene { inset: 98px 12px 46% 12px; }
+  .table-root--physical .physical-scene[data-count],
+  .table-root--physical .physical-scene[data-count='4'][data-focused=false],
+  .table-root--physical .physical-scene[data-focused=true] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-auto-rows: minmax(310px, auto);
+    align-content: start;
+  }
+  .table-root--physical .physical-board { --seat-card: 80px; }
+  .table-root--physical .physical-board[data-density=preview] { --seat-card: 50px; }
+  .table-root--physical .table-decision-dock,
+  .table-root--physical .table-decision-dock.table-decision-dock--combat,
+  .table-root--physical .table-decision-dock.table-decision-dock--targets {
+    inset: 56% 12px 24px auto;
+    width: calc(65% - 18px);
+  }
+  .table-root--physical .voice-panel { inset: 56% auto 24px 12px; width: calc(35% - 18px); height: auto; max-height: none; }
+  .table-root--physical .voice-panel-input-row { flex-direction: column; }
+  .table-root--physical .table-preview { top: 56%; right: 12px; width: calc(65% - 18px); max-height: calc(44% - 24px); }
+}

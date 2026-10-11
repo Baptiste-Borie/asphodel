@@ -5,6 +5,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {_electron} from 'playwright';
 import {targetFixture,installTargetFixture} from './fixtures/target-flow.mjs';
+import {physicalGeometry} from './fixtures/physical-geometry.mjs';
 
 const fixture=fileURLToPath(new URL('fixtures/window-smoke.mjs',import.meta.url));
 const userData=await mkdtemp(join(tmpdir(),'asphodel-target-smoke-'));
@@ -21,6 +22,7 @@ try {
     await page.waitForFunction(()=>innerWidth===1366&&innerHeight===768);
     await page.evaluate(installTargetFixture,targetFixture(mode));await page.locator('#nav-play').click();
     const dock=page.locator('.table-decision-dock--targets');await dock.getByRole('heading',{name:'Cibles · Test spell'}).waitFor();
+    if(mode==='physical')assert.deepEqual((await page.evaluate(physicalGeometry)).overlaps,[],'target choices do not cover the physical board or voice input');
     assert.match(await dock.textContent(),/Cimetière · Toi/);assert.ok(!(await dock.textContent()).includes('Secret should not appear'));
     assert.equal(await dock.locator('.target-finish').count(),0,'no invented Finish');
     const search=dock.getByRole('searchbox',{name:'Trouver une cible'});

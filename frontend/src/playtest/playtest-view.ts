@@ -57,6 +57,7 @@ import '../styles/physical-v2.css';
 import '../styles/voice-panel.css';
 import './combat-decision.css';
 import './target-decision.css';
+import '../styles/physical-workspace.css';
 import type { AgentCardObservation, AgentChoice, AgentObservation, AgentSelfPlayerObservation, DeckInput, MenuItem, PublicGameEvent, StartPlaytestRequest, WebPendingDecisionDTO, WebPlaytestStateDTO } from "./types.js";
 
 const POLL_INTERVAL_MS = 300;
@@ -628,7 +629,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     hudPhaseEl = document.createElement("p");
     hudPhaseEl.className = "table-hud-line table-hud-phase";
     const modeLabel = document.createElement('p'); modeLabel.className = 'table-play-mode';
-    modeLabel.textContent = currentPlayMode === 'physical' ? 'Physical Companion' : 'Digital';
+    modeLabel.textContent = currentPlayMode === 'physical' ? 'Table physique' : 'Table numérique';
     hud.append(modeLabel, hudTurnEl, hudPhaseEl,createPlaybackControl());
 
     /*
@@ -674,7 +675,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     actionsEl = document.createElement("div");
     actionsEl.className = "table-actions";
     const history = document.createElement('details'); history.className = 'table-history';
-    const historyTitle = document.createElement('summary'); historyTitle.textContent = 'Recent actions';
+    const historyTitle = document.createElement('summary'); historyTitle.textContent = 'Actions récentes';
     history.append(historyTitle, actionsEl); rail.append(history);
     stackEl = document.createElement('div'); stackEl.className = 'table-stack'; stackEl.hidden = true;
     stackEl.setAttribute('aria-label', 'Spell stack');
@@ -797,8 +798,9 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
 
   /** Small, elegant turn/phase HUD (V2e.6) — uses the actual current Forge turn/phase, never a guess; friendly combat-phase labels via `formatHudPhase`. */
   function renderHud(observation: AgentObservation): void {
-    const activeLabel = observation.players.find(p => p.playerId === observation.game.activePlayerId)?.name ?? "Player";
-    updateHudLine(hudTurnEl, `Turn ${observation.game.turn} · ${activeLabel}`);
+    const activePlayer = observation.players.find(p => p.playerId === observation.game.activePlayerId);
+    const activeLabel = activePlayer ? activePlayer.role === 'self' ? 'Toi' : seatName(activePlayer, observation) : 'Joueur';
+    updateHudLine(hudTurnEl, `Tour ${observation.game.turn} · ${activeLabel}`);
     updateHudLine(hudPhaseEl, formatHudPhase(observation.game.phase));
 
     // V2h "MAJOR PHASE / CHAPTER TRANSITIONS": only the handful of genuinely major beats — see

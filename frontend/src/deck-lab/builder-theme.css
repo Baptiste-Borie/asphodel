@@ -162,3 +162,12 @@ body:has(#deck-lab-view:not([hidden]) .lab-table:not([hidden])) .header-actions 
 #deck-lab-view .lab-table [data-commander-status=error],#deck-lab-view .lab-table [data-check-status=error],#deck-lab-view .lab-table .lab-commander-error { color:#a02e3e; }
 #deck-lab-view .lab-table [data-commander-status=unknown],#deck-lab-view .lab-table [data-check-status=unknown] { color:#856019; }
 #deck-lab-view .lab-table .lab-curve label { border-color:#cbd4e1; }
+
+/* Keep intrinsic analysis tables inside the panel, never inside the document width. */
+#deck-lab-view .lab-table .dt-panel { min-width:0;min-height:0;box-sizing:border-box;overflow-x:hidden; }
+.dt-analysis-content,.dt-analysis .lab-mana-analysis,.dt-analysis .lab-mana-table-scroll { min-width:0;max-width:100%;box-sizing:border-box; }
+/* The work area owns its overflow; analysis cannot widen the application shell. */
+#deck-lab-view .lab-table .dt-body { contain:inline-size;overflow:hidden; }
+#deck-lab-view .lab-table .dt-fallback[hidden] { display:none; }
+#deck-lab-view .lab-table .dt-card img[data-artwork-state=loading] { opacity:0; }
+#deck-lab-view .lab-table .dt-card img { position:absolute;inset:0; }

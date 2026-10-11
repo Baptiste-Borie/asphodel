@@ -107,7 +107,7 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
     initializeZones(workspace, rows, fresh);
     fitZones(workspace, rows);
     for (const id of selected) if (!rows.some(r => r.placement.id === id)) selected.delete(id);
-    get('.dt-cards').innerHTML = rows.map(r => `<button class="dt-card ${r.group.maybeboard ? 'is-aside' : ''}" data-dt-card="${r.placement.id}" ${visibleInPile(workspace,r.placement.id) ? '' : 'hidden'} style="left:${r.placement.x}px;top:${r.placement.y}px;z-index:${r.placement.z}" aria-label="${esc(r.entry.card.name)} · ${r.entry.quantity} · ${r.group.maybeboard?'hors du deck':'dans le deck'}" aria-pressed="false">${r.entry.card.image ? `<img draggable="false" src="${esc(r.entry.card.image)}" alt="${esc(r.entry.card.name)}" loading="lazy">` : ''}<span class="dt-fallback" ${r.entry.card.image ? 'hidden' : ''}><strong>${esc(r.entry.card.name)}</strong><small>${esc(r.entry.card.type_line)}</small><span>Illustration indisponible</span></span>${tagBadges(sheet,r.entry.card.name)}<span class="dt-card-label">${esc(r.entry.card.name)}</span><span class="dt-badge">${r.entry.quantity > 1 ? `×${r.entry.quantity} · ` : ''}${r.group.maybeboard ? r.placement.cut ? 'Écartée' : 'Candidate' : r.group.commander ? 'Commandant' : 'Dans le deck'}</span></button>`).join('');
+    get('.dt-cards').innerHTML = rows.map(r => `<button class="dt-card ${r.group.maybeboard ? 'is-aside' : ''}" data-dt-card="${r.placement.id}" ${visibleInPile(workspace,r.placement.id) ? '' : 'hidden'} style="left:${r.placement.x}px;top:${r.placement.y}px;z-index:${r.placement.z}" aria-label="${esc(r.entry.card.name)} · ${r.entry.quantity} · ${r.group.maybeboard?'hors du deck':'dans le deck'}" aria-pressed="false">${r.entry.card.image ? `<img draggable="false" src="${esc(r.entry.card.image)}" alt="${esc(r.entry.card.name)}" loading="lazy" data-artwork-state="loading">` : ''}<span class="dt-fallback"><strong>${esc(r.entry.card.name)}</strong><small>${esc(r.entry.card.type_line)}</small><span>${r.entry.card.image ? 'Chargement de l’illustration…' : 'Illustration indisponible'}</span></span>${tagBadges(sheet,r.entry.card.name)}<span class="dt-card-label">${esc(r.entry.card.name)}</span><span class="dt-badge">${r.entry.quantity > 1 ? `×${r.entry.quantity} · ` : ''}${r.group.maybeboard ? r.placement.cut ? 'Écartée' : 'Candidate' : r.group.commander ? 'Commandant' : 'Dans le deck'}</span></button>`).join('');
     get('.dt-zones').innerHTML = workspace.zones.map(z => `<section class="dt-zone ${z.locked?'is-locked':''} ${z.sizing==='manual'?'is-manual':''}" data-dt-zone="${z.id}" style="left:${z.x}px;top:${z.y}px;width:${z.width}px;height:${z.height}px"><header><input aria-label="Nom de la zone" maxlength="60" value="${esc(z.name)}" ${z.locked?'readonly':''}><span data-zone-count></span><button data-zone-action="fit" data-zone="${z.id}" aria-label="Ajuster la zone ${esc(z.name)} aux cartes" title="Ajuster le cadre aux cartes" ${z.locked?'disabled':''}>↔</button><button data-zone-action="arrange" data-zone="${z.id}" aria-label="Ranger les cartes dans ${esc(z.name)}" title="Ranger en grille, sur demande" ${z.locked?'disabled':''}>▦</button><button data-zone-action="lock" data-zone="${z.id}" aria-label="${z.locked?'Déverrouiller':'Verrouiller'} la zone ${esc(z.name)}" title="${z.locked?'Déverrouiller le cadre':'Fixer le cadre ; les cartes restent libres'}" aria-pressed="${!!z.locked}">${z.locked?'🔒':'🔓'}</button><button data-delete-zone="${z.id}" aria-label="Supprimer la zone ${esc(z.name)}" ${z.locked?'disabled':''}>×</button></header><span class="dt-zone-empty">Déposer des cartes ici</span><button class="dt-zone-resize" data-resize-zone="${z.id}" aria-label="Redimensionner la zone ${esc(z.name)}" title="Glisser pour redimensionner · flèches au clavier" ${z.locked?'disabled':''}>↘</button></section>`).join('');
     get('.dt-piles').innerHTML = (workspace.piles ?? []).map(p => {
       const members=pileRows(p,rows), total=members.reduce((n,r)=>n+r.entry.quantity,0), included=members.filter(r=>!r.group.maybeboard).reduce((n,r)=>n+r.entry.quantity,0);
@@ -416,12 +416,20 @@ export function mountDeckTable(root: HTMLElement, sheet: Sheet, options: Options
   canvas.addEventListener('dragleave',e=>{if(!canvas.contains(e.relatedTarget as Node))highlightZone();},{signal:abort.signal});
   root.addEventListener('dragend',()=>highlightZone(),{signal:abort.signal});
   canvas.addEventListener('drop',e=>{e.preventDefault();const value=e.dataTransfer?.getData('application/x-asphodel-card');if(value===undefined||value==='')return;const card=results[Number(value)];if(card){const point=screenToWorld(local(e),workspace.camera);addCandidate(card,point,zoneAt(workspace,point)?.id);}highlightZone();},{signal:abort.signal});
+  root.addEventListener('load',e=>{
+    const img = e.target;
+    if (!(img instanceof HTMLImageElement) || !img.closest('.dt-card')) return;
+    img.dataset.artworkState = 'ready';
+    const fallback = img.parentElement?.querySelector<HTMLElement>('.dt-fallback');
+    if (fallback) fallback.hidden = true;
+  },{capture:true,signal:abort.signal});
   root.addEventListener('error',e=>{
     const img = e.target;
     if (!(img instanceof HTMLImageElement) || !img.closest('.dt-card')) return;
     img.hidden = true;
+    img.dataset.artworkState = 'failed';
     const fallback = img.parentElement?.querySelector<HTMLElement>('.dt-fallback');
-    if (fallback) fallback.hidden = false;
+    if (fallback) { fallback.hidden = false; const status = fallback.querySelector('span'); if (status) status.textContent = 'Illustration indisponible'; }
   },{capture:true,signal:abort.signal});
   root.addEventListener('pointerdown',e=>{
     if(!(e.target as HTMLElement).closest('.dt-create')) get<HTMLDetailsElement>('.dt-create').open=false;

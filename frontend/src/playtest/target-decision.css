@@ -30,3 +30,7 @@
 .target-flow [hidden] { display:none; }
 @media(max-height:700px) { .table-root .table-decision-dock.table-decision-dock--targets { bottom:12px;max-height:65vh; } .target-flow { max-height:calc(65vh - 30px); } }
 @media(max-width:650px) { .target-group { grid-template-columns:minmax(0,1fr); } }
+
+/* Context and progress stay readable; only the options absorb height pressure. */
+.target-flow>h2,.target-prompt,.target-progress,.target-search-label,.target-flow>details { flex-shrink:0; }
+.target-body { flex:1 1 auto; }

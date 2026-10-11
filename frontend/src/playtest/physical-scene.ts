@@ -24,7 +24,7 @@ function createBoard() {
 /** Physical composition only. All boards remain mounted and live when focus changes. */
 export function createPhysicalScene(inspect: (title: string, cards: AgentCardObservation[]) => void) {
   const element = area('physical-scene');
-  const overview = document.createElement('button'); overview.type = 'button'; overview.className = 'physical-overview'; overview.textContent = 'Table view'; overview.setAttribute('aria-label','Overview'); overview.hidden = true;
+  const overview = document.createElement('button'); overview.type = 'button'; overview.className = 'physical-overview'; overview.textContent = 'Vue d’ensemble'; overview.setAttribute('aria-label','Vue d’ensemble'); overview.hidden = true;
   const boards = new Map<string, ReturnType<typeof createBoard>>();
   let focused: string | null = null;
   let current: AgentObservation | null = null;
@@ -38,7 +38,7 @@ export function createPhysicalScene(inspect: (title: string, cards: AgentCardObs
       const board = boards.get(seat.playerId)!;
       board.element.dataset.density = seat.density;
       board.focus.setAttribute('aria-pressed', String(focused === seat.playerId));
-      board.focus.textContent = focused === seat.playerId ? 'Focused' : 'Focus';
+      board.focus.textContent = focused === seat.playerId ? 'Agrandie' : 'Agrandir';
     }
   };
   overview.onclick = () => { focused = null; layout(); };
@@ -62,7 +62,7 @@ export function createPhysicalScene(inspect: (title: string, cards: AgentCardObs
         board.element.dataset.playerId = player.playerId;
         board.element.dataset.active = String(player.playerId === observation.game.activePlayerId);
         board.element.dataset.priority = String(player.playerId === observation.game.priorityPlayerId);
-        board.focus.setAttribute("aria-label", `Focus ${seatName(player, observation)}`);
+        board.focus.setAttribute("aria-label", `Agrandir la table de ${seatName(player, observation)}`);
         board.element.dataset.role = player.role;
         renderPlayerSeat(board.identity, player, observation, board.previousLife);
         board.previousLife = player.life;

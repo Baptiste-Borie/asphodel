@@ -5,6 +5,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {_electron} from 'playwright';
 import {combatFixture,installCombatFixture} from './fixtures/combat-flow.mjs';
+import {physicalGeometry} from './fixtures/physical-geometry.mjs';
 
 const fixture=fileURLToPath(new URL('fixtures/window-smoke.mjs',import.meta.url));
 const userData=await mkdtemp(join(tmpdir(),'asphodel-combat-smoke-'));
@@ -24,6 +25,15 @@ try {
     const dock=page.locator('.table-decision-dock--combat');await dock.getByRole('heading',{name:'Déclarer les attaquants'}).waitFor();
     assert.equal(await page.locator('.table-root').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(243, 246, 250)',`${mode} uses the common light playing surface`);
     assert.equal(await dock.evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(255, 255, 255)',`${mode} decision dock stays readable`);
+    if(mode==='physical') {
+      const geometry=await page.evaluate(physicalGeometry);
+      assert.deepEqual(geometry.overlaps,[],'physical board, choices and voice occupy separate regions');
+      assert.deepEqual(geometry.verticallyClippedBattlefieldCards,[],'physical battlefield cards fit vertically');
+      await page.getByRole('button',{name:'Vue d’ensemble',exact:true}).click();
+      assert.equal(await page.locator('.physical-board[data-role=opponent]').getAttribute('data-density'),'primary');
+      await page.locator('.physical-board[data-role=self] .physical-board-focus').click();
+      assert.equal(await page.evaluate(()=>window.combatSmoke.choices.length),0,'view changes do not submit combat choices');
+    }
     await dock.locator('[data-combat-card=g2]').click();
     assert.equal(await page.evaluate(()=>window.combatSmoke.choices.length),0,'creature navigation never submits a choice');
     const add=dock.locator('.combat-edit');await add.focus();await page.keyboard.press('Enter');

@@ -1,4 +1,4 @@
-# Asphodel Desktop 0.1.20
+# Asphodel Desktop 0.1.22
 
 Desktop wrapper around the existing TypeScript/Vite frontend, Node backend and pinned Forge bridge. No stack migration. Launch Asphodel, choose a saved deck, play locally, close the application. The packaged app includes Chromium/Node, Java and Forge's resources; no terminal, Node installation, Java installation or remote server is needed to run it.
 
@@ -10,13 +10,13 @@ Close Asphodel, then from the repository root:
 npm --prefix desktop run install:local
 ```
 
-This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.20-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
+This rebuilds the desktop runtime using the existing Forge JAR, creates `desktop/release/Asphodel-0.1.22-amd64.deb` on a normal x64 PC, checks its version/architecture and bundled components, then uses `sudo apt-get install --reinstall` to install it. Compilation runs as your normal user; sudo is requested only for the package installation. The command requires the same build dependencies and Forge resources as the existing desktop build.
 
 Afterwards, open **Asphodel** from Ubuntu's application menu and pin it to your dock if desired. The package installs the app in `/opt/Asphodel`, the desktop entry `Asphodel.desktop`, the existing icon and the `asphodel` command. This launch uses the installed app, independent of the checkout, and needs no local server command. The normal desktop settings, fullscreen preference and Quitter button remain available.
 
 To update after a new patch/pull, close Asphodel and run the same command again. Decks, cached images, drafts and display settings remain in the existing `~/.config/Asphodel` profile; the package contains no home-directory files. Package removal (`sudo apt-get remove asphodel-desktop`) leaves this profile in place. Backup/restore is available in settings; abrupt-crash recovery still depends on a persisted draft.
 
-To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.20-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
+To build without installing, use `npm --prefix desktop run dist:deb`, then `npm --prefix desktop run check:package`. A downloaded `.deb` can also be installed with `sudo apt install ./Asphodel-0.1.22-amd64.deb` from the directory containing it. The `.deb` is the recommended installation format for Ubuntu; AppImage remains available through `dist`.
 
 ## Automated Linux packages
 
@@ -347,3 +347,9 @@ Validation: frontend build and 474 unit tests passed. DOM checks cover library f
 On Linux without a display, use `xvfb-run -a -s "-screen 0 1600x1000x24" npm --prefix desktop run review:ui`. GitHub's independent `ui-review` job runs this automatically and uploads `Asphodel-UI-Review-<commit>` even on failure, without waiting for a Forge build. Fixture gameplay checks interface behavior, not engine legality or the experience of a complete real match. Missing artwork is recorded for review. Geometry warnings are observations, not automatic UX verdicts.
 
 For each UX iteration, examine the captures and actual paths first, rank concrete problems, change a coherent interaction, then compare its before/after captures. Keep visual preferences distinct from observable faults such as hidden actions, ambiguous states, unreachable controls and lost context.
+
+## First visual review corrections (0.1.22)
+
+The first local UI review completed with 17 captures and no renderer errors. It exposed a horizontal document overflow in builder analysis and several initial screenshots taken before artwork loaded. The table now retains readable name/type placeholders while artwork is loading and on failure, hides them only after successful loading, and confines analysis content to the panel. Target/combat headings retain their height while option lists scroll. UI review waits up to three seconds for visible image decoding and distinguishes pending images from failed images in its report.
+
+Build and DOM behavior checks pass; the next native review must confirm geometry and compare before/after captures. See `docs/revue-ui-01.md` for observed problems and the remaining design work.
