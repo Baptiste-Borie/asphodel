@@ -24,7 +24,8 @@
     "smoke:targets": "node scripts/target-smoke.mjs",
     "smoke:art-headers": "electron scripts/art-header-smoke.mjs",
     "smoke:runtime": "node scripts/runtime-smoke.mjs",
-    "smoke:builder": "node scripts/builder-smoke.mjs"
+    "smoke:builder": "node scripts/builder-smoke.mjs",
+    "review:ui": "npm --prefix ../frontend run build && node scripts/ui-review.mjs"
   },
   "engines": {
     "node": ">=22.16.0"
