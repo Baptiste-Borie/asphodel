@@ -221,3 +221,17 @@ body.play-reduced-motion .table-root[data-look=strategy] *,body.play-reduced-mot
 @media(max-height:700px) {
   .table-root:not(.table-root--physical)[data-look=strategy] .table-battlefield--focused .table-battlefield-half--focused { --strategy-hand:clamp(58px,8cqw,68px);--strategy-band:132px; }
 }
+
+/* Complex choices own a real rail: cancel the former centered-overlay transform.
+   Header and validation remain fixed; only the choices body absorbs height pressure. */
+.table-root:not(.table-root--physical)[data-look=strategy]:has(.table-decision-dock:is(.table-decision-dock--combat,.table-decision-dock--targets)) { --look-rail:320px; }
+.table-root:not(.table-root--physical)[data-look=strategy] .table-decision-dock:is(.table-decision-dock--combat,.table-decision-dock--targets) {
+  inset:98px 24px 164px auto;transform:none;width:var(--look-rail);max-width:none;max-height:none;
+  display:flex;flex-direction:column;overflow:hidden;padding:14px;
+}
+.table-root[data-look=strategy] .table-decision-dock:is(.table-decision-dock--combat,.table-decision-dock--targets) :is(.combat-flow,.target-flow) { flex:1;min-height:0;max-height:none; }
+.table-root[data-look=strategy] :is(.combat-body,.target-body) { flex:1;min-height:0;overflow:auto;scrollbar-width:thin;scrollbar-color:#557580 transparent; }
+.table-root[data-look=strategy] .combat-columns,.table-root[data-look=strategy] .target-group { grid-template-columns:minmax(0,1fr); }
+.table-root[data-look=strategy] .combat-creatures { max-height:none;overflow:visible; }
+.table-root[data-look=strategy] :is(.combat-footer,.target-footer) { flex-shrink:0;background:#182733;padding-top:10px;border-top:1px solid #527080; }
+.table-root[data-look=strategy] :is(.combat-finish,.target-finish) { width:100%; }

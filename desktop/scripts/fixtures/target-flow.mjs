@@ -29,7 +29,10 @@ export function installTargetFixture(fixture){
   window.fetch=async(input,options={})=>{
     const url=typeof input==='string'?input:input.url;const state=fixture.states[window.targetSmoke.index];
     if(url==='/playtests/active'||url==='/playtests/target-session')return Response.json(state);
-    if(url==='/cards/presentation')return Response.json({cards:{}});
+    if(url==='/cards/presentation') {
+      const names=JSON.parse(options.body||'{}').names||[];
+      return Response.json({cards:Object.fromEntries(names.filter(name=>fixture.presentations?.[name]).map(name=>[name,fixture.presentations[name]]))});
+    }
     if(url==='/playtests/target-session/choice'){
       const choice=JSON.parse(options.body);
       if(!state.pendingDecision.rendered.items.some(item=>JSON.stringify(item.choice)===JSON.stringify(choice)))return Response.json({message:'Illegal/stale target fixture choice'},{status:400});

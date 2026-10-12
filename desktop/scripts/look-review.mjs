@@ -4,6 +4,8 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {_electron} from 'playwright';
+import {gameplayReviewFixture} from './fixtures/gameplay-review.mjs';
+import {installTargetFixture} from './fixtures/target-flow.mjs';
 import {installCombatFixture} from './fixtures/combat-flow.mjs';
 import {physicalGeometry} from './fixtures/physical-geometry.mjs';
 import {populatedTableFixture} from './fixtures/populated-table.mjs';
@@ -51,7 +53,21 @@ async function capture(name,task) {
   });
   const file=`${String(report.captures.length+1).padStart(2,'0')}-${name}.png`;
   await page.screenshot({path:join(output,file),animations:'disabled'});
-  report.captures.push({name,task,file,...metrics,physicalGeometry:await page.evaluate(physicalGeometry),digitalGeometry:await page.evaluate(digitalGeometry),presentationGeometry:await page.evaluate(presentationGeometry)});
+  const decisionGeometry=await page.evaluate(()=>{
+    const dock=document.querySelector('.table-decision-dock--combat,.table-decision-dock--targets');if(!dock)return null;
+    const rect=dock.getBoundingClientRect();
+    const finish=[...dock.querySelectorAll('.combat-finish,.target-finish')].filter(el=>!el.closest('[hidden]')).map(el=>{const r=el.getBoundingClientRect();return {label:el.textContent,visible:r.width>0&&r.height>0&&r.top>=rect.top-1&&r.bottom<=rect.bottom+1&&r.left>=rect.left-1&&r.right<=rect.right+1};});
+    return {insideWindow:rect.left>=0&&rect.right<=innerWidth+1&&rect.top>=0&&rect.bottom<=innerHeight+1,horizontalOverflow:dock.scrollWidth>dock.clientWidth+1,finish};
+  });
+  report.captures.push({name,task,file,...metrics,decisionGeometry,physicalGeometry:await page.evaluate(physicalGeometry),digitalGeometry:await page.evaluate(digitalGeometry),presentationGeometry:await page.evaluate(presentationGeometry)});
+  if(decisionGeometry) {
+    assert.equal(decisionGeometry.insideWindow,true,`${name}: decision outside window`);
+    assert.equal(decisionGeometry.horizontalOverflow,false,`${name}: decision horizontal overflow`);
+    assert.ok(decisionGeometry.finish.every(button=>button.visible),`${name}: validation clipped`);
+    const capture=report.captures.at(-1);
+    assert.deepEqual(capture.digitalGeometry?.decisionOverlaps||[],[],`${name}: decision covers digital board`);
+    assert.deepEqual(capture.physicalGeometry?.overlaps||[],[],`${name}: decision covers physical board/voice`);
+  }
 }
 try {
   for(const count of [2,3,4]) {
@@ -122,6 +138,62 @@ try {
   await capture('strategy-physical','Vérifier les cadres et le défilement de la table physique.');
   await page.locator('.physical-board[data-role=self] .physical-board-focus').click();
   await capture('strategy-physical-self','Vérifier la table physique agrandie.');
+  for(const mode of ['digital','physical']) {
+    await launch();await page.evaluate(installCombatFixture,await gameplayReviewFixture(mode,'combat'));
+    await page.locator('#nav-play').click();
+    let dock=page.locator('.table-decision-dock--combat');
+    await dock.getByRole('heading',{name:'Déclarer les attaquants'}).waitFor();
+    await capture(`${mode}-attackers`,'Plateau illustré et déclaration des attaquants : commandes séparées, validation accessible.');
+    await dock.locator('[data-combat-card=g2]').click();
+    assert.equal(await page.evaluate(()=>window.combatSmoke.choices.length),0);
+    await dock.locator('.combat-edit').click();
+    await dock.locator('.combat-edit[data-operation=remove]').waitFor();
+    await capture(`${mode}-attack-assigned`,'Attaque attribuée à une destination exacte proposée par la fixture.');
+    await dock.locator('.combat-edit[data-operation=remove]').click();
+    await dock.getByRole('button',{name:'N’attaquer avec aucune créature',exact:true}).click();
+    await dock.getByRole('heading',{name:'Déclarer les bloqueurs'}).waitFor();
+    await capture(`${mode}-blockers`,'Deux menaces publiques, dont une sans bloc proposé ; aucune action inventée.');
+    await dock.locator('.combat-edit').click();
+    await dock.getByRole('button',{name:'Valider les blocs',exact:true}).waitFor();
+    await dock.locator('.combat-assignments summary').click();
+    await capture(`${mode}-block-assigned`,'Bloc attribué et récapitulatif ouvert, validation hors de la liste défilante.');
+    assert.deepEqual(await page.evaluate(()=>window.combatSmoke.choices.map(c=>c.choice)),['second-add','second-remove','finish-empty','block-bear']);
+    await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(960,640));
+    await page.waitForFunction(()=>innerWidth===960);await capture(`${mode}-combat-compact`,'Combat à 960 × 640 : validation visible et plateau séparé.');
+
+    await launch();await page.evaluate(installTargetFixture,await gameplayReviewFixture(mode,'targets'));
+    await page.locator('#nav-play').click();dock=page.locator('.table-decision-dock--targets');
+    await dock.getByRole('heading',{name:'Cibles · Test spell'}).waitFor();
+    assert.ok(!(await dock.textContent()).includes('Secret should not appear'));
+    assert.equal(await dock.locator('.target-finish').count(),0);
+    await capture(`${mode}-target-list`,'Cibles publiques nombreuses et recherche ; identité cachée absente.');
+    await dock.getByRole('searchbox',{name:'Trouver une cible'}).fill('Inspiring Call');
+    await dock.getByRole('button',{name:/Choisir Inspiring Call/}).click();
+    await dock.getByRole('button',{name:'Terminer le choix des cibles',exact:true}).waitFor();
+    await capture(`${mode}-target-selected`,'Une cible choisie, destination joueur encore disponible et validation proposée par la fixture.');
+    await dock.getByRole('button',{name:'Terminer le choix des cibles',exact:true}).click();
+    await dock.getByRole('button',{name:/Repeated ability · 2/}).waitFor();
+    await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(960,640));
+    await page.waitForFunction(()=>innerWidth===960);
+    await capture(`${mode}-stack-target-compact`,'Deux instances distinctes d’une capacité dans la pile, à 960 × 640.');
+    await dock.getByRole('button',{name:/Repeated ability · 2/}).click();
+    await page.locator('.decision-option--pass').waitFor();
+    assert.deepEqual(await page.evaluate(()=>window.targetSmoke.choices.map(c=>c.choice)),['grave2','finish-selected','stack2']);
+    await capture(`${mode}-after-targeting`,'Retour à la priorité normale après les choix exacts de cible et de pile.');
+
+    await launch();await page.evaluate(installCombatFixture,await gameplayReviewFixture(mode,'crowded'));
+    await page.locator('#nav-play').click();await page.locator('.table-card-art').first().waitFor();
+    await capture(`${mode}-crowded-overview`,'Par siège : 24 permanents, 18 terrains, 16 jetons identiques et une main de 18 cartes.');
+    if(mode==='digital')await page.locator('.table-battlefield-half--human').click({position:{x:160,y:30}});
+    else await page.locator('.physical-board[data-role=self] .physical-board-focus').click();
+    await capture(`${mode}-crowded-focus`,'Focus chargé : taille minimale lisible, groupes de jetons et main défilante.');
+    await page.evaluate(()=>{
+      const board=document.querySelector('.table-battlefield-half--focused,.physical-board[data-role=self]');
+      for(const zone of board.querySelectorAll('.table-battlefield-cards,.table-viewport-hand,.physical-hand'))zone.scrollLeft=zone.scrollWidth;
+    });
+    await capture(`${mode}-crowded-scroll-end`,'Fin du défilement des permanents et de la main, sans choix de jeu.');
+    assert.equal(await page.evaluate(()=>window.combatSmoke.choices.length),0);
+  }
   assert.deepEqual(report.errors,[],'renderer errors');
 } catch(error) {
   report.errors.push(error.stack||String(error));process.exitCode=1;

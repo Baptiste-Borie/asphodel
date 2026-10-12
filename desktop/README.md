@@ -402,3 +402,7 @@ présents dans les captures de mouvement. Ces mesures complètent l'examen visue
 ### Revue de composition 0.1.28
 
 `npm run review:looks` inclut une capture de priorité désactivée en attente, les résumés à quatre joueurs et le focus d’un adversaire depuis son résumé. Les mesures de vues statiques attendent la fin des animations de disposition. Voir `../docs/composition-jeu-01.md`.
+
+### Revue des décisions complexes 0.1.30
+
+`npm run review:looks` couvre aussi les attaques/blocs, cibles/pile et plateaux chargés dans les deux modes, avec vérification de la validation à 960 × 640. Prévoir une revue plus longue : 37 captures si tous les scénarios passent. Voir `../docs/revue-parties-complexes-01.md`.
