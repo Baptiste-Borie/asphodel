@@ -105,6 +105,8 @@ try {
       await capture('strategy-self-focus','Agrandir les cartes avec le plateau, en gardant les résumés adverses.');
       report.focusCardWidth=await page.locator('.table-battlefield-half--focused .table-battlefield-cards .table-card').first().evaluate(el=>el.getBoundingClientRect().width);
       assert.ok(report.focusCardWidth>100,'focus should enlarge this sparse fixture board');
+      report.focusStatFont=await page.locator('.table-battlefield-half--focused .table-slot-stats').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize));
+      assert.ok(report.focusStatFont>=12,'large focused cards need proportionate statistics');
       await page.locator('.table-focus-return').click();
       await capture('strategy-overview-return','Retour au plateau complet après une transition de focus.');
       await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(960,640));
@@ -164,6 +166,10 @@ try {
     await page.waitForFunction(()=>innerWidth===960);
     if(mode==='digital')await page.locator('.table-battlefield-half--human.table-battlefield-half--focused').waitFor();
     await capture(`${mode}-combat-compact`,'Combat à 960 × 640 : validation visible et plateau séparé.');
+    if(mode==='physical') {
+      report.sparsePhysicalLayout=await page.locator('.physical-board[data-role=self] .table-battlefield-cards').evaluate(el=>({height:el.clientHeight,scrollHeight:el.scrollHeight,verticalOverflow:el.scrollHeight>el.clientHeight+1}));
+      assert.equal(report.sparsePhysicalLayout.verticalOverflow,false,'sparse physical combat should not need vertical scrolling');
+    }
 
     await launch();await page.evaluate(installTargetFixture,await gameplayReviewFixture(mode,'targets'));
     await page.locator('#nav-play').click();dock=page.locator('.table-decision-dock--targets');
