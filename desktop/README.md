@@ -406,3 +406,7 @@ présents dans les captures de mouvement. Ces mesures complètent l'examen visue
 ### Revue des décisions complexes 0.1.30
 
 `npm run review:looks` couvre aussi les attaques/blocs, cibles/pile et plateaux chargés dans les deux modes, avec vérification de la validation à 960 × 640. Prévoir une revue plus longue : 37 captures si tous les scénarios passent. Voir `../docs/revue-parties-complexes-01.md`.
+
+### Partie réelle pour revue
+
+Après construction/installation, `npm run review:forge` ouvre l'application de production dans un profil temporaire et fait avancer une partie numérique Forge réelle (fixtures Krenko/Ghalta, graine 42), jusqu'à 80 décisions, tour 8 ou trois minutes. Les captures et le rapport sont dans `review-forge/`. Les priorités sont cliquées quand disponibles ; les autres choix passent par l'API et sont identifiés comme tels. Voir `../docs/revue-forge-reelle-01.md` pour les limites et le nettoyage.

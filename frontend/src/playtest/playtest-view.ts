@@ -1045,6 +1045,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     if (state.pendingDecision && (submitting || !decisionGate.allows(state.pendingDecision.decisionId))) {
       state = { ...state, pendingDecision: null };
     }
+    gameSection.dataset.decisionId = state.pendingDecision?.decisionId ?? "";
     const active = computeActiveMapping(state);
     livePlayerTargets = state.pendingDecision?.rendered.kind === 'menu' ? state.pendingDecision.rendered.items.filter(item => item.playerId) : [];
     gameSection.classList.toggle('physical-input-required', currentPlayMode === 'physical' && Boolean(state.pendingDecision) && !submitting);
