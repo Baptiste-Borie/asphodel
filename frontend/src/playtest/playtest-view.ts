@@ -310,6 +310,8 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
   // now owns its own hand surface too (Milestone 3) — there is no global handContainer/opponentHand
   // left anywhere in Digital mode.
   let digitalBoardSlots: DigitalBoardSlot[] = [];
+  let updateDigitalDecisionFocus = () => {};
+  window.addEventListener("resize", () => updateDigitalDecisionFocus());
   let hudTurnEl: HTMLElement, hudPhaseEl: HTMLElement;
   let decisionDock: HTMLElement, menuPanel: HTMLElement, menuDeckInfo: HTMLElement;
   // Milestone 3 "DIGITAL KEYBOARD PARITY": this used to bail out for anything but Physical mode.
@@ -643,23 +645,37 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
      * `transform: scale()`) lives entirely in styles/table-scene.css's `--focused` rules.
      */
     let digitalView: DigitalView = { mode: "overview" };
+    let decisionAutoFocus = false, decisionFocusDismissed = false, decisionWasEligible = false;
     const tableViewButton = document.createElement('button');
     tableViewButton.type = 'button';
     tableViewButton.className = 'table-focus-return';
     tableViewButton.textContent = '← Vue d’ensemble';
     tableViewButton.hidden = true;
     const applyDigitalFocus = () => transitions.relayout(gameSection, () => {
-      const focusedPlayerId = digitalView.mode === "focus" ? digitalView.playerId : null;
+      const focusedPlayerId = digitalView.mode === "focus" ? digitalView.playerId : decisionAutoFocus ? latestState?.observation?.selfPlayerId ?? null : null;
       battlefield.classList.toggle("table-battlefield--focused", focusedPlayerId !== null);
       for (const slot of digitalBoardSlots) {
         slot.half.classList.toggle("table-battlefield-half--focused", slot.half.dataset.playerId === focusedPlayerId);
       }
       tableViewButton.hidden = focusedPlayerId === null;
     });
+    updateDigitalDecisionFocus = () => {
+      if (gameSection.hidden) return;
+      const eligible = currentPlayMode === "digital" && gameSection.dataset.look === "strategy" && innerWidth <= 1100 && digitalBoardSlots.length > 2
+        && Boolean(decisionDock.classList.contains("table-decision-dock--combat") || decisionDock.classList.contains("table-decision-dock--targets")
+          || (latestState && (combatDecisionModel(latestState.pendingDecision, latestState.observation) || targetDecisionModel(latestState.pendingDecision, latestState.observation))));
+      if (eligible !== decisionWasEligible) decisionFocusDismissed = false;
+      decisionWasEligible = eligible;
+      const next = eligible && !decisionFocusDismissed && digitalView.mode === "overview";
+      if (next === decisionAutoFocus) return;
+      decisionAutoFocus = next;
+      applyDigitalFocus();
+    };
     for (const slot of digitalBoardSlots) {
       slot.summary.onclick = () => {
         const playerId = slot.half.dataset.playerId;
         if (!playerId) return;
+        decisionAutoFocus = false; decisionFocusDismissed = true;
         digitalView = { mode: "focus", playerId };
         applyDigitalFocus();
       };
@@ -672,11 +688,12 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
         if (!playerId) return; // nothing painted into this viewport yet
         if ((event.target as HTMLElement).closest('button, a, input, summary, .table-card, [data-zone]')) return;
         if (digitalView.mode === "focus" && digitalView.playerId === playerId) return; // already focused: no-op
+        decisionAutoFocus = false; decisionFocusDismissed = true;
         digitalView = { mode: "focus", playerId };
         applyDigitalFocus();
       };
     }
-    tableViewButton.onclick = () => { digitalView = { mode: "overview" }; applyDigitalFocus(); };
+    tableViewButton.onclick = () => { decisionAutoFocus = false; decisionFocusDismissed = true; digitalView = { mode: "overview" }; applyDigitalFocus(); };
 
     const rail = document.createElement("div");
     rail.className = "table-rail-left";
@@ -1043,6 +1060,7 @@ export function initPlaytestView(onGameActive: () => void = () => {}, returnToTa
     // V2g.1: which of `active`'s mapped items belong in the dock depends on Mode de jeu — see
     // `buildDockItems`'s doc comment for the exact Digital/Physical rule.
     renderDecisionIfChanged(state, active ? buildDockItems(active, currentPlayMode) : null);
+    updateDigitalDecisionFocus();
     // Voice Intent Resolver (V0): this is exactly "the new authoritative state" a running compound
     // plan (see voice-runner.ts's `advancePlan`) must wait for before resolving its next step — never
     // called from anywhere else, so a plan never advances against playback-in-flight/stale state.

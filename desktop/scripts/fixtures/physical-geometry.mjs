@@ -15,5 +15,14 @@ export function physicalGeometry() {
     const r=el.getBoundingClientRect(),zone=el.closest('.table-battlefield-cards').getBoundingClientRect();
     if(r.bottom>0&&r.top<innerHeight&&(r.top<zone.top-1||r.bottom>zone.bottom+1))verticallyClippedBattlefieldCards.push(el.getAttribute('aria-label')||el.dataset.cardRef||'card');
   }
-  return {regions,overlaps,verticallyClippedBattlefieldCards};
+  const battlefieldCollisions=[];
+  for(const zone of root.querySelectorAll('.physical-board .table-battlefield-cards')) {
+    const bounds=zone.getBoundingClientRect();
+    const cards=[...zone.querySelectorAll('.table-card')].filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.right>bounds.left&&r.left<bounds.right;});
+    cards.forEach((card,index)=>{const a=card.getBoundingClientRect();for(const other of cards.slice(index+1)) {
+      const b=other.getBoundingClientRect();
+      if(Math.min(a.right,b.right)-Math.max(a.left,b.left)>2&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>2)battlefieldCollisions.push([card.dataset.cardRef,other.dataset.cardRef]);
+    }});
+  }
+  return {regions,overlaps,verticallyClippedBattlefieldCards,battlefieldCollisions};
 }

@@ -60,6 +60,8 @@ async function capture(name,task) {
     return {insideWindow:rect.left>=0&&rect.right<=innerWidth+1&&rect.top>=0&&rect.bottom<=innerHeight+1,horizontalOverflow:dock.scrollWidth>dock.clientWidth+1,finish};
   });
   report.captures.push({name,task,file,...metrics,decisionGeometry,physicalGeometry:await page.evaluate(physicalGeometry),digitalGeometry:await page.evaluate(digitalGeometry),presentationGeometry:await page.evaluate(presentationGeometry)});
+  const physical=report.captures.at(-1).physicalGeometry;
+  if(physical)assert.deepEqual(physical.battlefieldCollisions,[],`${name}: physical permanents overlap`);
   if(decisionGeometry) {
     assert.equal(decisionGeometry.insideWindow,true,`${name}: decision outside window`);
     assert.equal(decisionGeometry.horizontalOverflow,false,`${name}: decision horizontal overflow`);
@@ -159,7 +161,9 @@ try {
     await capture(`${mode}-block-assigned`,'Bloc attribué et récapitulatif ouvert, validation hors de la liste défilante.');
     assert.deepEqual(await page.evaluate(()=>window.combatSmoke.choices.map(c=>c.choice)),['second-add','second-remove','finish-empty','block-bear']);
     await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(960,640));
-    await page.waitForFunction(()=>innerWidth===960);await capture(`${mode}-combat-compact`,'Combat à 960 × 640 : validation visible et plateau séparé.');
+    await page.waitForFunction(()=>innerWidth===960);
+    if(mode==='digital')await page.locator('.table-battlefield-half--human.table-battlefield-half--focused').waitFor();
+    await capture(`${mode}-combat-compact`,'Combat à 960 × 640 : validation visible et plateau séparé.');
 
     await launch();await page.evaluate(installTargetFixture,await gameplayReviewFixture(mode,'targets'));
     await page.locator('#nav-play').click();dock=page.locator('.table-decision-dock--targets');
@@ -175,10 +179,12 @@ try {
     await dock.getByRole('button',{name:/Repeated ability · 2/}).waitFor();
     await electron.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(960,640));
     await page.waitForFunction(()=>innerWidth===960);
+    if(mode==='digital')await page.locator('.table-battlefield-half--human.table-battlefield-half--focused').waitFor();
     await capture(`${mode}-stack-target-compact`,'Deux instances distinctes d’une capacité dans la pile, à 960 × 640.');
     await dock.getByRole('button',{name:/Repeated ability · 2/}).click();
     await page.locator('.decision-option--pass').waitFor();
     assert.deepEqual(await page.evaluate(()=>window.targetSmoke.choices.map(c=>c.choice)),['grave2','finish-selected','stack2']);
+    if(mode==='digital')assert.equal(await page.locator('.table-battlefield--focused').count(),0,'temporary decision focus restores overview');
     await capture(`${mode}-after-targeting`,'Retour à la priorité normale après les choix exacts de cible et de pile.');
 
     await launch();await page.evaluate(installCombatFixture,await gameplayReviewFixture(mode,'crowded'));

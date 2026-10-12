@@ -235,3 +235,15 @@ body.play-reduced-motion .table-root[data-look=strategy] *,body.play-reduced-mot
 .table-root[data-look=strategy] .combat-creatures { max-height:none;overflow:visible; }
 .table-root[data-look=strategy] :is(.combat-footer,.target-footer) { flex-shrink:0;background:#182733;padding-top:10px;border-top:1px solid #527080; }
 .table-root[data-look=strategy] :is(.combat-finish,.target-finish) { width:100%; }
+
+/* Every physical permanent reserves its own space, including a rotated card.
+   Intentional hand/land fans and grouped-token stacks keep their existing presentation. */
+.table-root--physical[data-look=strategy] .physical-board .table-battlefield-cards .table-card-slot { margin-left:0!important;aspect-ratio:1; }
+.table-root[data-look=strategy] :is(.target-submit-status,.combat-submit-status) { color:#c4d6de; }
+.table-root[data-look=strategy] .combat-flow .combat-selected { color:#bce5d7; }
+@media(max-width:1100px) {
+  .table-root:not(.table-root--physical)[data-look=strategy]:has(.table-decision-dock:is(.table-decision-dock--combat,.table-decision-dock--targets)) .table-battlefield--focused { grid-template-columns:minmax(0,1fr) 150px;gap:8px; }
+  .table-root:not(.table-root--physical)[data-look=strategy]:has(.table-decision-dock:is(.table-decision-dock--combat,.table-decision-dock--targets)) .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-pile { width:40px;grid-template-columns:14px auto;gap:0 2px; }
+  .table-root:not(.table-root--physical)[data-look=strategy]:has(.table-decision-dock:is(.table-decision-dock--combat,.table-decision-dock--targets)) .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-pile-face { width:14px;height:22px; }
+  .table-root:not(.table-root--physical)[data-look=strategy]:has(.table-decision-dock:is(.table-decision-dock--combat,.table-decision-dock--targets)) .table-battlefield--focused .table-battlefield-half:not(.table-battlefield-half--focused) .table-seat-summary { font-size:10px;padding:3px; }
+}
