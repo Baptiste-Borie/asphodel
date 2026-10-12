@@ -253,5 +253,15 @@ export function createTableCard(
   const slot = document.createElement("div");
   slot.className = card.tapped ? "table-card-slot table-card-slot--tapped" : "table-card-slot";
   slot.append(element);
+  // A non-interactive public badge rail stays upright when the card is tapped.
+  // Original badges remain in the card for other looks and existing update tracking.
+  if (options.variant === 'battlefield' && !concealed) {
+    const rail = document.createElement('div'); rail.className = 'table-slot-badges'; rail.setAttribute('aria-hidden','true');
+    for (const [selector, className] of [['.table-card-stats','table-slot-stats'],['.table-card-count','table-slot-count'],['.table-card-counters','table-slot-counters']]) {
+      const source = element.querySelector(selector);
+      if (source) { const label = document.createElement('span'); label.className = className; label.textContent = selector === '.table-card-counters' ? [...source.children].map(child => child.textContent).join(' · ') : source.textContent; label.title = label.textContent ?? ''; rail.append(label); }
+    }
+    slot.append(rail);
+  }
   return slot;
 }

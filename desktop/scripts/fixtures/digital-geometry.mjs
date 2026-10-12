@@ -23,7 +23,7 @@ export function digitalGeometry() {
     const cards=[...zone.querySelectorAll('.table-card')].filter(card=>{const r=rect(card);return r.right>r.left&&r.right>bounds.left&&r.left<bounds.right});
     cards.forEach((card,index)=>{
       const r=rect(card);
-      if(r.top<bounds.top-1||r.bottom>bounds.bottom+1)clipped.push(card.dataset.cardRef);
+      if(!(zone.dataset.dense==='true'&&getComputedStyle(zone).display==='grid')&&(r.top<bounds.top-1||r.bottom>bounds.bottom+1))clipped.push(card.dataset.cardRef);
       for(const other of cards.slice(index+1))if(intersects(r,rect(other)))collisions.push([card.dataset.cardRef,other.dataset.cardRef]);
     });
     if(dock&&intersects(rect(board),rect(dock)))decisionOverlaps.push(board.dataset.playerId);

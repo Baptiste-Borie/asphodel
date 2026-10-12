@@ -13,7 +13,7 @@ export function physicalGeometry() {
   const verticallyClippedBattlefieldCards=[];
   for(const el of root.querySelectorAll('.physical-board .table-battlefield-cards .table-card')) {
     const r=el.getBoundingClientRect(),zone=el.closest('.table-battlefield-cards').getBoundingClientRect();
-    if(r.bottom>0&&r.top<innerHeight&&(r.top<zone.top-1||r.bottom>zone.bottom+1))verticallyClippedBattlefieldCards.push(el.getAttribute('aria-label')||el.dataset.cardRef||'card');
+    if(!(el.closest('.table-battlefield-cards').dataset.dense==='true'&&getComputedStyle(el.closest('.table-battlefield-cards')).display==='grid')&&r.bottom>0&&r.top<innerHeight&&(r.top<zone.top-1||r.bottom>zone.bottom+1))verticallyClippedBattlefieldCards.push(el.getAttribute('aria-label')||el.dataset.cardRef||'card');
   }
   const battlefieldCollisions=[];
   for(const zone of root.querySelectorAll('.physical-board .table-battlefield-cards')) {

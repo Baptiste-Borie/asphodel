@@ -192,12 +192,21 @@ try {
     await capture(`${mode}-crowded-overview`,'Par siège : 24 permanents, 18 terrains, 16 jetons identiques et une main de 18 cartes.');
     if(mode==='digital')await page.locator('.table-battlefield-half--human').click({position:{x:160,y:30}});
     else await page.locator('.physical-board[data-role=self] .physical-board-focus').click();
-    await capture(`${mode}-crowded-focus`,'Focus chargé : taille minimale lisible, groupes de jetons et main défilante.');
+    await capture(`${mode}-crowded-focus`,'Focus chargé : plusieurs rangées, badges séparés et main défilante.');
+    const denseLayout=await page.evaluate(()=>{
+      const board=document.querySelector('.table-battlefield-half--focused,.physical-board[data-role=self]');
+      const zone=board.querySelector('.table-battlefield-cards');
+      return {display:getComputedStyle(zone).display,rows:new Set([...zone.children].map(slot=>Math.round(slot.getBoundingClientRect().top))).size,slots:zone.children.length,horizontalOverflow:zone.scrollWidth>zone.clientWidth+1};
+    });
+    report.denseLayouts??=[];report.denseLayouts.push({mode,...denseLayout});
+    assert.equal(denseLayout.display,'grid','dense focus uses rows');
+    assert.ok(denseLayout.rows>1,'dense focus must actually use more than one row');
+    assert.equal(denseLayout.horizontalOverflow,false,'dense focus avoids horizontal scrolling');
     await page.evaluate(()=>{
       const board=document.querySelector('.table-battlefield-half--focused,.physical-board[data-role=self]');
-      for(const zone of board.querySelectorAll('.table-battlefield-cards,.table-viewport-hand,.physical-hand'))zone.scrollLeft=zone.scrollWidth;
+      for(const zone of board.querySelectorAll('.table-battlefield-cards,.table-viewport-hand,.physical-hand'))zone.scrollLeft=zone.scrollWidth,zone.scrollTop=zone.scrollHeight;
     });
-    await capture(`${mode}-crowded-scroll-end`,'Fin du défilement des permanents et de la main, sans choix de jeu.');
+    await capture(`${mode}-crowded-scroll-end`,'Dernières rangées de permanents et fin de la main, sans choix de jeu.');
     assert.equal(await page.evaluate(()=>window.combatSmoke.choices.length),0);
   }
   assert.deepEqual(report.errors,[],'renderer errors');

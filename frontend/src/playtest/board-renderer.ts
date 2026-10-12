@@ -165,6 +165,7 @@ function renderCardRow(container: HTMLElement, groups: CardGroup[], callbacks: B
 export function renderBattlefieldHalf(container: HTMLElement, player: AgentPlayerObservation, callbacks: BoardCallbacks, expand = false): void {
   const { nonLands } = partitionBattlefield(player.battlefield);
   const groups = rowsFor(callbacks.battlefieldStyle === 'condensed' ? orderPermanents(nonLands) : nonLands, expand);
+  container.dataset.dense = String(groups.length > 8);
   const scale = computeBattlefieldScale(groups.length);
   container.style.setProperty("--bf-card-width", `${scale.cardWidthPx}px`);
   container.style.setProperty("--bf-card-overlap", `${scale.overlapPx}px`);
